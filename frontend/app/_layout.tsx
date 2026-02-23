@@ -16,6 +16,14 @@ export default function RootLayout() {
         }}
       >
         <Stack.Screen name="(tabs)" options={{ headerShown: false }} />
+        <Stack.Screen
+          name="diary/[id]"
+          options={{ title: '일기 상세' }}
+        />
+        <Stack.Screen
+          name="learning/[id]"
+          options={{ title: '학습', headerShown: false }}
+        />
       </Stack>
     </>
   );

@@ -75,7 +75,7 @@ export default function HomeScreen() {
           data={diaries}
           keyExtractor={(item) => item.id}
           renderItem={({ item }) => (
-            <DiaryCard diary={item} onPress={() => {}} />
+            <DiaryCard diary={item} onPress={() => router.push(`/diary/${item.id}`)} />
           )}
           contentContainerStyle={styles.list}
           refreshControl={

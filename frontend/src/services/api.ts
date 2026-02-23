@@ -1,4 +1,4 @@
-import { Diary, PaginatedResponse, ConversationSession } from '../types';
+import { Diary, PaginatedResponse, ConversationSession, TtsResponse, PronunciationResult } from '../types';
 import { mockDiaries } from './mockData';
 
 const USE_MOCK = true;
@@ -50,6 +50,49 @@ export async function updateDiary(id: string, data: Partial<Diary>): Promise<Dia
     body: JSON.stringify(data),
   });
   return res.json();
+}
+
+// ===== Speech API =====
+
+export async function requestTts(text: string): Promise<TtsResponse> {
+  if (USE_MOCK) {
+    await delay(800);
+    return { audioUrl: `mock://tts/${Date.now()}.mp3` };
+  }
+  const res = await fetch(`${API_BASE_URL}/api/v1/speech/tts`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ text }),
+  });
+  return res.json();
+}
+
+export async function evaluatePronunciation(text: string): Promise<PronunciationResult> {
+  if (USE_MOCK) {
+    await delay(1500);
+    const base = 70 + Math.random() * 25;
+    return {
+      overallScore: Math.round(base),
+      accuracyScore: Math.round(base + (Math.random() - 0.5) * 10),
+      fluencyScore: Math.round(base + (Math.random() - 0.5) * 10),
+      completenessScore: Math.round(base + (Math.random() - 0.5) * 10),
+      feedback: 'Good pronunciation! Pay attention to word stress and intonation.',
+    };
+  }
+  const res = await fetch(`${API_BASE_URL}/api/v1/speech/evaluate`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ text }),
+  });
+  return res.json();
+}
+
+export async function completeDiary(id: string): Promise<void> {
+  if (USE_MOCK) {
+    await delay(300);
+    return;
+  }
+  await fetch(`${API_BASE_URL}/api/v1/diary/${id}/complete`, { method: 'POST' });
 }
 
 // ===== Conversation API =====

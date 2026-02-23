@@ -90,6 +90,20 @@ export type ClientMessage =
   | { type: 'audio_end' }
   | { type: 'finish' };
 
+// ===== TTS 응답 =====
+export interface TtsResponse {
+  audioUrl: string;
+}
+
+// ===== 발음 평가 결과 =====
+export interface PronunciationResult {
+  overallScore: number;
+  accuracyScore: number;
+  fluencyScore: number;
+  completenessScore: number;
+  feedback: string;
+}
+
 // ===== WebSocket 메시지 (서버 → 클라이언트) =====
 export type ServerMessage =
   | { type: 'stt_interim'; text: string }

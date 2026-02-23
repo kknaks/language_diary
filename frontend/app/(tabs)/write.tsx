@@ -3,6 +3,7 @@ import { View, Text, StyleSheet } from 'react-native';
 import { FlashList, type FlashListRef } from '@shopify/flash-list';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
+import { useRouter } from 'expo-router';
 
 import { colors, fontSize, spacing } from '../../src/constants/theme';
 import { Button } from '../../src/components/common';
@@ -18,6 +19,7 @@ import { useConversationStore } from '../../src/stores/useConversationStore';
 import { Message } from '../../src/types';
 
 export default function WriteScreen() {
+  const router = useRouter();
   const {
     sessionId,
     messages,
@@ -116,8 +118,20 @@ export default function WriteScreen() {
             {createdDiary.contentEn}
           </Text>
           <Button
+            title="일기 확인하기"
+            onPress={() => {
+              const diaryId = createdDiary.id;
+              reset();
+              router.push(`/diary/${diaryId}`);
+            }}
+            size="lg"
+            icon={<Ionicons name="document-text" size={18} color="#fff" />}
+            style={styles.startButton}
+          />
+          <Button
             title="새 대화 시작하기"
             onPress={handleStartNew}
+            variant="outline"
             size="lg"
             style={styles.startButton}
           />
