@@ -39,7 +39,7 @@ users (1) ──→ (N) diaries (1) ──→ (N) learning_cards (1) ──→ (
 |------|------|------|
 | id | SERIAL PK | 카드 ID |
 | diary_id | INT FK → diaries.id | 소속 일기 |
-| card_type | VARCHAR(10) | 타입: word / phrase |
+| card_type | VARCHAR(10) | 타입: word / phrase / full |
 | content_en | VARCHAR(500) | 영어 단어/구문 |
 | content_ko | VARCHAR(500) | 한국어 뜻 |
 | part_of_speech | VARCHAR(20) | 품사 (단어만) |
@@ -104,7 +104,7 @@ CREATE TABLE diaries (
 CREATE TABLE learning_cards (
     id SERIAL PRIMARY KEY,
     diary_id INT NOT NULL REFERENCES diaries(id) ON DELETE CASCADE,
-    card_type VARCHAR(10) NOT NULL CHECK (card_type IN ('word', 'phrase')),
+    card_type VARCHAR(10) NOT NULL CHECK (card_type IN ('word', 'phrase', 'full')),
     content_en VARCHAR(500) NOT NULL,
     content_ko VARCHAR(500) NOT NULL,
     part_of_speech VARCHAR(20),
