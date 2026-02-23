@@ -1,4 +1,5 @@
 from datetime import datetime
+from typing import Optional
 
 from sqlalchemy import DateTime, ForeignKey, Integer, String, Text, func
 from sqlalchemy.orm import Mapped, mapped_column, relationship
@@ -11,13 +12,13 @@ class ConversationSession(Base):
 
     id: Mapped[str] = mapped_column(String(50), primary_key=True)
     user_id: Mapped[int] = mapped_column(ForeignKey("users.id"), nullable=False)
-    diary_id: Mapped[int | None] = mapped_column(ForeignKey("diaries.id"))
+    diary_id: Mapped[Optional[int]] = mapped_column(ForeignKey("diaries.id"))
     status: Mapped[str] = mapped_column(String(20), server_default="created", nullable=False)
     turn_count: Mapped[int] = mapped_column(Integer, server_default="0", nullable=False)
     created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now(), nullable=False)
     updated_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now(), onupdate=func.now(), nullable=False)
-    completed_at: Mapped[datetime | None] = mapped_column(DateTime)
-    expired_at: Mapped[datetime | None] = mapped_column(DateTime)
+    completed_at: Mapped[Optional[datetime]] = mapped_column(DateTime)
+    expired_at: Mapped[Optional[datetime]] = mapped_column(DateTime)
 
     # relationships
     user = relationship("User", back_populates="conversation_sessions")

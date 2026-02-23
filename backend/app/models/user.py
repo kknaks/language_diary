@@ -1,4 +1,5 @@
 from datetime import datetime
+from typing import Optional
 
 from sqlalchemy import Boolean, DateTime, String, func
 from sqlalchemy.orm import Mapped, mapped_column, relationship
@@ -10,8 +11,8 @@ class User(Base):
     __tablename__ = "users"
 
     id: Mapped[int] = mapped_column(primary_key=True)
-    email: Mapped[str | None] = mapped_column(String(255), unique=True)
-    password_hash: Mapped[str | None] = mapped_column(String(255))
+    email: Mapped[Optional[str]] = mapped_column(String(255), unique=True)
+    password_hash: Mapped[Optional[str]] = mapped_column(String(255))
     nickname: Mapped[str] = mapped_column(String(50), nullable=False)
     native_lang: Mapped[str] = mapped_column(String(10), server_default="ko", nullable=False)
     target_lang: Mapped[str] = mapped_column(String(10), server_default="en", nullable=False)

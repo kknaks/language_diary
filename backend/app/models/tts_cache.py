@@ -1,4 +1,5 @@
 from datetime import datetime
+from typing import Optional
 
 from sqlalchemy import DateTime, Integer, String, Text, func
 from sqlalchemy.orm import Mapped, mapped_column
@@ -13,6 +14,6 @@ class TTSCache(Base):
     text_hash: Mapped[str] = mapped_column(String(64), unique=True, nullable=False)
     text: Mapped[str] = mapped_column(Text, nullable=False)
     audio_url: Mapped[str] = mapped_column(String(500), nullable=False)
-    voice_id: Mapped[str | None] = mapped_column(String(50))
-    duration_ms: Mapped[int | None] = mapped_column(Integer)
+    voice_id: Mapped[Optional[str]] = mapped_column(String(50))
+    duration_ms: Mapped[Optional[int]] = mapped_column(Integer)
     created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now(), nullable=False)

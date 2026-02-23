@@ -1,3 +1,5 @@
+from typing import Optional
+
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.exceptions import NotFoundError, BadRequestError
@@ -18,7 +20,7 @@ class DiaryService:
         self.db = db
 
     async def get_list(
-        self, cursor: int | None = None, limit: int = 20
+        self, cursor: Optional[int] = None, limit: int = 20
     ) -> DiaryListResponse:
         limit = min(limit, 50)
         diaries = await self.repo.get_list(MVP_USER_ID, cursor=cursor, limit=limit)

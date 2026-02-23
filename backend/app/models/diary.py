@@ -1,4 +1,5 @@
 from datetime import datetime
+from typing import Optional
 
 from sqlalchemy import DateTime, ForeignKey, String, Text, func
 from sqlalchemy.orm import Mapped, mapped_column, relationship
@@ -12,12 +13,12 @@ class Diary(Base):
     id: Mapped[int] = mapped_column(primary_key=True)
     user_id: Mapped[int] = mapped_column(ForeignKey("users.id"), nullable=False)
     original_text: Mapped[str] = mapped_column(Text, nullable=False)
-    translated_text: Mapped[str | None] = mapped_column(Text)
+    translated_text: Mapped[Optional[str]] = mapped_column(Text)
     status: Mapped[str] = mapped_column(String(20), server_default="draft", nullable=False)
     created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now(), nullable=False)
     updated_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now(), onupdate=func.now(), nullable=False)
-    completed_at: Mapped[datetime | None] = mapped_column(DateTime)
-    deleted_at: Mapped[datetime | None] = mapped_column(DateTime)
+    completed_at: Mapped[Optional[datetime]] = mapped_column(DateTime)
+    deleted_at: Mapped[Optional[datetime]] = mapped_column(DateTime)
 
     # relationships
     user = relationship("User", back_populates="diaries")
