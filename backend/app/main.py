@@ -2,6 +2,7 @@ from fastapi import FastAPI
 from fastapi.exceptions import RequestValidationError
 from fastapi.middleware.cors import CORSMiddleware
 
+from app.api.v1.conversation import conversation_websocket
 from app.api.v1.router import api_router
 from app.config import settings
 from app.exceptions import AppError, app_error_handler, validation_error_handler
@@ -24,6 +25,9 @@ app.add_exception_handler(AppError, app_error_handler)
 app.add_exception_handler(RequestValidationError, validation_error_handler)
 
 app.include_router(api_router, prefix="/api/v1")
+
+# WebSocket endpoint (outside /api/v1 prefix per PRD spec)
+app.add_api_websocket_route("/ws/conversation/{session_id}", conversation_websocket)
 
 
 @app.get("/health")

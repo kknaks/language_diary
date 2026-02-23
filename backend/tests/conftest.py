@@ -6,7 +6,10 @@ from httpx import ASGITransport, AsyncClient
 from app.main import app
 from app.database import get_db
 from app.models.base import Base
-from app.models import User, Diary, LearningCard  # noqa: ensure models loaded
+from app.models import (  # noqa: ensure models loaded
+    User, Diary, LearningCard,
+    ConversationSession, ConversationMessage,
+)
 
 TEST_DB_URL = "sqlite+aiosqlite:///./test.db"
 
@@ -84,3 +87,30 @@ async def seed_diary(db_session: AsyncSession, seed_user):
     await db_session.commit()
     await db_session.refresh(diary)
     return diary
+
+
+@pytest_asyncio.fixture
+async def seed_conversation(db_session: AsyncSession, seed_user):
+    """Create a sample active conversation session with one AI message."""
+    from datetime import datetime
+    session = ConversationSession(
+        id="conv_test123",
+        user_id=1,
+        status="active",
+        turn_count=0,
+        created_at=datetime.utcnow(),
+        updated_at=datetime.utcnow(),
+    )
+    db_session.add(session)
+    await db_session.flush()
+
+    msg = ConversationMessage(
+        session_id="conv_test123",
+        role="ai",
+        content="오늘 하루 어땠어?",
+        message_order=1,
+    )
+    db_session.add(msg)
+    await db_session.commit()
+    await db_session.refresh(session)
+    return session
