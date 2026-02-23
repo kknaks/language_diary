@@ -1,4 +1,7 @@
-"""AI Service — OpenAI integration for conversation, diary generation, and learning points."""
+"""AI Service — OpenAI integration for conversation, diary generation, and learning points.
+
+Uses Circuit Breaker + Retry with exponential backoff for resilience.
+"""
 
 import json
 import logging
@@ -7,6 +10,7 @@ from typing import Any, Dict, List
 from openai import AsyncOpenAI
 
 from app.config import settings
+from app.utils.circuit_breaker import CircuitBreaker, CircuitBreakerError, retry_with_backoff
 
 logger = logging.getLogger(__name__)
 
@@ -59,6 +63,14 @@ SYSTEM_PROMPT_LEARNING = """너는 영어 학습 전문가야. 영어 일기에�
 
 MAX_TURNS = 10
 
+# Circuit breaker for OpenAI API
+_openai_cb = CircuitBreaker(name="openai", failure_threshold=5, recovery_timeout=60.0)
+
+
+class AIServiceError(Exception):
+    """Raised when OpenAI API calls fail after retries."""
+    pass
+
 
 class AIService:
     """Handles all OpenAI interactions for conversation, diary generation, and learning points."""
@@ -68,8 +80,7 @@ class AIService:
 
     async def get_first_message(self) -> str:
         """Generate the AI's opening question to start the conversation."""
-        response = await self.client.chat.completions.create(
-            model="gpt-4o-mini",
+        return await self._chat(
             messages=[
                 {"role": "system", "content": SYSTEM_PROMPT_CONVERSATION},
                 {"role": "user", "content": "대화를 시작해줘. 첫 질문을 해줘."},
@@ -77,20 +88,12 @@ class AIService:
             max_tokens=150,
             temperature=0.8,
         )
-        return response.choices[0].message.content.strip()
 
     async def get_reply(self, conversation_history: List[Dict[str, str]]) -> str:
         """Generate AI follow-up question based on conversation history."""
         messages = [{"role": "system", "content": SYSTEM_PROMPT_CONVERSATION}]
         messages.extend(conversation_history)
-
-        response = await self.client.chat.completions.create(
-            model="gpt-4o-mini",
-            messages=messages,
-            max_tokens=200,
-            temperature=0.8,
-        )
-        return response.choices[0].message.content.strip()
+        return await self._chat(messages=messages, max_tokens=200, temperature=0.8)
 
     async def generate_diary(self, conversation_history: List[Dict[str, str]]) -> Dict[str, str]:
         """Generate diary (Korean original + English translation) from conversation."""
@@ -99,8 +102,7 @@ class AIService:
             for m in conversation_history
         )
 
-        response = await self.client.chat.completions.create(
-            model="gpt-4o-mini",
+        content = await self._chat(
             messages=[
                 {"role": "system", "content": SYSTEM_PROMPT_DIARY},
                 {"role": "user", "content": f"아래 대화를 바탕으로 일기를 작성해줘:\n\n{conversation_text}"},
@@ -108,14 +110,11 @@ class AIService:
             max_tokens=1000,
             temperature=0.7,
         )
-
-        content = response.choices[0].message.content.strip()
         return self._parse_json(content, {"original_text": "", "translated_text": ""})
 
     async def extract_learning_points(self, translated_text: str) -> List[Dict[str, Any]]:
         """Extract learning points (words + phrases) from English diary text."""
-        response = await self.client.chat.completions.create(
-            model="gpt-4o-mini",
+        content = await self._chat(
             messages=[
                 {"role": "system", "content": SYSTEM_PROMPT_LEARNING},
                 {"role": "user", "content": f"아래 영어 일기에서 학습 포인트를 추출해줘:\n\n{translated_text}"},
@@ -123,9 +122,28 @@ class AIService:
             max_tokens=1500,
             temperature=0.5,
         )
-
-        content = response.choices[0].message.content.strip()
         return self._parse_json(content, [])
+
+    async def _chat(self, messages: list, max_tokens: int, temperature: float) -> str:
+        """Call OpenAI chat API with circuit breaker + retry."""
+        try:
+            response = await retry_with_backoff(
+                func=lambda: self.client.chat.completions.create(
+                    model="gpt-4o-mini",
+                    messages=messages,
+                    max_tokens=max_tokens,
+                    temperature=temperature,
+                ),
+                max_retries=2,
+                base_delay=1.0,
+                retryable_exceptions=(Exception,),
+                circuit_breaker=_openai_cb,
+            )
+            return response.choices[0].message.content.strip()
+        except CircuitBreakerError:
+            raise AIServiceError("OpenAI 서비스를 일시적으로 사용할 수 없습니다.")
+        except Exception as e:
+            raise AIServiceError(f"OpenAI API 호출 실패: {e}")
 
     def _parse_json(self, text: str, default: Any) -> Any:
         """Parse JSON from AI response, handling markdown code blocks."""

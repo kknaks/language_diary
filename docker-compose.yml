@@ -6,9 +6,12 @@ services:
     env_file:
       - ./backend/.env
     volumes:
-      - upload_data:/code/uploads
+      - audio_data:/app/audio_files
+      - upload_data:/app/audio_uploads
     depends_on:
       db:
+        condition: service_healthy
+      redis:
         condition: service_healthy
     restart: unless-stopped
 
@@ -30,6 +33,21 @@ services:
       start_period: 30s
     restart: unless-stopped
 
+  redis:
+    image: redis:7-alpine
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis_data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+    restart: unless-stopped
+
 volumes:
   pg_data:
+  redis_data:
+  audio_data:
   upload_data:

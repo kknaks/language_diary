@@ -5,7 +5,14 @@ from typing import Dict, List
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.exceptions import AppError, ConflictError, NotFoundError
+from app.exceptions import (
+    AppError,
+    ConflictError,
+    NotFoundError,
+    SessionAlreadyCompletedError,
+    SessionExpiredError,
+    TranslationFailedError,
+)
 from app.models.conversation import ConversationMessage, ConversationSession
 from app.models.diary import Diary
 from app.models.learning import LearningCard
@@ -16,28 +23,9 @@ from app.schemas.conversation import (
     ConversationMessageResponse,
 )
 from app.schemas.diary import DiaryDetailResponse, LearningCardResponse
-from app.services.ai_service import AIService, MAX_TURNS
+from app.services.ai_service import AIService, AIServiceError, MAX_TURNS
 
 MVP_USER_ID = 1
-
-
-class SessionExpiredError(AppError):
-    def __init__(self, detail: str = ""):
-        super().__init__(
-            code="SESSION_EXPIRED",
-            message="대화 세션이 만료되었습니다.",
-            detail=detail,
-            status_code=410,
-        )
-
-
-class SessionAlreadyCompletedError(ConflictError):
-    def __init__(self, detail: str = ""):
-        super().__init__(
-            code="SESSION_ALREADY_COMPLETED",
-            message="이미 완료된 대화 세션입니다.",
-            detail=detail,
-        )
 
 
 def _generate_session_id() -> str:
@@ -56,7 +44,10 @@ class ConversationService:
         session = await self.repo.create_session(session_id, MVP_USER_ID)
 
         # Generate AI first message
-        first_message = await self.ai.get_first_message()
+        try:
+            first_message = await self.ai.get_first_message()
+        except AIServiceError as e:
+            raise TranslationFailedError(detail=str(e))
 
         # Store the AI's first message
         await self.repo.add_message(session_id, "ai", first_message, message_order=1)
@@ -129,7 +120,10 @@ class ConversationService:
             return None  # Signal to caller to auto-finish
 
         # Get AI reply
-        ai_reply = await self.ai.get_reply(history)
+        try:
+            ai_reply = await self.ai.get_reply(history)
+        except AIServiceError as e:
+            raise TranslationFailedError(detail=str(e))
 
         # Save AI reply
         await self.repo.add_message(session_id, "ai", ai_reply, message_order=current_order + 1)
@@ -164,7 +158,10 @@ class ConversationService:
         ]
 
         # Generate diary
-        diary_data = await self.ai.generate_diary(history)
+        try:
+            diary_data = await self.ai.generate_diary(history)
+        except AIServiceError as e:
+            raise TranslationFailedError(detail=str(e))
 
         # Create diary in DB
         diary = Diary(
@@ -178,9 +175,12 @@ class ConversationService:
         await self.db.refresh(diary)
 
         # Extract learning points
-        learning_points = await self.ai.extract_learning_points(
-            diary_data.get("translated_text", "")
-        )
+        try:
+            learning_points = await self.ai.extract_learning_points(
+                diary_data.get("translated_text", "")
+            )
+        except AIServiceError as e:
+            raise TranslationFailedError(detail=str(e))
 
         cards = []
         for i, lp in enumerate(learning_points):

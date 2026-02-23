@@ -4,7 +4,7 @@ from fastapi import APIRouter, Depends, File, Form, UploadFile
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.database import get_db
-from app.exceptions import AppError, BadRequestError, NotFoundError
+from app.exceptions import BadRequestError, EvaluationFailedError, NotFoundError, TTSFailedError
 from app.models.learning import LearningCard
 from app.schemas.speech import PronunciationEvaluateResponse, TTSRequest, TTSResponse
 from app.services.pronunciation_service import PronunciationError, PronunciationService
@@ -26,12 +26,7 @@ async def generate_tts(
     try:
         result = await service.generate(text=request.text, voice_id=request.voice_id)
     except TTSError as e:
-        raise AppError(
-            code="TTS_FAILED",
-            message="TTS 생성에 실패했습니다.",
-            detail=str(e),
-            status_code=502,
-        )
+        raise TTSFailedError(detail=str(e))
     return TTSResponse(**result)
 
 
@@ -78,11 +73,6 @@ async def evaluate_pronunciation(
             message=str(e),
         )
     except PronunciationError as e:
-        raise AppError(
-            code="EVALUATION_FAILED",
-            message="발음 평가에 실패했습니다.",
-            detail=str(e),
-            status_code=502,
-        )
+        raise EvaluationFailedError(detail=str(e))
 
     return PronunciationEvaluateResponse(**evaluation)
