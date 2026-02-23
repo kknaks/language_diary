@@ -71,3 +71,29 @@ export type DiaryStatus = 'draft' | 'completed' | 'learning_done';
 
 // ===== Conversation status =====
 export type ConversationStatus = 'created' | 'active' | 'summarizing' | 'completed' | 'expired';
+
+// ===== WebSocket 연결 상태 =====
+export type ConnectionStatus = 'disconnected' | 'connecting' | 'connected' | 'reconnecting';
+
+// ===== 대화 세션 생성 응답 =====
+export interface ConversationSession {
+  session_id: string;
+  status: string;
+  first_message: string;
+  created_at: string;
+}
+
+// ===== WebSocket 메시지 (클라이언트 → 서버) =====
+export type ClientMessage =
+  | { type: 'message'; text: string }
+  | { type: 'audio_start' }
+  | { type: 'audio_end' }
+  | { type: 'finish' };
+
+// ===== WebSocket 메시지 (서버 → 클라이언트) =====
+export type ServerMessage =
+  | { type: 'stt_interim'; text: string }
+  | { type: 'stt_final'; text: string }
+  | { type: 'ai_message'; text: string }
+  | { type: 'diary_created'; diary: Diary; learning_cards: LearningCard[] }
+  | { type: 'error'; code: string; message: string };

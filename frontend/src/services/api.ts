@@ -1,4 +1,4 @@
-import { Diary, PaginatedResponse } from '../types';
+import { Diary, PaginatedResponse, ConversationSession } from '../types';
 import { mockDiaries } from './mockData';
 
 const USE_MOCK = true;
@@ -48,6 +48,25 @@ export async function updateDiary(id: string, data: Partial<Diary>): Promise<Dia
     method: 'PUT',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(data),
+  });
+  return res.json();
+}
+
+// ===== Conversation API =====
+
+export async function createConversation(): Promise<ConversationSession> {
+  if (USE_MOCK) {
+    await delay(400);
+    return {
+      session_id: `conv_${Date.now()}`,
+      status: 'active',
+      first_message: '안녕! 오늘 하루 어땠어? 😊',
+      created_at: new Date().toISOString(),
+    };
+  }
+  const res = await fetch(`${API_BASE_URL}/api/v1/conversation`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
   });
   return res.json();
 }
