@@ -7,7 +7,7 @@ from app.main import app
 from app.database import get_db
 from app.models.base import Base
 from app.models import (  # noqa: ensure models loaded
-    User, Diary, LearningCard,
+    User, Diary, LearningCard, PronunciationResult, TTSCache,
     ConversationSession, ConversationMessage,
 )
 
