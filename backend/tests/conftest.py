@@ -17,8 +17,21 @@ engine = create_async_engine(TEST_DB_URL, echo=False)
 TestSession = async_sessionmaker(engine, class_=AsyncSession, expire_on_commit=False)
 
 
+def _reset_rate_limiter():
+    """Walk the built middleware stack and clear rate limiter state."""
+    obj = app.middleware_stack
+    while obj is not None:
+        if hasattr(obj, "_requests"):
+            obj._requests.clear()
+        obj = getattr(obj, "app", None)
+
+
 @pytest_asyncio.fixture(autouse=True)
 async def setup_db():
+    # Reset rate limiter state between tests to prevent 429 across test runs
+    if app.middleware_stack is not None:
+        _reset_rate_limiter()
+
     async with engine.begin() as conn:
         await conn.run_sync(Base.metadata.create_all)
     yield

@@ -22,8 +22,19 @@ logging.basicConfig(
 
 app = FastAPI(
     title="Language Diary API",
-    version="0.1.0",
+    description=(
+        "AI-powered conversational diary app for language learning. "
+        "Users talk about their day in Korean via AI conversation, "
+        "and the system generates an English diary with learning points, TTS, and pronunciation evaluation."
+    ),
+    version="1.0.0",
     debug=settings.DEBUG,
+    openapi_tags=[
+        {"name": "diary", "description": "Diary CRUD — list, detail, update, delete, complete"},
+        {"name": "conversation", "description": "AI conversation sessions — create, query, WebSocket chat"},
+        {"name": "speech", "description": "TTS generation and pronunciation evaluation"},
+        {"name": "user", "description": "User profile (MVP: hardcoded user_id=1)"},
+    ],
 )
 
 # Static file serving for TTS audio and uploaded recordings
@@ -65,6 +76,7 @@ app.include_router(api_router, prefix="/api/v1")
 app.add_api_websocket_route("/ws/conversation/{session_id}", conversation_websocket)
 
 
-@app.get("/health")
+@app.get("/health", tags=["system"])
 async def health():
+    """Health check endpoint. Returns 200 if the server is running."""
     return {"status": "ok"}
