@@ -11,6 +11,7 @@ alembic==1.14.*
 # AI / Speech
 openai==1.61.*
 elevenlabs>=2.0
+websockets>=13.0
 
 # Azure Speech SDK (발음 평가)
 azure-cognitiveservices-speech==1.42.*
@@ -28,4 +29,3 @@ python-dotenv==1.0.*
 pytest==8.3.*
 pytest-asyncio==0.25.*
 aiosqlite==0.20.*
-websockets>=13.0
