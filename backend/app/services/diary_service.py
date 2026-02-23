@@ -2,7 +2,7 @@ from typing import Optional
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.exceptions import NotFoundError, BadRequestError
+from app.exceptions import BadRequestError, ConflictError, NotFoundError
 from app.repositories.diary_repo import DiaryRepository
 from app.schemas.diary import (
     DiaryDetailResponse,
@@ -37,17 +37,29 @@ class DiaryService:
     async def get_detail(self, diary_id: int) -> DiaryDetailResponse:
         diary = await self.repo.get_by_id(diary_id, MVP_USER_ID)
         if not diary:
-            raise NotFoundError(detail=f"Diary not found: diary_id={diary_id}")
+            raise NotFoundError(
+                code="DIARY_NOT_FOUND",
+                message="일기를 찾을 수 없습니다.",
+                detail=f"diary_id={diary_id}",
+            )
         return DiaryDetailResponse.model_validate(diary)
 
     async def update(self, diary_id: int, data: DiaryUpdate) -> DiaryResponse:
         diary = await self.repo.get_by_id(diary_id, MVP_USER_ID)
         if not diary:
-            raise NotFoundError(detail=f"Diary not found: diary_id={diary_id}")
+            raise NotFoundError(
+                code="DIARY_NOT_FOUND",
+                message="일기를 찾을 수 없습니다.",
+                detail=f"diary_id={diary_id}",
+            )
 
         update_data = data.model_dump(exclude_unset=True)
         if not update_data:
-            raise BadRequestError(detail="No fields to update")
+            raise BadRequestError(
+                code="VALIDATION_ERROR",
+                message="수정할 필드가 없습니다.",
+                detail="At least one field required",
+            )
 
         diary = await self.repo.update(diary, **update_data)
         await self.db.commit()
@@ -56,16 +68,28 @@ class DiaryService:
     async def delete(self, diary_id: int) -> None:
         diary = await self.repo.get_by_id(diary_id, MVP_USER_ID)
         if not diary:
-            raise NotFoundError(detail=f"Diary not found: diary_id={diary_id}")
+            raise NotFoundError(
+                code="DIARY_NOT_FOUND",
+                message="일기를 찾을 수 없습니다.",
+                detail=f"diary_id={diary_id}",
+            )
         await self.repo.soft_delete(diary)
         await self.db.commit()
 
     async def complete(self, diary_id: int) -> DiaryResponse:
         diary = await self.repo.get_by_id(diary_id, MVP_USER_ID)
         if not diary:
-            raise NotFoundError(detail=f"Diary not found: diary_id={diary_id}")
+            raise NotFoundError(
+                code="DIARY_NOT_FOUND",
+                message="일기를 찾을 수 없습니다.",
+                detail=f"diary_id={diary_id}",
+            )
         if diary.status == "completed":
-            raise BadRequestError(detail="Diary already completed")
+            raise ConflictError(
+                code="DIARY_ALREADY_COMPLETED",
+                message="이미 학습 완료된 일기입니다.",
+                detail=f"diary_id={diary_id}",
+            )
 
         diary = await self.repo.mark_completed(diary)
         await self.db.commit()

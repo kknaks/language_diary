@@ -13,5 +13,9 @@ class UserService:
         """MVP: hardcoded user_id=1"""
         user = await self.repo.get_by_id(1)
         if not user:
-            raise NotFoundError(detail="MVP user not found")
+            raise NotFoundError(
+                code="USER_NOT_FOUND",
+                message="사용자를 찾을 수 없습니다.",
+                detail="user_id=1",
+            )
         return UserResponse.model_validate(user)
