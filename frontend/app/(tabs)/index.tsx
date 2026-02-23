@@ -1,14 +1,14 @@
 import React, { useEffect, useCallback } from 'react';
 import { View, Text, StyleSheet, FlatList, RefreshControl } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
-import { useNavigation } from '@react-navigation/native';
-import { useDiaryStore } from '../stores/useDiaryStore';
-import { Button, Loading, ErrorState, EmptyState } from '../components/common';
-import DiaryCard from '../components/diary/DiaryCard';
-import { colors, fontSize, spacing, shadows, borderRadius } from '../constants/theme';
+import { useRouter } from 'expo-router';
+import { useDiaryStore } from '../../src/stores/useDiaryStore';
+import { Button, Loading, ErrorState, EmptyState } from '../../src/components/common';
+import DiaryCard from '../../src/components/diary/DiaryCard';
+import { colors, fontSize, spacing, shadows, borderRadius } from '../../src/constants/theme';
 
 export default function HomeScreen() {
-  const navigation = useNavigation<any>();
+  const router = useRouter();
   const { diaries, isLoading, error, fetchDiaries } = useDiaryStore();
   const [refreshing, setRefreshing] = React.useState(false);
 
@@ -23,7 +23,7 @@ export default function HomeScreen() {
   }, [fetchDiaries]);
 
   const handleWrite = () => {
-    navigation.navigate('Write');
+    router.push('/(tabs)/write');
   };
 
   if (isLoading && diaries.length === 0) return <Loading message="일기를 불러오는 중..." />;
@@ -34,7 +34,7 @@ export default function HomeScreen() {
       {/* Header */}
       <View style={styles.header}>
         <View>
-          <Text style={styles.greeting}>안녕하세요 👋</Text>
+          <Text style={styles.greeting}>안녕하세요</Text>
           <Text style={styles.headerSubtitle}>오늘도 영어 일기를 써볼까요?</Text>
         </View>
       </View>
@@ -75,13 +75,16 @@ export default function HomeScreen() {
           data={diaries}
           keyExtractor={(item) => item.id}
           renderItem={({ item }) => (
-            <DiaryCard
-              diary={item}
-              onPress={() => navigation.navigate('DiaryDetail', { diaryId: item.id })}
-            />
+            <DiaryCard diary={item} onPress={() => {}} />
           )}
           contentContainerStyle={styles.list}
-          refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={colors.primary} />}
+          refreshControl={
+            <RefreshControl
+              refreshing={refreshing}
+              onRefresh={onRefresh}
+              tintColor={colors.primary}
+            />
+          }
           showsVerticalScrollIndicator={false}
         />
       )}
@@ -91,9 +94,17 @@ export default function HomeScreen() {
 
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: colors.background },
-  header: { paddingHorizontal: spacing.lg, paddingTop: spacing.lg, paddingBottom: spacing.md },
+  header: {
+    paddingHorizontal: spacing.lg,
+    paddingTop: spacing.lg,
+    paddingBottom: spacing.md,
+  },
   greeting: { fontSize: fontSize.xxl, fontWeight: '700', color: colors.text },
-  headerSubtitle: { fontSize: fontSize.sm, color: colors.textSecondary, marginTop: 4 },
+  headerSubtitle: {
+    fontSize: fontSize.sm,
+    color: colors.textSecondary,
+    marginTop: 4,
+  },
   ctaContainer: { paddingHorizontal: spacing.lg, marginBottom: spacing.md },
   ctaCard: {
     backgroundColor: colors.surface,
@@ -105,8 +116,19 @@ const styles = StyleSheet.create({
   ctaContent: { flexDirection: 'row', alignItems: 'center', gap: spacing.md },
   ctaText: { flex: 1 },
   ctaTitle: { fontSize: fontSize.lg, fontWeight: '700', color: colors.text },
-  ctaDescription: { fontSize: fontSize.sm, color: colors.textSecondary, marginTop: 2 },
-  sectionHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', paddingHorizontal: spacing.lg, marginBottom: spacing.sm, marginTop: spacing.sm },
+  ctaDescription: {
+    fontSize: fontSize.sm,
+    color: colors.textSecondary,
+    marginTop: 2,
+  },
+  sectionHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    paddingHorizontal: spacing.lg,
+    marginBottom: spacing.sm,
+    marginTop: spacing.sm,
+  },
   sectionTitle: { fontSize: fontSize.lg, fontWeight: '700', color: colors.text },
   list: { paddingHorizontal: spacing.lg, paddingBottom: spacing.xxl },
 });

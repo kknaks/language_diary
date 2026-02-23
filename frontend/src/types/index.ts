@@ -66,16 +66,8 @@ export interface PaginatedResponse<T> {
   hasMore: boolean;
 }
 
-// ===== 네비게이션 =====
-export type RootTabParamList = {
-  Home: undefined;
-  Write: undefined;
-  History: undefined;
-};
+// ===== Diary status (PRD 기반) =====
+export type DiaryStatus = 'draft' | 'completed' | 'learning_done';
 
-export type RootStackParamList = {
-  Main: undefined;
-  DiaryDetail: { diaryId: string };
-  Learning: { diaryId: string };
-  ConversationDetail: { conversationId: string };
-};
+// ===== Conversation status =====
+export type ConversationStatus = 'created' | 'active' | 'summarizing' | 'completed' | 'expired';
