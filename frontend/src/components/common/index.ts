@@ -3,3 +3,4 @@ export { default as Card } from './Card';
 export { default as Loading } from './Loading';
 export { default as ErrorState } from './ErrorState';
 export { default as EmptyState } from './EmptyState';
+export { default as NetworkBanner } from './NetworkBanner';

@@ -1,5 +1,5 @@
-import { Diary, PaginatedResponse, ConversationSession, TtsResponse, PronunciationResult } from '../types';
-import { mockDiaries } from './mockData';
+import { Diary, Message, PaginatedResponse, ConversationSession, TtsResponse, PronunciationResult } from '../types';
+import { mockDiaries, mockMessagesByConversation } from './mockData';
 
 const USE_MOCK = true;
 const API_BASE_URL = process.env.EXPO_PUBLIC_API_BASE_URL || 'http://localhost:8000';
@@ -12,7 +12,21 @@ const delay = (ms: number = 500) => new Promise(resolve => setTimeout(resolve, m
 export async function getDiaries(cursor?: string, limit: number = 20): Promise<PaginatedResponse<Diary>> {
   if (USE_MOCK) {
     await delay();
-    return { data: mockDiaries, hasMore: false };
+    // Simulate cursor-based pagination
+    let items = [...mockDiaries];
+    if (cursor) {
+      const idx = items.findIndex(d => d.id === cursor);
+      if (idx >= 0) {
+        items = items.slice(idx + 1);
+      }
+    }
+    const page = items.slice(0, limit);
+    const hasMore = items.length > limit;
+    return {
+      data: page,
+      cursor: hasMore ? page[page.length - 1]?.id : undefined,
+      hasMore,
+    };
   }
   const res = await fetch(`${API_BASE_URL}/api/v1/diary?limit=${limit}${cursor ? `&cursor=${cursor}` : ''}`);
   return res.json();
@@ -50,6 +64,35 @@ export async function updateDiary(id: string, data: Partial<Diary>): Promise<Dia
     body: JSON.stringify(data),
   });
   return res.json();
+}
+
+// ===== Conversation API =====
+
+export async function createConversation(): Promise<ConversationSession> {
+  if (USE_MOCK) {
+    await delay(400);
+    return {
+      session_id: `conv_${Date.now()}`,
+      status: 'active',
+      first_message: '안녕! 오늘 하루 어땠어?',
+      created_at: new Date().toISOString(),
+    };
+  }
+  const res = await fetch(`${API_BASE_URL}/api/v1/conversation`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+  });
+  return res.json();
+}
+
+export async function getConversationMessages(conversationId: string): Promise<Message[]> {
+  if (USE_MOCK) {
+    await delay(300);
+    return mockMessagesByConversation[conversationId] ?? [];
+  }
+  const res = await fetch(`${API_BASE_URL}/api/v1/conversation/${conversationId}`);
+  const data = await res.json();
+  return data.messages ?? [];
 }
 
 // ===== Speech API =====
@@ -93,23 +136,4 @@ export async function completeDiary(id: string): Promise<void> {
     return;
   }
   await fetch(`${API_BASE_URL}/api/v1/diary/${id}/complete`, { method: 'POST' });
-}
-
-// ===== Conversation API =====
-
-export async function createConversation(): Promise<ConversationSession> {
-  if (USE_MOCK) {
-    await delay(400);
-    return {
-      session_id: `conv_${Date.now()}`,
-      status: 'active',
-      first_message: '안녕! 오늘 하루 어땠어? 😊',
-      created_at: new Date().toISOString(),
-    };
-  }
-  const res = await fetch(`${API_BASE_URL}/api/v1/conversation`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-  });
-  return res.json();
 }

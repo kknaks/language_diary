@@ -11,8 +11,8 @@ interface ErrorStateProps {
 
 export default function ErrorState({ message = '문제가 발생했습니다', onRetry }: ErrorStateProps) {
   return (
-    <View style={styles.container}>
-      <Ionicons name="alert-circle-outline" size={56} color={colors.error} />
+    <View style={styles.container} accessibilityRole="alert" accessibilityLabel={message}>
+      <Ionicons name="alert-circle-outline" size={56} color={colors.error} accessibilityElementsHidden />
       <Text style={styles.message}>{message}</Text>
       {onRetry && (
         <Button title="다시 시도" onPress={onRetry} variant="outline" size="sm" />

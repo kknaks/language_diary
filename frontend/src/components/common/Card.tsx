@@ -6,9 +6,10 @@ interface CardProps {
   children: React.ReactNode;
   onPress?: () => void;
   style?: ViewStyle;
+  accessibilityLabel?: string;
 }
 
-export default function Card({ children, onPress, style }: CardProps) {
+export default function Card({ children, onPress, style, accessibilityLabel }: CardProps) {
   const content = (
     <View style={[styles.card, style]}>
       {children}
@@ -17,7 +18,12 @@ export default function Card({ children, onPress, style }: CardProps) {
 
   if (onPress) {
     return (
-      <TouchableOpacity onPress={onPress} activeOpacity={0.7}>
+      <TouchableOpacity
+        onPress={onPress}
+        activeOpacity={0.7}
+        accessibilityRole="button"
+        accessibilityLabel={accessibilityLabel}
+      >
         {content}
       </TouchableOpacity>
     );

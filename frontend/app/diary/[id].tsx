@@ -1,19 +1,22 @@
 import React, { useEffect, useState, useCallback } from 'react';
-import { View, Text, ScrollView, StyleSheet } from 'react-native';
+import { View, Text, ScrollView, StyleSheet, Alert } from 'react-native';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 
 import { colors, fontSize, spacing, borderRadius, shadows } from '../../src/constants/theme';
 import { Button, Loading, ErrorState } from '../../src/components/common';
 import { DiaryEditor, LanguageToggle } from '../../src/components/diary';
-import { getDiary, updateDiary } from '../../src/services/api';
-import { Diary } from '../../src/types';
+import { CefrBadge } from '../../src/components/learning';
+import { getDiary, updateDiary, getConversationMessages } from '../../src/services/api';
+import { useDiaryStore } from '../../src/stores/useDiaryStore';
+import { Diary, Message } from '../../src/types';
 
 type Language = 'ko' | 'en';
 
 export default function DiaryDetailScreen() {
   const { id } = useLocalSearchParams<{ id: string }>();
   const router = useRouter();
+  const removeDiary = useDiaryStore((s) => s.removeDiary);
 
   const [diary, setDiary] = useState<Diary | null>(null);
   const [isLoading, setIsLoading] = useState(true);
@@ -22,6 +25,10 @@ export default function DiaryDetailScreen() {
   const [isEditing, setIsEditing] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
 
+  // Conversation messages
+  const [conversationMessages, setConversationMessages] = useState<Message[]>([]);
+  const [showConversation, setShowConversation] = useState(false);
+
   const fetchDiary = useCallback(async () => {
     if (!id) return;
     setIsLoading(true);
@@ -29,6 +36,15 @@ export default function DiaryDetailScreen() {
     try {
       const data = await getDiary(id);
       setDiary(data);
+      // Fetch conversation messages if available
+      if (data.conversationId) {
+        try {
+          const msgs = await getConversationMessages(data.conversationId);
+          setConversationMessages(msgs);
+        } catch {
+          // Non-critical: conversation messages are optional
+        }
+      }
     } catch {
       setError('일기를 불러올 수 없습니다');
     } finally {
@@ -60,6 +76,25 @@ export default function DiaryDetailScreen() {
     router.push(`/learning/${id}`);
   }, [id, router]);
 
+  const handleDelete = useCallback(() => {
+    if (!id) return;
+    Alert.alert(
+      '일기 삭제',
+      '이 일기를 삭제하시겠습니까?\n삭제된 일기는 복구할 수 없습니다.',
+      [
+        { text: '취소', style: 'cancel' },
+        {
+          text: '삭제',
+          style: 'destructive',
+          onPress: async () => {
+            await removeDiary(id);
+            router.back();
+          },
+        },
+      ],
+    );
+  }, [id, removeDiary, router]);
+
   if (isLoading) return <Loading message="일기를 불러오는 중..." />;
   if (error || !diary) return <ErrorState message={error ?? '일기를 찾을 수 없습니다'} onRetry={fetchDiary} />;
 
@@ -72,7 +107,7 @@ export default function DiaryDetailScreen() {
       <LanguageToggle selected={language} onSelect={setLanguage} />
 
       {/* Title */}
-      <Text style={styles.title}>{currentTitle}</Text>
+      <Text style={styles.title} accessibilityRole="header">{currentTitle}</Text>
 
       {/* Date */}
       <Text style={styles.date}>{formatDate(diary.createdAt)}</Text>
@@ -99,15 +134,60 @@ export default function DiaryDetailScreen() {
         </View>
       )}
 
+      {/* Conversation History */}
+      {conversationMessages.length > 0 && (
+        <View style={styles.section}>
+          <TouchableHeader
+            title="대화 기록"
+            icon="chatbubbles-outline"
+            isOpen={showConversation}
+            onToggle={() => setShowConversation(!showConversation)}
+            count={conversationMessages.length}
+          />
+          {showConversation && (
+            <View style={styles.conversationList}>
+              {conversationMessages.map((msg) => (
+                <View
+                  key={msg.id}
+                  style={[
+                    styles.messageBubble,
+                    msg.role === 'user' ? styles.userBubble : styles.aiBubble,
+                  ]}
+                >
+                  <Text style={styles.messageRole}>
+                    {msg.role === 'user' ? '나' : 'AI'}
+                  </Text>
+                  <Text style={styles.messageText}>{msg.content}</Text>
+                </View>
+              ))}
+            </View>
+          )}
+        </View>
+      )}
+
       {/* Learning Cards Summary */}
       {diary.learningCards.length > 0 && (
-        <View style={styles.learningSection}>
-          <View style={styles.learningSummary}>
-            <Ionicons name="flash" size={20} color={colors.primary} />
-            <Text style={styles.learningSummaryText}>
-              학습 포인트 {diary.learningCards.length}개
-            </Text>
+        <View style={styles.section}>
+          <View style={styles.sectionHeader}>
+            <View style={styles.sectionHeaderLeft}>
+              <Ionicons name="flash" size={20} color={colors.primary} />
+              <Text style={styles.sectionTitle}>
+                학습 포인트 {diary.learningCards.length}개
+              </Text>
+            </View>
           </View>
+
+          {/* Learning card previews */}
+          {diary.learningCards.map((card) => (
+            <View key={card.id} style={styles.learningCardPreview}>
+              <View style={styles.learningCardHeader}>
+                <Text style={styles.learningCardEnglish}>{card.english}</Text>
+                <CefrBadge level={card.cefrLevel} />
+              </View>
+              <Text style={styles.learningCardKorean}>{card.korean}</Text>
+            </View>
+          ))}
+
           <Button
             title="학습 시작"
             onPress={handleStartLearning}
@@ -117,7 +197,55 @@ export default function DiaryDetailScreen() {
           />
         </View>
       )}
+
+      {/* Delete button */}
+      <Button
+        title="일기 삭제"
+        onPress={handleDelete}
+        variant="ghost"
+        size="sm"
+        icon={<Ionicons name="trash-outline" size={16} color={colors.error} />}
+        textStyle={{ color: colors.error }}
+        style={styles.deleteButton}
+      />
     </ScrollView>
+  );
+}
+
+// Collapsible section header
+function TouchableHeader({
+  title,
+  icon,
+  isOpen,
+  onToggle,
+  count,
+}: {
+  title: string;
+  icon: keyof typeof Ionicons.glyphMap;
+  isOpen: boolean;
+  onToggle: () => void;
+  count: number;
+}) {
+  return (
+    <View style={styles.sectionHeader}>
+      <View style={styles.sectionHeaderLeft}>
+        <Ionicons name={icon} size={20} color={colors.primary} />
+        <Text style={styles.sectionTitle}>{title} ({count})</Text>
+      </View>
+      <Button
+        title={isOpen ? '접기' : '보기'}
+        onPress={onToggle}
+        variant="ghost"
+        size="sm"
+        icon={
+          <Ionicons
+            name={isOpen ? 'chevron-up' : 'chevron-down'}
+            size={16}
+            color={colors.primary}
+          />
+        }
+      />
+    </View>
   );
 }
 
@@ -165,25 +293,87 @@ const styles = StyleSheet.create({
     alignSelf: 'flex-end',
     marginTop: spacing.sm,
   },
-  learningSection: {
+  // Sections
+  section: {
     backgroundColor: colors.surface,
     borderRadius: borderRadius.lg,
     padding: spacing.lg,
-    gap: spacing.md,
-    ...shadows.md,
-    marginTop: spacing.sm,
+    ...shadows.sm,
   },
-  learningSummary: {
+  sectionHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+  },
+  sectionHeaderLeft: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: spacing.sm,
   },
-  learningSummaryText: {
+  sectionTitle: {
     fontSize: fontSize.md,
     fontWeight: '600',
     color: colors.text,
   },
+  // Conversation messages
+  conversationList: {
+    marginTop: spacing.md,
+    gap: spacing.sm,
+  },
+  messageBubble: {
+    padding: spacing.sm,
+    borderRadius: borderRadius.md,
+    maxWidth: '85%',
+  },
+  userBubble: {
+    backgroundColor: colors.primary + '15',
+    alignSelf: 'flex-end',
+  },
+  aiBubble: {
+    backgroundColor: colors.skeleton,
+    alignSelf: 'flex-start',
+  },
+  messageRole: {
+    fontSize: fontSize.xs,
+    fontWeight: '700',
+    color: colors.textTertiary,
+    marginBottom: 2,
+  },
+  messageText: {
+    fontSize: fontSize.sm,
+    color: colors.text,
+    lineHeight: fontSize.sm * 1.5,
+  },
+  // Learning card previews
+  learningCardPreview: {
+    marginTop: spacing.sm,
+    paddingTop: spacing.sm,
+    borderTopWidth: StyleSheet.hairlineWidth,
+    borderTopColor: colors.border,
+  },
+  learningCardHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+  },
+  learningCardEnglish: {
+    fontSize: fontSize.md,
+    fontWeight: '600',
+    color: colors.text,
+    flex: 1,
+  },
+  learningCardKorean: {
+    fontSize: fontSize.sm,
+    color: colors.textSecondary,
+    marginTop: 2,
+  },
   learningButton: {
     width: '100%',
+    marginTop: spacing.md,
+  },
+  // Delete
+  deleteButton: {
+    alignSelf: 'center',
+    marginTop: spacing.md,
   },
 });

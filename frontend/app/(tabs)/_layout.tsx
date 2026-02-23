@@ -37,9 +37,9 @@ export default function TabLayout() {
         tabBarLabel: tabConfig[route.name]?.label,
       })}
     >
-      <Tabs.Screen name="index" />
-      <Tabs.Screen name="write" />
-      <Tabs.Screen name="history" />
+      <Tabs.Screen name="index" options={{ tabBarAccessibilityLabel: '홈 탭' }} />
+      <Tabs.Screen name="write" options={{ tabBarAccessibilityLabel: '일기 쓰기 탭' }} />
+      <Tabs.Screen name="history" options={{ tabBarAccessibilityLabel: '히스토리 탭' }} />
     </Tabs>
   );
 }
