@@ -1,6 +1,6 @@
 import { create } from 'zustand';
 import { Conversation, Message, ConnectionStatus, Diary, ServerMessage } from '../types';
-import { createConversation } from '../services/api';
+import { createConversation, adaptDiary } from '../services/api';
 import { wsClient } from '../services/websocket';
 
 interface ConversationState {
@@ -64,14 +64,14 @@ export const useConversationStore = create<ConversationState>((set, get) => ({
       // Add AI first message
       const firstMessage: Message = {
         id: generateId(),
-        conversationId: session.session_id,
+        conversationId: session.sessionId,
         role: 'assistant',
-        content: session.first_message,
-        createdAt: session.created_at,
+        content: session.firstMessage,
+        createdAt: session.createdAt,
       };
 
       set({
-        sessionId: session.session_id,
+        sessionId: session.sessionId,
         messages: [firstMessage],
         turnCount: 1,
         isLoading: false,
@@ -89,7 +89,7 @@ export const useConversationStore = create<ConversationState>((set, get) => ({
         handleServerMessage(msg, set, get);
       });
 
-      wsClient.connect(session.session_id);
+      wsClient.connect(session.sessionId);
     } catch {
       set({ isLoading: false, error: '대화를 시작할 수 없습니다. 다시 시도해주세요.' });
     }
@@ -179,7 +179,7 @@ function handleServerMessage(
     }
 
     case 'diary_created':
-      set({ isCreatingDiary: false, createdDiary: msg.diary });
+      set({ isCreatingDiary: false, createdDiary: adaptDiary(msg.diary) });
       break;
 
     case 'error':

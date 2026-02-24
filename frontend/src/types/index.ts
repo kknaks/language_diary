@@ -77,10 +77,10 @@ export type ConnectionStatus = 'disconnected' | 'connecting' | 'connected' | 're
 
 // ===== 대화 세션 생성 응답 =====
 export interface ConversationSession {
-  session_id: string;
+  sessionId: string;
   status: string;
-  first_message: string;
-  created_at: string;
+  firstMessage: string;
+  createdAt: string;
 }
 
 // ===== WebSocket 메시지 (클라이언트 → 서버) =====
@@ -93,6 +93,9 @@ export type ClientMessage =
 // ===== TTS 응답 =====
 export interface TtsResponse {
   audioUrl: string;
+  text?: string;
+  cached?: boolean;
+  durationMs?: number;
 }
 
 // ===== 발음 평가 결과 =====
@@ -109,5 +112,5 @@ export type ServerMessage =
   | { type: 'stt_interim'; text: string }
   | { type: 'stt_final'; text: string }
   | { type: 'ai_message'; text: string }
-  | { type: 'diary_created'; diary: Diary; learning_cards: LearningCard[] }
+  | { type: 'diary_created'; diary: Diary }
   | { type: 'error'; code: string; message: string };
