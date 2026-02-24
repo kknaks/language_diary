@@ -19,6 +19,7 @@ export default ({ config }: ConfigContext): ExpoConfig => ({
   ios: {
     supportsTablet: true,
     bundleIdentifier: 'com.kknaks.languagediary',
+    appleTeamId: 'UYQF47UCVR',
   },
   android: {
     adaptiveIcon: {
