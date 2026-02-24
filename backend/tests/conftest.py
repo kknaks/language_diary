@@ -145,3 +145,21 @@ async def seed_conversation(db_session: AsyncSession, seed_user):
     await db_session.commit()
     await db_session.refresh(session)
     return session
+
+
+import pytest
+from unittest.mock import patch, AsyncMock
+
+from app.services.tts_service import TTSError
+
+
+@pytest.fixture(autouse=True)
+def mock_tts_stream_session():
+    """Force TTSStreamSession to fail so tests use REST TTS fallback."""
+    with patch("app.api.v1.conversation.TTSStreamSession") as MockStream:
+        instance = MockStream.return_value
+        instance.connect = AsyncMock(
+            side_effect=TTSError("TTS WebSocket unavailable in test")
+        )
+        instance.close = AsyncMock()
+        yield MockStream

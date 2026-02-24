@@ -15,34 +15,71 @@ from app.exceptions import AppError
 from app.schemas.conversation import ConversationCreateResponse, ConversationDetailResponse
 from app.services.conversation_service import ConversationService
 from app.services.stt_service import STTError, STTSession
-from app.services.tts_service import TTSService
+from app.services.tts_service import TTSError, TTSService, TTSStreamSession
 
 logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/conversation", tags=["conversation"])
 
 
-async def _send_tts(websocket: WebSocket, db, text: str, index: Optional[int] = None) -> None:
-    """Generate TTS audio for text and send base64-encoded data to client via WebSocket."""
+async def _send_tts_rest(websocket: WebSocket, db, text: str, index: Optional[int] = None) -> None:
+    """Fallback: Generate TTS audio via REST and send base64-encoded data to client."""
     try:
         tts_service = TTSService(db)
         audio_bytes = await tts_service.generate_bytes(text)
         audio_b64 = base64.b64encode(audio_bytes).decode("ascii")
-        msg: dict = {
+        msg = {
             "type": "tts_audio",
             "audio_data": audio_b64,
             "format": "mp3",
-        }
+        }  # type: dict
         if index is not None:
             msg["index"] = index
         await websocket.send_json(msg)
     except Exception as e:
-        logger.error("TTS failed: %s", e)
+        logger.error("TTS REST fallback failed: %s", e)
         await websocket.send_json({
             "type": "error",
             "code": "TTS_FAILED",
             "message": str(e),
         })
+
+
+async def _send_tts_ws(websocket: WebSocket, text: str, index: int = 0) -> None:
+    """Generate TTS audio via WebSocket streaming and push chunks to client.
+
+    Falls back to REST TTS if WebSocket connection fails.
+    """
+    tts_session = None  # type: Optional[TTSStreamSession]
+    try:
+        tts_session = TTSStreamSession()
+        await tts_session.connect()
+
+        await tts_session.send_sentence(text)
+
+        chunk_index = 0
+        async for audio_chunk in tts_session.receive_audio_chunks():
+            audio_b64 = base64.b64encode(audio_chunk).decode("ascii")
+            await websocket.send_json({
+                "type": "tts_audio",
+                "audio_data": audio_b64,
+                "format": "mp3",
+                "index": index,
+                "chunk_index": chunk_index,
+            })
+            chunk_index += 1
+
+        await tts_session.close()
+    except TTSError as e:
+        logger.warning("TTS WebSocket failed: %s", e)
+        if tts_session:
+            await tts_session.close()
+        raise
+    except Exception as e:
+        logger.error("TTS WebSocket unexpected error: %s", e)
+        if tts_session:
+            await tts_session.close()
+        raise
 
 
 @router.post("", response_model=ConversationCreateResponse, status_code=201)
@@ -64,17 +101,60 @@ async def get_conversation(session_id: str, db: AsyncSession = Depends(get_db)):
 async def _handle_ai_reply_streaming(
     websocket: WebSocket, db, service: ConversationService, session_id: str, user_text: str,
 ):
-    """Handle user message with streaming AI reply + parallel TTS.
+    """Handle user message with streaming AI reply + TTS WebSocket streaming.
 
-    Sends ai_message_chunk for each sentence, then tts_audio for each.
-    If max turns reached, the generator yields nothing and auto-finishes.
+    Pipeline:
+    1. Open a single TTS WebSocket connection for the turn
+    2. LLM streams sentences → send ai_chunk + flush to TTS
+    3. Background task relays TTS audio chunks → tts_audio to client
+    4. On turn end → ai_done + TTS close
+    5. Falls back to REST TTS if WebSocket connection fails
+
     Returns True to continue message loop, False to break.
     """
+    tts_session = None  # type: Optional[TTSStreamSession]
+    relay_task = None  # type: Optional[asyncio.Task]
+
     try:
         sentences = []
-        tts_generators = []
         index = 0
+        audio_index_holder = [0]  # mutable holder for nonlocal-like access
 
+        # --- Try to open TTS WebSocket ---
+        use_ws_tts = True
+        try:
+            tts_session = TTSStreamSession()
+            await tts_session.connect()
+        except TTSError as e:
+            logger.warning("TTS WebSocket connection failed, falling back to REST: %s", e)
+            tts_session = None
+            use_ws_tts = False
+
+        # --- Background: relay TTS audio chunks to client ---
+        async def _relay_tts_audio():
+            """Read audio chunks from TTS WebSocket and push to client."""
+            if not tts_session:
+                return
+            try:
+                async for audio_chunk in tts_session.receive_audio_chunks():
+                    audio_b64 = base64.b64encode(audio_chunk).decode("ascii")
+                    await websocket.send_json({
+                        "type": "tts_audio",
+                        "audio_data": audio_b64,
+                        "format": "mp3",
+                        "index": audio_index_holder[0],
+                    })
+                    audio_index_holder[0] += 1
+            except Exception as e:
+                logger.error("TTS audio relay error: %s", e)
+
+        if use_ws_tts:
+            relay_task = asyncio.create_task(_relay_tts_audio())
+
+        # --- REST fallback collectors (used only if WS fails) ---
+        rest_tts_tasks = []  # type: list
+
+        # --- LLM streaming → sentence yield → TTS flush ---
         async for sentence in service.handle_user_message_streaming(session_id, user_text):
             sentences.append(sentence)
             await websocket.send_json({
@@ -83,41 +163,80 @@ async def _handle_ai_reply_streaming(
                 "index": index,
                 "is_final": False,
             })
-            # Pre-generate TTS bytes in parallel (but don't send yet)
-            tts_service = TTSService(db)
-            task = asyncio.create_task(tts_service.generate_bytes(sentence))
-            tts_generators.append((index, task))
+
+            if use_ws_tts and tts_session:
+                try:
+                    await tts_session.send_sentence(sentence)
+                except TTSError as e:
+                    logger.warning("TTS WS send failed at sentence %d, switching to REST: %s", index, e)
+                    use_ws_tts = False
+                    # Close broken WS session
+                    await tts_session.close()
+                    tts_session = None
+                    if relay_task:
+                        relay_task.cancel()
+                        try:
+                            await relay_task
+                        except (asyncio.CancelledError, Exception):
+                            pass
+                        relay_task = None
+                    # Queue this sentence for REST fallback
+                    tts_svc = TTSService(db)
+                    rest_tts_tasks.append((index, asyncio.create_task(tts_svc.generate_bytes(sentence))))
+            elif not use_ws_tts:
+                tts_svc = TTSService(db)
+                rest_tts_tasks.append((index, asyncio.create_task(tts_svc.generate_bytes(sentence))))
+
             index += 1
 
         if sentences:
-            # Send final marker
+            # Send final chunk marker (for frontend compatibility)
             await websocket.send_json({
                 "type": "ai_message_chunk",
                 "text": "",
                 "index": index,
                 "is_final": True,
             })
-            # Now send all TTS results in order as base64
-            for tts_index, task in tts_generators:
-                try:
-                    audio_bytes = await task
-                    audio_b64 = base64.b64encode(audio_bytes).decode("ascii")
-                    await websocket.send_json({
-                        "type": "tts_audio",
-                        "audio_data": audio_b64,
-                        "format": "mp3",
-                        "index": tts_index,
-                    })
-                except Exception as e:
-                    logger.error("TTS failed for chunk %d: %s", tts_index, e)
-                    await websocket.send_json({
-                        "type": "error",
-                        "code": "TTS_FAILED",
-                        "message": str(e),
-                    })
+            # Signal LLM done
+            await websocket.send_json({"type": "ai_done"})
+
+            if use_ws_tts and tts_session:
+                # Close TTS stream (sends EOS) and wait for relay to finish
+                await tts_session.close()
+                tts_session = None
+                if relay_task:
+                    try:
+                        await asyncio.wait_for(relay_task, timeout=30.0)
+                    except (asyncio.TimeoutError, asyncio.CancelledError):
+                        logger.warning("TTS relay task timed out or cancelled")
+                    relay_task = None
+            else:
+                # REST fallback: send all TTS results in order
+                for tts_idx, task in rest_tts_tasks:
+                    try:
+                        audio_bytes = await task
+                        audio_b64 = base64.b64encode(audio_bytes).decode("ascii")
+                        await websocket.send_json({
+                            "type": "tts_audio",
+                            "audio_data": audio_b64,
+                            "format": "mp3",
+                            "index": tts_idx,
+                        })
+                    except Exception as e:
+                        logger.error("REST TTS failed for chunk %d: %s", tts_idx, e)
+                        await websocket.send_json({
+                            "type": "error",
+                            "code": "TTS_FAILED",
+                            "message": str(e),
+                        })
+
             return True  # continue loop
         else:
             # No sentences yielded — max turns reached, auto-finish happened
+            if tts_session:
+                await tts_session.close()
+            if relay_task:
+                relay_task.cancel()
             diary_resp = await service.finish_conversation(session_id)
             await websocket.send_json(
                 {"type": "diary_created", "diary": diary_resp.model_dump(mode="json")}
@@ -125,10 +244,24 @@ async def _handle_ai_reply_streaming(
             return False  # break loop
 
     except AppError as e:
+        if tts_session:
+            await tts_session.close()
+        if relay_task:
+            relay_task.cancel()
         await websocket.send_json(
             {"type": "error", "code": e.code, "message": e.message}
         )
         return False  # break loop
+    except Exception as e:
+        logger.exception("Unexpected error in _handle_ai_reply_streaming")
+        if tts_session:
+            await tts_session.close()
+        if relay_task:
+            relay_task.cancel()
+        await websocket.send_json(
+            {"type": "error", "code": "INTERNAL_ERROR", "message": str(e)}
+        )
+        return False
 
 
 async def conversation_websocket(websocket: WebSocket):
@@ -173,7 +306,12 @@ async def conversation_websocket(websocket: WebSocket):
                 "type": "ai_message",
                 "text": greeting,
             })
-            await _send_tts(websocket, db, greeting, index=0)
+            # Try WebSocket TTS for greeting, fall back to REST
+            try:
+                await _send_tts_ws(websocket, greeting, index=0)
+            except Exception as e:
+                logger.warning("Greeting TTS WS failed, falling back to REST: %s", e)
+                await _send_tts_rest(websocket, db, greeting, index=0)
 
             # --- Message loop ---
             while True:

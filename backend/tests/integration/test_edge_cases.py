@@ -79,6 +79,8 @@ async def test_max_turns_auto_finish(client, seed_user):
                             final = ws.receive_json()
                             assert final["type"] == "ai_message_chunk"
                             assert final["is_final"] is True
+                            ai_done = ws.receive_json()
+                            assert ai_done["type"] == "ai_done"
                             tts = ws.receive_json()
                             assert tts["type"] == "tts_audio"
 

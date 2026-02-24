@@ -146,6 +146,7 @@ async def test_full_conversation_to_learning_flow(client, seed_user, tmp_path):
                         assert data["type"] == "ai_message_chunk"
                         assert data["text"] == "어떤 회의였어? 누구랑 했어?"
                         ws.receive_json()  # final marker
+                        ws.receive_json()  # ai_done
                         ws.receive_json()  # tts_audio
 
                         ws.send_json({"type": "message", "text": "팀장님이랑 프로젝트 일정 잡았어"})
@@ -153,6 +154,7 @@ async def test_full_conversation_to_learning_flow(client, seed_user, tmp_path):
                         assert data["type"] == "ai_message_chunk"
                         assert data["text"] == "결과는 어땠어? 힘들진 않았어?"
                         ws.receive_json()  # final marker
+                        ws.receive_json()  # ai_done
                         ws.receive_json()  # tts_audio
 
                         # ── Step 3: Finish conversation ──
@@ -296,6 +298,7 @@ async def test_conversation_with_audio_stt_then_finish(client, seed_user, tmp_pa
                             assert ai_chunk["text"] == "재밌었겠다!"
 
                             ws.receive_json()  # final marker
+                            ws.receive_json()  # ai_done
                             ws.receive_json()  # tts_audio
 
                             # Finish

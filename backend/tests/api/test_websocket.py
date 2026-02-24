@@ -108,6 +108,10 @@ async def test_websocket_send_message_streaming(client, seed_user):
                         assert data["type"] == "ai_message_chunk"
                         assert data["is_final"] is True
 
+                        # Receive ai_done
+                        data = ws.receive_json()
+                        assert data["type"] == "ai_done"
+
                         # Receive TTS audio
                         data = ws.receive_json()
                         assert data["type"] == "tts_audio"
@@ -298,6 +302,10 @@ async def test_websocket_audio_full_flow(client, seed_user):
                             data = ws.receive_json()
                             assert data["type"] == "ai_message_chunk"
                             assert data["is_final"] is True
+
+                            # Should receive ai_done
+                            data = ws.receive_json()
+                            assert data["type"] == "ai_done"
 
                             # Should receive tts_audio
                             data = ws.receive_json()
@@ -494,6 +502,9 @@ async def test_websocket_audio_then_finish(client, seed_user):
                             final_marker = ws.receive_json()
                             assert final_marker["type"] == "ai_message_chunk"
                             assert final_marker["is_final"] is True
+
+                            ai_done = ws.receive_json()
+                            assert ai_done["type"] == "ai_done"
 
                             tts_msg = ws.receive_json()
                             assert tts_msg["type"] == "tts_audio"

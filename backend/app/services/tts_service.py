@@ -1,12 +1,20 @@
-"""TTS Service — ElevenLabs TTS with OpenAI TTS fallback and caching."""
+"""TTS Service — ElevenLabs TTS with OpenAI TTS fallback and caching.
 
+Includes both REST-based TTSService (with caching) and WebSocket-based
+TTSStreamSession for low-latency streaming TTS.
+"""
+
+import asyncio
+import base64
 import hashlib
+import json
 import logging
 import uuid
 from pathlib import Path
-from typing import Optional
+from typing import AsyncIterator, Optional
 
 import httpx
+import websockets
 from openai import AsyncOpenAI
 
 from app.config import settings
@@ -21,6 +29,11 @@ AUDIO_DIR = Path("audio_files")
 ELEVENLABS_TTS_URL = "https://api.elevenlabs.io/v1/text-to-speech"
 DEFAULT_VOICE_ID = "21m00Tcm4TlvDq8ikWAM"  # Rachel - default English voice
 DEFAULT_MODEL_ID = "eleven_monolingual_v1"
+
+# ElevenLabs TTS WebSocket config
+ELEVENLABS_TTS_WS_URL = "wss://api.elevenlabs.io/v1/text-to-speech"
+DEFAULT_TTS_WS_MODEL = "eleven_multilingual_v2"
+DEFAULT_TTS_WS_OUTPUT_FORMAT = "mp3_44100_128"
 
 # Circuit breakers for external APIs
 _elevenlabs_cb = CircuitBreaker(name="elevenlabs_tts", failure_threshold=3, recovery_timeout=30.0)
@@ -186,3 +199,159 @@ class TTSService:
             )
         except Exception as e:
             raise TTSError(f"TTS 생성 실패 (모든 프로바이더): {e}")
+
+
+class TTSStreamSession:
+    """Single TTS WebSocket session for a conversation turn.
+
+    Connects to ElevenLabs TTS WebSocket for streaming text-to-speech.
+    Multiple sentences can be sent over a single connection using flush,
+    and audio chunks are received as they are generated.
+
+    Usage:
+        session = TTSStreamSession(api_key)
+        await session.connect(voice_id)
+
+        # Send sentences (from LLM streaming):
+        await session.send_sentence("첫 번째 문장.")
+        await session.send_sentence("두 번째 문장.")
+
+        # Receive audio chunks (run concurrently with send):
+        async for chunk in session.receive_audio_chunks():
+            # base64 encode and push to client
+            ...
+
+        await session.close()
+    """
+
+    def __init__(self, api_key: Optional[str] = None):
+        self._api_key = api_key or settings.ELEVENLABS_API_KEY
+        self._ws = None  # type: Optional[websockets.WebSocketClientProtocol]
+        self._connected = False
+        self._closed = False
+
+    async def connect(
+        self,
+        voice_id: Optional[str] = None,
+        model_id: str = DEFAULT_TTS_WS_MODEL,
+        output_format: str = DEFAULT_TTS_WS_OUTPUT_FORMAT,
+        language_code: str = "ko",
+    ) -> None:
+        """Connect to ElevenLabs TTS WebSocket and send initialization message.
+
+        Args:
+            voice_id: ElevenLabs voice ID. Defaults to DEFAULT_VOICE_ID.
+            model_id: TTS model to use.
+            output_format: Audio output format.
+            language_code: Language code for TTS.
+        """
+        voice = voice_id or DEFAULT_VOICE_ID
+        url = (
+            f"{ELEVENLABS_TTS_WS_URL}/{voice}/stream-input"
+            f"?model_id={model_id}"
+            f"&output_format={output_format}"
+            f"&language_code={language_code}"
+        )
+        headers = {"xi-api-key": self._api_key}
+
+        try:
+            self._ws = await websockets.connect(url, additional_headers=headers)
+        except Exception as e:
+            raise TTSError(f"TTS WebSocket 연결 실패: {e}")
+
+        # Send initialization message (BOS — beginning of stream)
+        init_msg = {
+            "text": " ",
+            "voice_settings": {
+                "stability": 0.5,
+                "similarity_boost": 0.75,
+                "speed": 1.0,
+            },
+            "generation_config": {
+                "chunk_length_schedule": [50, 120, 200, 260],
+            },
+        }
+        try:
+            await self._ws.send(json.dumps(init_msg))
+        except Exception as e:
+            await self._safe_close_ws()
+            raise TTSError(f"TTS WebSocket 초기화 실패: {e}")
+
+        self._connected = True
+        logger.info("TTS WebSocket session connected (voice=%s)", voice)
+
+    async def send_sentence(self, text: str) -> None:
+        """Send a sentence to TTS with flush=true for immediate generation.
+
+        Args:
+            text: Sentence text to synthesize.
+        """
+        if not self._connected or not self._ws:
+            raise TTSError("TTS WebSocket 세션이 연결되지 않았습니다.")
+
+        msg = {
+            "text": text + " ",
+            "flush": True,
+        }
+        try:
+            await self._ws.send(json.dumps(msg))
+            logger.debug("TTS sentence sent: %s", text[:50])
+        except Exception as e:
+            raise TTSError(f"TTS 문장 전송 실패: {e}")
+
+    async def receive_audio_chunks(self) -> AsyncIterator[bytes]:
+        """Async generator that yields audio chunks as they arrive.
+
+        Yields decoded audio bytes for each chunk received from the
+        TTS WebSocket. Stops when isFinal is received or connection closes.
+        """
+        if not self._connected or not self._ws:
+            return
+
+        try:
+            async for raw_msg in self._ws:
+                try:
+                    data = json.loads(raw_msg)
+                except json.JSONDecodeError:
+                    continue
+
+                if data.get("isFinal"):
+                    logger.debug("TTS WebSocket received isFinal")
+                    break
+
+                audio_b64 = data.get("audio")
+                if audio_b64:
+                    yield base64.b64decode(audio_b64)
+
+        except websockets.exceptions.ConnectionClosed:
+            logger.warning("TTS WebSocket connection closed during receive")
+        except asyncio.CancelledError:
+            return
+        except Exception as e:
+            logger.error("TTS WebSocket receive error: %s", e)
+
+    async def close(self) -> None:
+        """Send EOS (empty text) to signal end of stream, then close."""
+        if self._closed:
+            return
+        self._closed = True
+        self._connected = False
+
+        if self._ws:
+            # Send EOS — empty text signals end of stream
+            try:
+                await self._ws.send(json.dumps({"text": ""}))
+            except Exception:
+                pass
+            await self._safe_close_ws()
+
+        logger.info("TTS WebSocket session closed")
+
+    async def _safe_close_ws(self) -> None:
+        """Close the underlying WebSocket connection safely."""
+        if self._ws:
+            try:
+                await self._ws.close()
+            except Exception:
+                pass
+            self._ws = None
