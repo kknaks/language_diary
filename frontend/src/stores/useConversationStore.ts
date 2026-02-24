@@ -1,6 +1,6 @@
 import { create } from 'zustand';
 import { Conversation, Message, ConnectionStatus, Diary, ServerMessage } from '../types';
-import { createConversation, normalizeDiary } from '../services/api';
+import { createConversation, normalizeDiary, requestTts } from '../services/api';
 import { wsClient } from '../services/websocket';
 import { playAudioFromUrl, stopCurrentAudio } from '../utils/audio';
 
@@ -86,7 +86,23 @@ export const useConversationStore = create<ConversationState>((set, get) => ({
         messages: [firstMessage],
         turnCount: 1,
         isLoading: false,
+        voiceState: 'ai_speaking' as VoiceState,
       });
+
+      // 첫 인사 TTS 재생
+      if (session.firstMessage) {
+        requestTts(session.firstMessage)
+          .then((tts) => {
+            if (tts.audioUrl) {
+              playAudioFromUrl(tts.audioUrl, () => {
+                set({ voiceState: 'idle' as VoiceState, volume: 0 });
+              });
+            }
+          })
+          .catch(() => {
+            set({ voiceState: 'idle' as VoiceState });
+          });
+      }
 
       // Subscribe to WebSocket events
       unsubStatus?.();
