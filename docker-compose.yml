@@ -5,6 +5,9 @@ services:
       - "8000:8000"
     env_file:
       - ./backend/.env
+    environment:
+      - DATABASE_URL=postgresql+asyncpg://postgres:postgres@db:5432/language_diary
+      - REDIS_URL=redis://redis:6379/0
     volumes:
       - audio_data:/app/audio_files
       - upload_data:/app/audio_uploads
