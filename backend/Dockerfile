@@ -17,6 +17,8 @@ COPY . .
 # Create directories for audio files
 RUN mkdir -p audio_files audio_uploads
 
+ENV PYTHONPATH=/app
+
 EXPOSE 8000
 
 # Run alembic migrations then start uvicorn
