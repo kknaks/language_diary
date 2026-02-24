@@ -1,2 +1,0 @@
-app_identifier("com.kknaks.languagediary")
-team_id("YOUR_TEAM_ID")  # Xcode Signing에서 확인한 Team ID로 교체

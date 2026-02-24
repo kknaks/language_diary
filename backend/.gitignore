@@ -6,3 +6,4 @@ dist/
 .venv/
 test.db
 .env.production
+.env.prod
