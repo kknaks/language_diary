@@ -1,5 +1,6 @@
 import { Diary, LearningCard, Message, PaginatedResponse, ConversationSession, TtsResponse, PronunciationResult } from '../types';
 import { env } from '../config/env';
+import { debugFetch } from '../components/common/DebugBanner';
 
 const API_BASE_URL = env.API_BASE_URL;
 
@@ -81,7 +82,7 @@ export async function getDiaries(cursor?: string, limit: number = 20): Promise<P
   const params = new URLSearchParams({ limit: String(limit) });
   if (cursor) params.set('cursor', cursor);
 
-  const res = await fetch(`${API_BASE_URL}/api/v1/diary?${params}`);
+  const res = await debugFetch(`${API_BASE_URL}/api/v1/diary?${params}`);
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const json = await handleResponse(res) as any;
 
@@ -93,13 +94,13 @@ export async function getDiaries(cursor?: string, limit: number = 20): Promise<P
 }
 
 export async function getDiary(id: string): Promise<Diary> {
-  const res = await fetch(`${API_BASE_URL}/api/v1/diary/${id}`);
+  const res = await debugFetch(`${API_BASE_URL}/api/v1/diary/${id}`);
   const json = await handleResponse(res);
   return adaptDiary(json);
 }
 
 export async function deleteDiary(id: string): Promise<void> {
-  const res = await fetch(`${API_BASE_URL}/api/v1/diary/${id}`, { method: 'DELETE' });
+  const res = await debugFetch(`${API_BASE_URL}/api/v1/diary/${id}`, { method: 'DELETE' });
   await handleResponse(res);
 }
 
@@ -110,7 +111,7 @@ export async function updateDiary(id: string, data: Partial<Diary>): Promise<Dia
   if (data.contentKo !== undefined) body.original_text = data.contentKo;
   if (data.contentEn !== undefined) body.translated_text = data.contentEn;
 
-  const res = await fetch(`${API_BASE_URL}/api/v1/diary/${id}`, {
+  const res = await debugFetch(`${API_BASE_URL}/api/v1/diary/${id}`, {
     method: 'PUT',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(body),
@@ -122,7 +123,7 @@ export async function updateDiary(id: string, data: Partial<Diary>): Promise<Dia
 // ===== Conversation API =====
 
 export async function createConversation(): Promise<ConversationSession> {
-  const res = await fetch(`${API_BASE_URL}/api/v1/conversation`, {
+  const res = await debugFetch(`${API_BASE_URL}/api/v1/conversation`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
   });
@@ -138,7 +139,7 @@ export async function createConversation(): Promise<ConversationSession> {
 }
 
 export async function getConversationMessages(conversationId: string): Promise<Message[]> {
-  const res = await fetch(`${API_BASE_URL}/api/v1/conversation/${conversationId}`);
+  const res = await debugFetch(`${API_BASE_URL}/api/v1/conversation/${conversationId}`);
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const json = await handleResponse(res) as any;
   const rawMessages = json.messages ?? [];
@@ -148,7 +149,7 @@ export async function getConversationMessages(conversationId: string): Promise<M
 // ===== Speech API =====
 
 export async function requestTts(text: string): Promise<TtsResponse> {
-  const res = await fetch(`${API_BASE_URL}/api/v1/speech/tts`, {
+  const res = await debugFetch(`${API_BASE_URL}/api/v1/speech/tts`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ text }),
@@ -165,7 +166,7 @@ export async function requestTts(text: string): Promise<TtsResponse> {
 }
 
 export async function evaluatePronunciation(text: string): Promise<PronunciationResult> {
-  const res = await fetch(`${API_BASE_URL}/api/v1/speech/evaluate`, {
+  const res = await debugFetch(`${API_BASE_URL}/api/v1/speech/evaluate`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ text }),
@@ -183,6 +184,6 @@ export async function evaluatePronunciation(text: string): Promise<Pronunciation
 }
 
 export async function completeDiary(id: string): Promise<void> {
-  const res = await fetch(`${API_BASE_URL}/api/v1/diary/${id}/complete`, { method: 'POST' });
+  const res = await debugFetch(`${API_BASE_URL}/api/v1/diary/${id}/complete`, { method: 'POST' });
   await handleResponse(res);
 }
