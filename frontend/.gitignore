@@ -41,6 +41,7 @@ yarn-error.*
 
 # fastlane
 fastlane/Appfile
+fastlane/Fastfile
 fastlane/report.xml
 
 # generated native folders
