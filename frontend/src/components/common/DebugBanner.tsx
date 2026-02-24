@@ -1,5 +1,5 @@
-import React, { useState, useEffect, useRef } from 'react';
-import { View, Text, StyleSheet, TouchableOpacity, ScrollView } from 'react-native';
+import React, { useState, useEffect } from 'react';
+import { View, Text, StyleSheet, TouchableOpacity } from 'react-native';
 
 interface LogEntry {
   time: string;
@@ -48,8 +48,6 @@ export async function debugFetch(url: string, options?: RequestInit): Promise<Re
 export default function DebugBanner() {
   const [visible, setVisible] = useState(false);
   const [tick, setTick] = useState(0);
-  const scrollRef = useRef<ScrollView>(null);
-
   useEffect(() => {
     const listener = () => setTick((t) => t + 1);
     listeners.add(listener);
@@ -73,25 +71,23 @@ export default function DebugBanner() {
 
       {visible && (
         <View style={styles.panel}>
-          <ScrollView ref={scrollRef} style={styles.scroll} nestedScrollEnabled>
-            {currentLogs.length === 0 ? (
-              <Text style={styles.empty}>로그 없음</Text>
-            ) : (
-              currentLogs.map((log, i) => (
-                <Text
-                  key={`${tick}-${i}`}
-                  style={[
-                    styles.log,
-                    log.type === 'error' && styles.logError,
-                    log.type === 'warn' && styles.logWarn,
-                  ]}
-                  selectable
-                >
-                  {log.time} [{log.type}] {log.message}
-                </Text>
-              ))
-            )}
-          </ScrollView>
+          {currentLogs.length === 0 ? (
+            <Text style={styles.empty}>로그 없음</Text>
+          ) : (
+            currentLogs.map((log, i) => (
+              <Text
+                key={`${tick}-${i}`}
+                style={[
+                  styles.log,
+                  log.type === 'error' && styles.logError,
+                  log.type === 'warn' && styles.logWarn,
+                ]}
+                selectable
+              >
+                {log.time} [{log.type}] {log.message}
+              </Text>
+            ))
+          )}
         </View>
       )}
     </View>
@@ -122,14 +118,12 @@ const styles = StyleSheet.create({
     fontWeight: '700',
   },
   panel: {
-    backgroundColor: 'rgba(0,0,0,0.9)',
+    backgroundColor: '#111',
     width: '95%',
-    maxHeight: 300,
     borderRadius: 10,
     marginTop: 6,
-    padding: 10,
+    padding: 12,
   },
-  scroll: { flex: 1 },
   empty: { color: '#888', fontSize: 12, textAlign: 'center', padding: 20 },
   log: { color: '#ddd', fontSize: 11, fontFamily: 'Courier', marginBottom: 4, lineHeight: 16 },
   logError: { color: '#ff6b6b' },
