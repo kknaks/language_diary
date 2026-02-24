@@ -139,7 +139,7 @@ export default function WriteScreen() {
           <Ionicons name="checkmark-circle" size={72} color={colors.success} />
           <Text style={styles.idleTitle}>일기가 완성되었어요!</Text>
           <Text style={styles.diaryPreview} numberOfLines={4}>
-            {createdDiary.contentEn}
+            {createdDiary.translated_text}
           </Text>
           <Button
             title="일기 확인하기"

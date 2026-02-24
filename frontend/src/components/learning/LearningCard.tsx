@@ -8,10 +8,10 @@ import { usePronunciation } from '../../hooks/usePronunciation';
 import CefrBadge from './CefrBadge';
 import PronunciationResultView from './PronunciationResult';
 
-const typeConfig = {
-  word: { label: 'Word', color: '#3B82F6', icon: 'text' as const },
-  phrase: { label: 'Phrase', color: '#10B981', icon: 'chatbubble-ellipses' as const },
-  sentence: { label: 'Sentence', color: '#8B5CF6', icon: 'document-text' as const },
+const typeConfig: Record<string, { label: string; color: string; icon: keyof typeof Ionicons.glyphMap }> = {
+  word: { label: 'Word', color: '#3B82F6', icon: 'text' },
+  phrase: { label: 'Phrase', color: '#10B981', icon: 'chatbubble-ellipses' },
+  sentence: { label: 'Sentence', color: '#8B5CF6', icon: 'document-text' },
 };
 
 interface LearningCardProps {
@@ -19,7 +19,7 @@ interface LearningCardProps {
 }
 
 export default function LearningCard({ card }: LearningCardProps) {
-  const config = typeConfig[card.type];
+  const config = typeConfig[card.card_type] ?? typeConfig.word;
   const audio = useAudioPlayer();
   const pronunciation = usePronunciation();
   const [showPronunciation, setShowPronunciation] = useState(false);
@@ -30,7 +30,7 @@ export default function LearningCard({ card }: LearningCardProps) {
     } else if (audio.state === 'paused') {
       audio.resume();
     } else {
-      audio.play(card.english);
+      audio.play(card.content_en);
     }
   };
 
@@ -38,7 +38,7 @@ export default function LearningCard({ card }: LearningCardProps) {
     if (pronunciation.state === 'idle' || pronunciation.state === 'done') {
       pronunciation.reset();
       setShowPronunciation(true);
-      pronunciation.startRecording(card.english);
+      pronunciation.startRecording(card.content_en);
     } else if (pronunciation.state === 'recording') {
       pronunciation.stopRecording();
     }
@@ -55,24 +55,26 @@ export default function LearningCard({ card }: LearningCardProps) {
           <Text style={[styles.typeLabel, { color: config.color }]}>{config.label}</Text>
         </View>
         <View style={styles.metaRow}>
-          {card.partOfSpeech && (
-            <Text style={styles.partOfSpeech}>{card.partOfSpeech}</Text>
+          {card.part_of_speech && (
+            <Text style={styles.partOfSpeech}>{card.part_of_speech}</Text>
           )}
-          <CefrBadge level={card.cefrLevel} />
+          {card.cefr_level && <CefrBadge level={card.cefr_level} />}
         </View>
       </View>
 
       {/* English */}
-      <Text style={[styles.english, { color: config.color }]}>{card.english}</Text>
+      <Text style={[styles.english, { color: config.color }]}>{card.content_en}</Text>
 
       {/* Korean */}
-      <Text style={styles.korean}>{card.korean}</Text>
+      <Text style={styles.korean}>{card.content_ko}</Text>
 
       {/* Example */}
-      <View style={styles.exampleContainer}>
-        <Ionicons name="chatbox-outline" size={14} color={colors.textTertiary} />
-        <Text style={styles.example}>{card.example}</Text>
-      </View>
+      {card.example_en && (
+        <View style={styles.exampleContainer}>
+          <Ionicons name="chatbox-outline" size={14} color={colors.textTertiary} />
+          <Text style={styles.example}>{card.example_en}</Text>
+        </View>
+      )}
 
       {/* Action buttons */}
       <View style={styles.actions}>

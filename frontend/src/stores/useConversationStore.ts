@@ -1,6 +1,6 @@
 import { create } from 'zustand';
 import { Conversation, Message, ConnectionStatus, Diary, ServerMessage } from '../types';
-import { createConversation, adaptDiary } from '../services/api';
+import { createConversation, normalizeDiary } from '../services/api';
 import { wsClient } from '../services/websocket';
 import { playAudioFromUrl, stopCurrentAudio } from '../utils/audio';
 
@@ -204,7 +204,7 @@ function handleServerMessage(
     }
 
     case 'diary_created':
-      set({ isCreatingDiary: false, createdDiary: adaptDiary(msg.diary), voiceState: 'idle' as VoiceState, volume: 0 });
+      set({ isCreatingDiary: false, createdDiary: normalizeDiary(msg.diary), voiceState: 'idle' as VoiceState, volume: 0 });
       break;
 
     case 'tts_audio':

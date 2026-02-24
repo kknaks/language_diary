@@ -22,46 +22,37 @@ async function handleResponse(res: Response): Promise<unknown> {
   return res.json();
 }
 
-// ===== Adapters: backend (snake_case) → frontend (camelCase) =====
-
-function extractTitle(text: string | null | undefined, maxLen = 30): string {
-  if (!text) return '';
-  const firstLine = text.split('\n')[0].trim();
-  if (firstLine.length <= maxLen) return firstLine;
-  return firstLine.slice(0, maxLen) + '…';
-}
+// ===== Adapters: backend → frontend =====
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
-function adaptLearningCard(raw: any): LearningCard {
+function normalizeDiary(raw: any): Diary {
   return {
-    id: String(raw.id),
-    type: raw.card_type ?? 'word',
-    english: raw.content_en ?? '',
-    korean: raw.content_ko ?? '',
-    example: raw.example_en ?? '',
-    cefrLevel: raw.cefr_level ?? 'A2',
-    partOfSpeech: raw.part_of_speech ?? undefined,
+    id: raw.id,
+    user_id: raw.user_id,
+    original_text: raw.original_text ?? '',
+    translated_text: raw.translated_text ?? null,
+    status: raw.status ?? 'draft',
+    created_at: raw.created_at ?? new Date().toISOString(),
+    updated_at: raw.updated_at ?? new Date().toISOString(),
+    completed_at: raw.completed_at ?? null,
+    learning_cards: Array.isArray(raw.learning_cards)
+      ? raw.learning_cards.map(normalizeLearningCard)
+      : [],
   };
 }
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
-export function adaptDiary(raw: any): Diary {
-  const cards: LearningCard[] = Array.isArray(raw.learning_cards)
-    ? raw.learning_cards.map(adaptLearningCard)
-    : [];
-
+function normalizeLearningCard(raw: any): LearningCard {
   return {
-    id: String(raw.id),
-    userId: String(raw.user_id),
-    titleKo: extractTitle(raw.original_text),
-    titleEn: extractTitle(raw.translated_text),
-    contentKo: raw.original_text ?? '',
-    contentEn: raw.translated_text ?? '',
-    status: raw.status ?? 'draft',
-    learningCards: cards,
-    conversationId: raw.conversation_id ? String(raw.conversation_id) : undefined,
-    createdAt: raw.created_at ?? new Date().toISOString(),
-    updatedAt: raw.updated_at ?? new Date().toISOString(),
+    id: raw.id,
+    card_type: raw.card_type ?? 'word',
+    content_en: raw.content_en ?? '',
+    content_ko: raw.content_ko ?? '',
+    part_of_speech: raw.part_of_speech ?? null,
+    cefr_level: raw.cefr_level ?? null,
+    example_en: raw.example_en ?? null,
+    example_ko: raw.example_ko ?? null,
+    card_order: raw.card_order ?? 0,
   };
 }
 
@@ -76,48 +67,45 @@ function adaptMessage(raw: any, conversationId: string): Message {
   };
 }
 
+// Exported for WebSocket diary_created handling
+export { normalizeDiary };
+
 // ===== Diary API =====
 
-export async function getDiaries(cursor?: string, limit: number = 20): Promise<PaginatedResponse<Diary>> {
+export async function getDiaries(cursor?: number | null, limit: number = 20): Promise<PaginatedResponse<Diary>> {
   const params = new URLSearchParams({ limit: String(limit) });
-  if (cursor) params.set('cursor', cursor);
+  if (cursor != null) params.set('cursor', String(cursor));
 
   const res = await debugFetch(`${API_BASE_URL}/api/v1/diary?${params}`);
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const json = await handleResponse(res) as any;
 
   return {
-    data: Array.isArray(json.items) ? json.items.map(adaptDiary) : [],
-    cursor: json.next_cursor != null ? String(json.next_cursor) : undefined,
-    hasMore: json.has_next ?? false,
+    items: Array.isArray(json.items) ? json.items.map(normalizeDiary) : [],
+    next_cursor: json.next_cursor ?? null,
+    has_next: json.has_next ?? false,
   };
 }
 
-export async function getDiary(id: string): Promise<Diary> {
+export async function getDiary(id: string | number): Promise<Diary> {
   const res = await debugFetch(`${API_BASE_URL}/api/v1/diary/${id}`);
   const json = await handleResponse(res);
-  return adaptDiary(json);
+  return normalizeDiary(json);
 }
 
-export async function deleteDiary(id: string): Promise<void> {
+export async function deleteDiary(id: string | number): Promise<void> {
   const res = await debugFetch(`${API_BASE_URL}/api/v1/diary/${id}`, { method: 'DELETE' });
   await handleResponse(res);
 }
 
-export async function updateDiary(id: string, data: Partial<Diary>): Promise<Diary> {
-  // Convert frontend field names → backend field names
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const body: any = {};
-  if (data.contentKo !== undefined) body.original_text = data.contentKo;
-  if (data.contentEn !== undefined) body.translated_text = data.contentEn;
-
+export async function updateDiary(id: string | number, data: { original_text?: string; translated_text?: string }): Promise<Diary> {
   const res = await debugFetch(`${API_BASE_URL}/api/v1/diary/${id}`, {
     method: 'PUT',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify(body),
+    body: JSON.stringify(data),
   });
   const json = await handleResponse(res);
-  return adaptDiary(json);
+  return normalizeDiary(json);
 }
 
 // ===== Conversation API =====
@@ -183,7 +171,7 @@ export async function evaluatePronunciation(text: string): Promise<Pronunciation
   };
 }
 
-export async function completeDiary(id: string): Promise<void> {
+export async function completeDiary(id: string | number): Promise<void> {
   const res = await debugFetch(`${API_BASE_URL}/api/v1/diary/${id}/complete`, { method: 'POST' });
   await handleResponse(res);
 }

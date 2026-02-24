@@ -37,7 +37,7 @@ export default function LearningScreen() {
     fetchDiary();
   }, [fetchDiary]);
 
-  const cards = diary?.learningCards ?? [];
+  const cards = diary?.learning_cards ?? [];
   const totalCards = cards.length;
 
   const handleIndexChange = useCallback(
@@ -75,7 +75,7 @@ export default function LearningScreen() {
   }
 
   // Count by type
-  const countByType = (type: LearningCard['type']) => cards.filter((c) => c.type === type).length;
+  const countByType = (type: string) => cards.filter((c) => c.card_type === type).length;
 
   if (isComplete) {
     return (
@@ -96,7 +96,7 @@ export default function LearningScreen() {
       {/* English diary text at top */}
       <View style={styles.diarySection}>
         <Text style={styles.diaryText} numberOfLines={3}>
-          {diary.contentEn}
+          {diary.translated_text}
         </Text>
       </View>
 

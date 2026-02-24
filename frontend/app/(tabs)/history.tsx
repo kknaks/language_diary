@@ -28,7 +28,7 @@ function groupByDate(diaries: Diary[]): DiarySection[] {
   yesterday.setDate(yesterday.getDate() - 1);
 
   for (const diary of diaries) {
-    const d = new Date(diary.createdAt);
+    const d = new Date(diary.created_at);
     const key = formatSectionDate(d, today, yesterday);
     if (!groups[key]) groups[key] = [];
     groups[key].push(diary);

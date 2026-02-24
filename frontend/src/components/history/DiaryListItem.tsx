@@ -7,7 +7,7 @@ import { colors, fontSize, spacing, borderRadius, shadows } from '../../constant
 interface DiaryListItemProps {
   diary: Diary;
   onPress: () => void;
-  onDelete: (id: string) => void;
+  onDelete: (id: number) => void;
 }
 
 const statusConfig = {
@@ -17,7 +17,7 @@ const statusConfig = {
 };
 
 export default function DiaryListItem({ diary, onPress, onDelete }: DiaryListItemProps) {
-  const status = statusConfig[diary.status];
+  const status = statusConfig[diary.status as keyof typeof statusConfig] ?? { label: diary.status, color: colors.textTertiary, icon: 'ellipse' as const };
 
   const handleLongPress = () => {
     Alert.alert(
@@ -34,7 +34,7 @@ export default function DiaryListItem({ diary, onPress, onDelete }: DiaryListIte
     );
   };
 
-  const time = new Date(diary.createdAt);
+  const time = new Date(diary.created_at);
   const hours = time.getHours();
   const minutes = time.getMinutes().toString().padStart(2, '0');
   const period = hours < 12 ? '오전' : '오후';
@@ -49,7 +49,7 @@ export default function DiaryListItem({ diary, onPress, onDelete }: DiaryListIte
       activeOpacity={0.7}
       delayLongPress={500}
       role="button"
-      accessibilityLabel={`${diary.titleKo}, ${status.label}`}
+      accessibilityLabel={`${diary.original_text}, ${status.label}`}
       accessibilityHint="탭하여 상세 보기, 길게 누르면 삭제"
     >
       <View style={styles.row}>
@@ -61,17 +61,17 @@ export default function DiaryListItem({ diary, onPress, onDelete }: DiaryListIte
               <Text style={[styles.badgeText, { color: status.color }]}>{status.label}</Text>
             </View>
           </View>
-          <Text style={styles.titleEn} numberOfLines={1}>{diary.titleEn}</Text>
-          <Text style={styles.titleKo} numberOfLines={1}>{diary.titleKo}</Text>
-          <Text style={styles.preview} numberOfLines={1}>{diary.contentEn}</Text>
+          <Text style={styles.titleEn} numberOfLines={1}>{diary.translated_text}</Text>
+          <Text style={styles.titleKo} numberOfLines={1}>{diary.original_text}</Text>
+          <Text style={styles.preview} numberOfLines={1}>{diary.translated_text}</Text>
         </View>
         <Ionicons name="chevron-forward" size={18} color={colors.textTertiary} />
       </View>
 
-      {diary.learningCards.length > 0 && (
+      {diary.learning_cards.length > 0 && (
         <View style={styles.footer}>
           <Ionicons name="flash" size={12} color={colors.primaryLight} />
-          <Text style={styles.footerText}>학습 포인트 {diary.learningCards.length}개</Text>
+          <Text style={styles.footerText}>학습 포인트 {diary.learning_cards.length}개</Text>
         </View>
       )}
     </TouchableOpacity>

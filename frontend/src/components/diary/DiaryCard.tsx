@@ -28,21 +28,21 @@ export default function DiaryCard({ diary, onPress }: DiaryCardProps) {
   const status = statusConfig[diary.status as keyof typeof statusConfig] ?? { label: diary.status, color: colors.textTertiary, icon: 'ellipse' as const };
 
   return (
-    <Card onPress={onPress} style={styles.card} accessibilityLabel={`${diary.titleKo ?? diary.originalText ?? ''}, ${status.label}`}>
+    <Card onPress={onPress} style={styles.card} accessibilityLabel={`${diary.original_text ?? ''}, ${status.label}`}>
       <View style={styles.header}>
-        <Text style={styles.date}>{formatDate(diary.createdAt)}</Text>
+        <Text style={styles.date}>{formatDate(diary.created_at)}</Text>
         <View style={[styles.badge, { backgroundColor: status.color + '20' }]}>
           <Ionicons name={status.icon} size={12} color={status.color} />
           <Text style={[styles.badgeText, { color: status.color }]}>{status.label}</Text>
         </View>
       </View>
-      <Text style={styles.title} numberOfLines={1}>{diary.titleEn}</Text>
-      <Text style={styles.subtitle} numberOfLines={1}>{diary.titleKo}</Text>
-      <Text style={styles.preview} numberOfLines={2}>{diary.contentEn}</Text>
-      {diary.learningCards.length > 0 && (
+      <Text style={styles.title} numberOfLines={1}>{diary.translated_text}</Text>
+      <Text style={styles.subtitle} numberOfLines={1}>{diary.original_text}</Text>
+      <Text style={styles.preview} numberOfLines={2}>{diary.translated_text}</Text>
+      {diary.learning_cards.length > 0 && (
         <View style={styles.footer}>
           <Ionicons name="flash" size={14} color={colors.primaryLight} />
-          <Text style={styles.footerText}>학습 포인트 {diary.learningCards.length}개</Text>
+          <Text style={styles.footerText}>학습 포인트 {diary.learning_cards.length}개</Text>
         </View>
       )}
     </Card>

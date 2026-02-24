@@ -1,11 +1,8 @@
 import React from 'react';
 import { View, Text, StyleSheet } from 'react-native';
 import { fontSize, borderRadius } from '../../constants/theme';
-import { LearningCard } from '../../types';
 
-type CefrLevel = LearningCard['cefrLevel'];
-
-const cefrColors: Record<CefrLevel, string> = {
+const cefrColors: Record<string, string> = {
   A1: '#10B981',
   A2: '#34D399',
   B1: '#3B82F6',
@@ -15,11 +12,11 @@ const cefrColors: Record<CefrLevel, string> = {
 };
 
 interface CefrBadgeProps {
-  level: CefrLevel;
+  level: string;
 }
 
 export default function CefrBadge({ level }: CefrBadgeProps) {
-  const color = cefrColors[level];
+  const color = cefrColors[level] ?? '#9CA3AF';
 
   return (
     <View style={[styles.badge, { backgroundColor: color + '20' }]}>

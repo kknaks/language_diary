@@ -7,12 +7,12 @@ interface DiaryState {
   isLoading: boolean;
   isLoadingMore: boolean;
   error: string | null;
-  cursor: string | undefined;
+  cursor: number | null;
   hasMore: boolean;
 
   fetchDiaries: () => Promise<void>;
   fetchMore: () => Promise<void>;
-  removeDiary: (id: string) => Promise<void>;
+  removeDiary: (id: number) => Promise<void>;
 }
 
 export const useDiaryStore = create<DiaryState>((set, get) => ({
@@ -20,7 +20,7 @@ export const useDiaryStore = create<DiaryState>((set, get) => ({
   isLoading: false,
   isLoadingMore: false,
   error: null,
-  cursor: undefined,
+  cursor: null,
   hasMore: true,
 
   fetchDiaries: async () => {
@@ -28,9 +28,9 @@ export const useDiaryStore = create<DiaryState>((set, get) => ({
     try {
       const res = await getDiaries(undefined, 20);
       set({
-        diaries: res.data,
-        cursor: res.cursor,
-        hasMore: res.hasMore,
+        diaries: res.items,
+        cursor: res.next_cursor,
+        hasMore: res.has_next,
         isLoading: false,
       });
     } catch (e: unknown) {
@@ -47,9 +47,9 @@ export const useDiaryStore = create<DiaryState>((set, get) => ({
     try {
       const res = await getDiaries(cursor, 20);
       set((state) => ({
-        diaries: [...state.diaries, ...res.data],
-        cursor: res.cursor,
-        hasMore: res.hasMore,
+        diaries: [...state.diaries, ...res.items],
+        cursor: res.next_cursor,
+        hasMore: res.has_next,
         isLoadingMore: false,
       }));
     } catch {
@@ -57,7 +57,7 @@ export const useDiaryStore = create<DiaryState>((set, get) => ({
     }
   },
 
-  removeDiary: async (id: string) => {
+  removeDiary: async (id: number) => {
     // Optimistic removal
     const prevDiaries = get().diaries;
     set((state) => ({

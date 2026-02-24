@@ -10,27 +10,27 @@ export interface User {
 
 // ===== 일기 =====
 export interface Diary {
-  id: string;
-  userId: string;
-  titleKo: string;
-  titleEn: string;
-  contentKo: string;
-  contentEn: string;
-  status: 'draft' | 'completed' | 'learning_done';
-  learningCards: LearningCard[];
-  conversationId?: string;
-  createdAt: string;
-  updatedAt: string;
+  id: number;
+  user_id: number;
+  original_text: string;
+  translated_text: string | null;
+  status: string;
+  created_at: string;
+  updated_at: string;
+  completed_at: string | null;
+  learning_cards: LearningCard[];
 }
 
 export interface LearningCard {
-  id: string;
-  type: 'word' | 'phrase' | 'sentence';
-  english: string;
-  korean: string;
-  example: string;
-  cefrLevel: 'A1' | 'A2' | 'B1' | 'B2' | 'C1' | 'C2';
-  partOfSpeech?: string;
+  id: number;
+  card_type: string;
+  content_en: string;
+  content_ko: string;
+  part_of_speech: string | null;
+  cefr_level: string | null;
+  example_en: string | null;
+  example_ko: string | null;
+  card_order: number;
 }
 
 // ===== 대화 =====
@@ -61,13 +61,13 @@ export interface ApiResponse<T> {
 }
 
 export interface PaginatedResponse<T> {
-  data: T[];
-  cursor?: string;
-  hasMore: boolean;
+  items: T[];
+  next_cursor: number | null;
+  has_next: boolean;
 }
 
 // ===== Diary status (PRD 기반) =====
-export type DiaryStatus = 'draft' | 'completed' | 'learning_done';
+export type DiaryStatus = string;
 
 // ===== Conversation status =====
 export type ConversationStatus = 'created' | 'active' | 'summarizing' | 'completed' | 'expired';

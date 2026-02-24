@@ -37,9 +37,9 @@ export default function DiaryDetailScreen() {
       const data = await getDiary(id);
       setDiary(data);
       // Fetch conversation messages if available
-      if (data.conversationId) {
+      if (data.conversation_id) {
         try {
-          const msgs = await getConversationMessages(data.conversationId);
+          const msgs = await getConversationMessages(String(data.conversation_id));
           setConversationMessages(msgs);
         } catch {
           // Non-critical: conversation messages are optional
@@ -60,7 +60,7 @@ export default function DiaryDetailScreen() {
     if (!diary || !id) return;
     setIsSaving(true);
     try {
-      const field = language === 'ko' ? 'contentKo' : 'contentEn';
+      const field = language === 'ko' ? 'original_text' : 'translated_text';
       const updated = await updateDiary(id, { [field]: text });
       setDiary(updated);
       setIsEditing(false);
@@ -98,8 +98,10 @@ export default function DiaryDetailScreen() {
   if (isLoading) return <Loading message="일기를 불러오는 중..." />;
   if (error || !diary) return <ErrorState message={error ?? '일기를 찾을 수 없습니다'} onRetry={fetchDiary} />;
 
-  const currentText = language === 'ko' ? diary.contentKo : diary.contentEn;
-  const currentTitle = language === 'ko' ? diary.titleKo : diary.titleEn;
+  const currentText = language === 'ko' ? diary.original_text : (diary.translated_text ?? '');
+  const currentTitle = language === 'ko'
+    ? (diary.original_text?.split('\n')[0]?.slice(0, 30) ?? '')
+    : (diary.translated_text?.split('\n')[0]?.slice(0, 30) ?? '');
 
   return (
     <ScrollView style={styles.container} contentContainerStyle={styles.content}>
@@ -110,7 +112,7 @@ export default function DiaryDetailScreen() {
       <Text style={styles.title} role="heading">{currentTitle}</Text>
 
       {/* Date */}
-      <Text style={styles.date}>{formatDate(diary.createdAt)}</Text>
+      <Text style={styles.date}>{formatDate(diary.created_at)}</Text>
 
       {/* Content */}
       {isEditing ? (
@@ -166,25 +168,25 @@ export default function DiaryDetailScreen() {
       )}
 
       {/* Learning Cards Summary */}
-      {diary.learningCards.length > 0 && (
+      {diary.learning_cards.length > 0 && (
         <View style={styles.section}>
           <View style={styles.sectionHeader}>
             <View style={styles.sectionHeaderLeft}>
               <Ionicons name="flash" size={20} color={colors.primary} />
               <Text style={styles.sectionTitle}>
-                학습 포인트 {diary.learningCards.length}개
+                학습 포인트 {diary.learning_cards.length}개
               </Text>
             </View>
           </View>
 
           {/* Learning card previews */}
-          {diary.learningCards.map((card) => (
+          {diary.learning_cards.map((card) => (
             <View key={card.id} style={styles.learningCardPreview}>
               <View style={styles.learningCardHeader}>
-                <Text style={styles.learningCardEnglish}>{card.english}</Text>
-                <CefrBadge level={card.cefrLevel} />
+                <Text style={styles.learningCardEnglish}>{card.content_en}</Text>
+                <CefrBadge level={card.cefr_level ?? 'A2'} />
               </View>
-              <Text style={styles.learningCardKorean}>{card.korean}</Text>
+              <Text style={styles.learningCardKorean}>{card.content_ko}</Text>
             </View>
           ))}
 
