@@ -20,35 +20,16 @@ def _make_wav(sample_rate=16000, bits_per_sample=16, num_channels=1, data_size=3
     return header + (b"\x00" * data_size)
 
 
-SAMPLE_AZURE_RESPONSE = {
-    "RecognitionStatus": "Success",
-    "NBest": [
-        {
-            "Confidence": 0.95,
-            "Lexical": "hello world",
-            "PronunciationAssessment": {
-                "AccuracyScore": 88.0,
-                "FluencyScore": 82.0,
-                "CompletenessScore": 85.0,
-                "PronScore": 85.0,
-            },
-            "Words": [
-                {
-                    "Word": "hello",
-                    "PronunciationAssessment": {
-                        "AccuracyScore": 90.0,
-                        "ErrorType": "None",
-                    },
-                },
-                {
-                    "Word": "world",
-                    "PronunciationAssessment": {
-                        "AccuracyScore": 72.0,
-                        "ErrorType": "Mispronunciation",
-                    },
-                },
-            ],
-        }
+# GPT-4o parsed response (what _call_gpt4o_pronunciation returns)
+SAMPLE_GPT4O_RESULT = {
+    "overall_score": 85.0,
+    "accuracy_score": 88.0,
+    "fluency_score": 82.0,
+    "completeness_score": 85.0,
+    "feedback": "전반적으로 좋은 발음입니다.",
+    "word_scores": [
+        {"word": "hello", "score": 90.0, "error_type": None},
+        {"word": "world", "score": 72.0, "error_type": "Mispronunciation"},
     ],
 }
 
@@ -175,9 +156,9 @@ class TestEvaluateEndpoint:
 
         with patch("app.services.pronunciation_service.UPLOAD_DIR", tmp_path):
             with patch(
-                "app.services.pronunciation_service._call_azure_pronunciation",
+                "app.services.pronunciation_service._call_gpt4o_pronunciation",
                 new_callable=AsyncMock,
-                return_value=SAMPLE_AZURE_RESPONSE,
+                return_value=SAMPLE_GPT4O_RESULT,
             ):
                 response = await client.post(
                     "/api/v1/speech/evaluate",
@@ -237,7 +218,7 @@ class TestEvaluateEndpoint:
         assert response.status_code == 400
 
     @pytest.mark.asyncio
-    async def test_evaluate_azure_failure(self, client, seed_diary, tmp_path):
+    async def test_evaluate_gpt4o_failure(self, client, seed_diary, tmp_path):
         from app.services import pronunciation_service
         from app.services.pronunciation_service import PronunciationError
         pronunciation_service._azure_cb.reset()
@@ -246,9 +227,9 @@ class TestEvaluateEndpoint:
 
         with patch("app.services.pronunciation_service.UPLOAD_DIR", tmp_path):
             with patch(
-                "app.services.pronunciation_service._call_azure_pronunciation",
+                "app.services.pronunciation_service._call_gpt4o_pronunciation",
                 new_callable=AsyncMock,
-                side_effect=PronunciationError("Azure down"),
+                side_effect=PronunciationError("GPT-4o down"),
             ):
                 response = await client.post(
                     "/api/v1/speech/evaluate",
@@ -271,9 +252,9 @@ class TestEvaluateEndpoint:
 
         with patch("app.services.pronunciation_service.UPLOAD_DIR", tmp_path):
             with patch(
-                "app.services.pronunciation_service._call_azure_pronunciation",
+                "app.services.pronunciation_service._call_gpt4o_pronunciation",
                 new_callable=AsyncMock,
-                return_value=SAMPLE_AZURE_RESPONSE,
+                return_value=SAMPLE_GPT4O_RESULT,
             ):
                 # First attempt
                 r1 = await client.post(

@@ -74,25 +74,15 @@ MOCK_LEARNING_POINTS = [
     },
 ]
 
-SAMPLE_AZURE_RESPONSE = {
-    "RecognitionStatus": "Success",
-    "NBest": [{
-        "Confidence": 0.95,
-        "Lexical": "meeting",
-        "PronunciationAssessment": {
-            "AccuracyScore": 88.0,
-            "FluencyScore": 82.0,
-            "CompletenessScore": 85.0,
-            "PronScore": 85.0,
-        },
-        "Words": [{
-            "Word": "meeting",
-            "PronunciationAssessment": {
-                "AccuracyScore": 88.0,
-                "ErrorType": "None",
-            },
-        }],
-    }],
+SAMPLE_GPT4O_RESULT = {
+    "overall_score": 85.0,
+    "accuracy_score": 88.0,
+    "fluency_score": 82.0,
+    "completeness_score": 85.0,
+    "feedback": "전반적으로 좋은 발음입니다.",
+    "word_scores": [
+        {"word": "meeting", "score": 88.0, "error_type": None},
+    ],
 }
 
 
@@ -194,9 +184,9 @@ async def test_full_conversation_to_learning_flow(client, seed_user, tmp_path):
 
     with patch("app.services.pronunciation_service.UPLOAD_DIR", tmp_path):
         with patch(
-            "app.services.pronunciation_service._call_azure_pronunciation",
+            "app.services.pronunciation_service._call_gpt4o_pronunciation",
             new_callable=AsyncMock,
-            return_value=SAMPLE_AZURE_RESPONSE,
+            return_value=SAMPLE_GPT4O_RESULT,
         ):
             resp = await client.post(
                 "/api/v1/speech/evaluate",

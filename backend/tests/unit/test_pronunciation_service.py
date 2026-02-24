@@ -9,6 +9,7 @@ from app.services.pronunciation_service import (
     PronunciationError,
     PronunciationService,
     _generate_feedback,
+    _parse_gpt4o_response,
     parse_azure_response,
 )
 from app.utils.audio import AudioValidationError
@@ -41,6 +42,7 @@ def _make_wav_header(
     return header + (b"\x00" * data_size)
 
 
+# Sample Azure response (kept for deprecated parse_azure_response tests)
 SAMPLE_AZURE_RESPONSE = {
     "RecognitionStatus": "Success",
     "NBest": [
@@ -73,8 +75,23 @@ SAMPLE_AZURE_RESPONSE = {
     ],
 }
 
+# GPT-4o parsed response (what _call_gpt4o_pronunciation returns)
+SAMPLE_GPT4O_RESULT = {
+    "overall_score": 85.0,
+    "accuracy_score": 88.0,
+    "fluency_score": 82.0,
+    "completeness_score": 85.0,
+    "feedback": "전반적으로 좋은 발음입니다. 'meeting' 발음에 주의하세요.",
+    "word_scores": [
+        {"word": "i", "score": 95.0, "error_type": None},
+        {"word": "meeting", "score": 72.0, "error_type": "Mispronunciation"},
+    ],
+}
+
 
 class TestParseAzureResponse:
+    """Tests for deprecated parse_azure_response (kept for rollback coverage)."""
+
     def test_parses_scores(self):
         result = parse_azure_response(SAMPLE_AZURE_RESPONSE)
         assert result["overall_score"] == 85.0
@@ -102,6 +119,40 @@ class TestParseAzureResponse:
     def test_missing_nbest(self):
         with pytest.raises(PronunciationError, match="결과가 없습니다"):
             parse_azure_response({})
+
+
+class TestParseGpt4oResponse:
+    def test_parses_valid_json(self):
+        import json
+        raw = json.dumps(SAMPLE_GPT4O_RESULT)
+        result = _parse_gpt4o_response(raw)
+        assert result["overall_score"] == 85.0
+        assert result["accuracy_score"] == 88.0
+        assert result["feedback"] == "전반적으로 좋은 발음입니다. 'meeting' 발음에 주의하세요."
+        assert len(result["word_scores"]) == 2
+
+    def test_invalid_json(self):
+        with pytest.raises(PronunciationError, match="JSON 파싱 실패"):
+            _parse_gpt4o_response("not json")
+
+    def test_missing_required_field(self):
+        import json
+        incomplete = {"overall_score": 80}
+        with pytest.raises(PronunciationError, match="accuracy_score"):
+            _parse_gpt4o_response(json.dumps(incomplete))
+
+    def test_fallback_feedback_when_empty(self):
+        import json
+        data = {
+            "overall_score": 85,
+            "accuracy_score": 90,
+            "fluency_score": 85,
+            "completeness_score": 80,
+            "feedback": "",
+            "word_scores": [],
+        }
+        result = _parse_gpt4o_response(json.dumps(data))
+        assert "Good pronunciation" in result["feedback"]
 
 
 class TestGenerateFeedback:
@@ -154,9 +205,9 @@ class TestPronunciationService:
 
         with patch("app.services.pronunciation_service.UPLOAD_DIR", tmp_path):
             with patch(
-                "app.services.pronunciation_service._call_azure_pronunciation",
+                "app.services.pronunciation_service._call_gpt4o_pronunciation",
                 new_callable=AsyncMock,
-                return_value=SAMPLE_AZURE_RESPONSE,
+                return_value=SAMPLE_GPT4O_RESULT,
             ):
                 result = await service.evaluate(
                     card_id=10,
@@ -185,7 +236,7 @@ class TestPronunciationService:
             )
 
     @pytest.mark.asyncio
-    async def test_evaluate_azure_failure(self, tmp_path):
+    async def test_evaluate_gpt4o_failure(self, tmp_path):
         mock_db = AsyncMock()
         service = PronunciationService(mock_db)
 
@@ -196,9 +247,9 @@ class TestPronunciationService:
 
         with patch("app.services.pronunciation_service.UPLOAD_DIR", tmp_path):
             with patch(
-                "app.services.pronunciation_service._call_azure_pronunciation",
+                "app.services.pronunciation_service._call_gpt4o_pronunciation",
                 new_callable=AsyncMock,
-                side_effect=PronunciationError("Azure down"),
+                side_effect=PronunciationError("GPT-4o down"),
             ):
                 with pytest.raises(PronunciationError, match="발음 평가 실패"):
                     await service.evaluate(
@@ -235,9 +286,9 @@ class TestPronunciationService:
 
         with patch("app.services.pronunciation_service.UPLOAD_DIR", tmp_path):
             with patch(
-                "app.services.pronunciation_service._call_azure_pronunciation",
+                "app.services.pronunciation_service._call_gpt4o_pronunciation",
                 new_callable=AsyncMock,
-                return_value=SAMPLE_AZURE_RESPONSE,
+                return_value=SAMPLE_GPT4O_RESULT,
             ):
                 result = await service.evaluate(
                     card_id=10,
