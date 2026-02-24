@@ -25,10 +25,10 @@ const statusConfig = {
 };
 
 export default function DiaryCard({ diary, onPress }: DiaryCardProps) {
-  const status = statusConfig[diary.status];
+  const status = statusConfig[diary.status as keyof typeof statusConfig] ?? { label: diary.status, color: colors.textTertiary, icon: 'ellipse' as const };
 
   return (
-    <Card onPress={onPress} style={styles.card} accessibilityLabel={`${diary.titleKo}, ${status.label}`}>
+    <Card onPress={onPress} style={styles.card} accessibilityLabel={`${diary.titleKo ?? diary.originalText ?? ''}, ${status.label}`}>
       <View style={styles.header}>
         <Text style={styles.date}>{formatDate(diary.createdAt)}</Text>
         <View style={[styles.badge, { backgroundColor: status.color + '20' }]}>
