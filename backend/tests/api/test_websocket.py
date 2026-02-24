@@ -10,22 +10,36 @@ from app.services.stt_service import STTError
 
 @pytest.mark.asyncio
 async def test_websocket_send_message(client, seed_conversation):
-    """Send a text message via WebSocket and receive AI reply."""
+    """Send a text message via WebSocket and receive AI reply + TTS audio."""
     mock_ai = AsyncMock()
     mock_ai.get_reply = AsyncMock(return_value="어떤 회의였어?")
 
+    mock_tts_result = {
+        "audio_url": "/audio/test123.mp3",
+        "text": "어떤 회의였어?",
+        "cached": False,
+        "duration_ms": None,
+    }
+
     with patch("app.services.conversation_service.AIService", return_value=mock_ai):
-        # Patch async_session to use test DB
-        from tests.conftest import TestSession
-        with patch("app.api.v1.conversation.async_session", TestSession):
-            from starlette.testclient import TestClient
-            # Use synchronous TestClient for WebSocket testing
-            with TestClient(app) as tc:
-                with tc.websocket_connect("/ws/conversation/conv_test123") as ws:
-                    ws.send_json({"type": "message", "text": "오늘 회사에서 회의했어"})
-                    data = ws.receive_json()
-                    assert data["type"] == "ai_message"
-                    assert data["text"] == "어떤 회의였어?"
+        with patch("app.api.v1.conversation.TTSService") as MockTTS:
+            MockTTS.return_value.generate = AsyncMock(return_value=mock_tts_result)
+            # Patch async_session to use test DB
+            from tests.conftest import TestSession
+            with patch("app.api.v1.conversation.async_session", TestSession):
+                from starlette.testclient import TestClient
+                # Use synchronous TestClient for WebSocket testing
+                with TestClient(app) as tc:
+                    with tc.websocket_connect("/ws/conversation/conv_test123") as ws:
+                        ws.send_json({"type": "message", "text": "오늘 회사에서 회의했어"})
+                        data = ws.receive_json()
+                        assert data["type"] == "ai_message"
+                        assert data["text"] == "어떤 회의였어?"
+
+                        # Should receive TTS audio
+                        data = ws.receive_json()
+                        assert data["type"] == "tts_audio"
+                        assert data["audio_url"] == "/audio/test123.mp3"
 
 
 @pytest.mark.asyncio
@@ -164,44 +178,58 @@ def _make_mock_stt(final_text="회사에서 회의했어"):
 
 @pytest.mark.asyncio
 async def test_websocket_audio_full_flow(client, seed_conversation):
-    """audio_start → binary chunks → audio_end → stt_final + ai_message."""
+    """audio_start → binary chunks → audio_end → stt_final + ai_message + tts_audio."""
     mock_ai = AsyncMock()
     mock_ai.get_reply = AsyncMock(return_value="어떤 회의였어?")
 
     mock_stt = _make_mock_stt("회사에서 회의했어")
 
+    mock_tts_result = {
+        "audio_url": "/audio/tts_audio.mp3",
+        "text": "어떤 회의였어?",
+        "cached": False,
+        "duration_ms": None,
+    }
+
     with patch("app.services.conversation_service.AIService", return_value=mock_ai):
         with patch("app.api.v1.conversation.STTSession", return_value=mock_stt):
-            from tests.conftest import TestSession
-            with patch("app.api.v1.conversation.async_session", TestSession):
-                from starlette.testclient import TestClient
-                with TestClient(app) as tc:
-                    with tc.websocket_connect("/ws/conversation/conv_test123") as ws:
-                        # Start audio streaming
-                        ws.send_json({"type": "audio_start"})
+            with patch("app.api.v1.conversation.TTSService") as MockTTS:
+                MockTTS.return_value.generate = AsyncMock(return_value=mock_tts_result)
+                from tests.conftest import TestSession
+                with patch("app.api.v1.conversation.async_session", TestSession):
+                    from starlette.testclient import TestClient
+                    with TestClient(app) as tc:
+                        with tc.websocket_connect("/ws/conversation/conv_test123") as ws:
+                            # Start audio streaming
+                            ws.send_json({"type": "audio_start"})
 
-                        # Send binary audio chunks
-                        ws.send_bytes(b"\x00\x01\x02\x03")
-                        ws.send_bytes(b"\x04\x05\x06\x07")
+                            # Send binary audio chunks
+                            ws.send_bytes(b"\x00\x01\x02\x03")
+                            ws.send_bytes(b"\x04\x05\x06\x07")
 
-                        # End audio streaming
-                        ws.send_json({"type": "audio_end"})
+                            # End audio streaming
+                            ws.send_json({"type": "audio_end"})
 
-                        # Should receive stt_final
-                        data = ws.receive_json()
-                        assert data["type"] == "stt_final"
-                        assert data["text"] == "회사에서 회의했어"
+                            # Should receive stt_final
+                            data = ws.receive_json()
+                            assert data["type"] == "stt_final"
+                            assert data["text"] == "회사에서 회의했어"
 
-                        # Should receive ai_message (STT → AI pipeline)
-                        data = ws.receive_json()
-                        assert data["type"] == "ai_message"
-                        assert data["text"] == "어떤 회의였어?"
+                            # Should receive ai_message (STT → AI pipeline)
+                            data = ws.receive_json()
+                            assert data["type"] == "ai_message"
+                            assert data["text"] == "어떤 회의였어?"
 
-                        # Verify STT session lifecycle
-                        mock_stt.connect.assert_called_once()
-                        assert mock_stt.send_audio.call_count == 2
-                        mock_stt.commit_and_wait_final.assert_called_once()
-                        mock_stt.close.assert_called()
+                            # Should receive tts_audio (TTS for AI reply)
+                            data = ws.receive_json()
+                            assert data["type"] == "tts_audio"
+                            assert data["audio_url"] == "/audio/tts_audio.mp3"
+
+                            # Verify STT session lifecycle
+                            mock_stt.connect.assert_called_once()
+                            assert mock_stt.send_audio.call_count == 2
+                            mock_stt.commit_and_wait_final.assert_called_once()
+                            mock_stt.close.assert_called()
 
 
 @pytest.mark.asyncio
@@ -216,22 +244,23 @@ async def test_websocket_audio_stt_connect_error(client, seed_conversation):
 
     with patch("app.services.conversation_service.AIService", return_value=mock_ai):
         with patch("app.api.v1.conversation.STTSession", return_value=mock_stt):
-            from tests.conftest import TestSession
-            with patch("app.api.v1.conversation.async_session", TestSession):
-                from starlette.testclient import TestClient
-                with TestClient(app) as tc:
-                    with tc.websocket_connect("/ws/conversation/conv_test123") as ws:
-                        ws.send_json({"type": "audio_start"})
+            with patch("app.api.v1.conversation._send_tts", new_callable=AsyncMock):
+                from tests.conftest import TestSession
+                with patch("app.api.v1.conversation.async_session", TestSession):
+                    from starlette.testclient import TestClient
+                    with TestClient(app) as tc:
+                        with tc.websocket_connect("/ws/conversation/conv_test123") as ws:
+                            ws.send_json({"type": "audio_start"})
 
-                        # Should receive STT error
-                        data = ws.receive_json()
-                        assert data["type"] == "error"
-                        assert data["code"] == "STT_FAILED"
+                            # Should receive STT error
+                            data = ws.receive_json()
+                            assert data["type"] == "error"
+                            assert data["code"] == "STT_FAILED"
 
-                        # WebSocket still alive — can send text message
-                        ws.send_json({"type": "message", "text": "타이핑으로 입력"})
-                        data = ws.receive_json()
-                        assert data["type"] == "ai_message"
+                            # WebSocket still alive — can send text message
+                            ws.send_json({"type": "message", "text": "타이핑으로 입력"})
+                            data = ws.receive_json()
+                            assert data["type"] == "ai_message"
 
 
 @pytest.mark.asyncio
@@ -245,23 +274,24 @@ async def test_websocket_audio_stt_commit_error(client, seed_conversation):
 
     with patch("app.services.conversation_service.AIService", return_value=mock_ai):
         with patch("app.api.v1.conversation.STTSession", return_value=mock_stt):
-            from tests.conftest import TestSession
-            with patch("app.api.v1.conversation.async_session", TestSession):
-                from starlette.testclient import TestClient
-                with TestClient(app) as tc:
-                    with tc.websocket_connect("/ws/conversation/conv_test123") as ws:
-                        ws.send_json({"type": "audio_start"})
-                        ws.send_json({"type": "audio_end"})
+            with patch("app.api.v1.conversation._send_tts", new_callable=AsyncMock):
+                from tests.conftest import TestSession
+                with patch("app.api.v1.conversation.async_session", TestSession):
+                    from starlette.testclient import TestClient
+                    with TestClient(app) as tc:
+                        with tc.websocket_connect("/ws/conversation/conv_test123") as ws:
+                            ws.send_json({"type": "audio_start"})
+                            ws.send_json({"type": "audio_end"})
 
-                        # Should receive STT error
-                        data = ws.receive_json()
-                        assert data["type"] == "error"
-                        assert data["code"] == "STT_FAILED"
+                            # Should receive STT error
+                            data = ws.receive_json()
+                            assert data["type"] == "error"
+                            assert data["code"] == "STT_FAILED"
 
-                        # Fallback: can still send text
-                        ws.send_json({"type": "message", "text": "텍스트 폴백"})
-                        data = ws.receive_json()
-                        assert data["type"] == "ai_message"
+                            # Fallback: can still send text
+                            ws.send_json({"type": "message", "text": "텍스트 폴백"})
+                            data = ws.receive_json()
+                            assert data["type"] == "ai_message"
 
 
 @pytest.mark.asyncio
@@ -285,28 +315,29 @@ async def test_websocket_audio_empty_final_text(client, seed_conversation):
     mock_stt = _make_mock_stt("")  # Empty transcription
 
     with patch("app.api.v1.conversation.STTSession", return_value=mock_stt):
-        from tests.conftest import TestSession
-        with patch("app.api.v1.conversation.async_session", TestSession):
-            from starlette.testclient import TestClient
-            with TestClient(app) as tc:
-                with tc.websocket_connect("/ws/conversation/conv_test123") as ws:
-                    ws.send_json({"type": "audio_start"})
-                    ws.send_json({"type": "audio_end"})
+        with patch("app.api.v1.conversation._send_tts", new_callable=AsyncMock):
+            from tests.conftest import TestSession
+            with patch("app.api.v1.conversation.async_session", TestSession):
+                from starlette.testclient import TestClient
+                with TestClient(app) as tc:
+                    with tc.websocket_connect("/ws/conversation/conv_test123") as ws:
+                        ws.send_json({"type": "audio_start"})
+                        ws.send_json({"type": "audio_end"})
 
-                    # Should receive stt_final with empty text
-                    data = ws.receive_json()
-                    assert data["type"] == "stt_final"
-                    assert data["text"] == ""
-
-                    # No ai_message should follow — user can try again
-                    # Send another audio or text message
-                    with patch.object(
-                        ConversationService, "handle_user_message",
-                        new_callable=AsyncMock, return_value="뭐라고 했어?",
-                    ):
-                        ws.send_json({"type": "message", "text": "안녕"})
+                        # Should receive stt_final with empty text
                         data = ws.receive_json()
-                        assert data["type"] == "ai_message"
+                        assert data["type"] == "stt_final"
+                        assert data["text"] == ""
+
+                        # No ai_message should follow — user can try again
+                        # Send another audio or text message
+                        with patch.object(
+                            ConversationService, "handle_user_message",
+                            new_callable=AsyncMock, return_value="뭐라고 했어?",
+                        ):
+                            ws.send_json({"type": "message", "text": "안녕"})
+                            data = ws.receive_json()
+                            assert data["type"] == "ai_message"
 
 
 @pytest.mark.asyncio
@@ -322,26 +353,38 @@ async def test_websocket_audio_then_finish(client, seed_conversation):
 
     mock_stt = _make_mock_stt("회사에서 회의했어")
 
+    mock_tts_result = {
+        "audio_url": "/audio/tts.mp3",
+        "text": "좋았겠다!",
+        "cached": False,
+        "duration_ms": None,
+    }
+
     with patch("app.services.conversation_service.AIService", return_value=mock_ai):
         with patch("app.api.v1.conversation.STTSession", return_value=mock_stt):
-            from tests.conftest import TestSession
-            with patch("app.api.v1.conversation.async_session", TestSession):
-                from starlette.testclient import TestClient
-                with TestClient(app) as tc:
-                    with tc.websocket_connect("/ws/conversation/conv_test123") as ws:
-                        # Audio flow
-                        ws.send_json({"type": "audio_start"})
-                        ws.send_bytes(b"\x00\x01")
-                        ws.send_json({"type": "audio_end"})
+            with patch("app.api.v1.conversation.TTSService") as MockTTS:
+                MockTTS.return_value.generate = AsyncMock(return_value=mock_tts_result)
+                from tests.conftest import TestSession
+                with patch("app.api.v1.conversation.async_session", TestSession):
+                    from starlette.testclient import TestClient
+                    with TestClient(app) as tc:
+                        with tc.websocket_connect("/ws/conversation/conv_test123") as ws:
+                            # Audio flow
+                            ws.send_json({"type": "audio_start"})
+                            ws.send_bytes(b"\x00\x01")
+                            ws.send_json({"type": "audio_end"})
 
-                        stt_final = ws.receive_json()
-                        assert stt_final["type"] == "stt_final"
+                            stt_final = ws.receive_json()
+                            assert stt_final["type"] == "stt_final"
 
-                        ai_msg = ws.receive_json()
-                        assert ai_msg["type"] == "ai_message"
+                            ai_msg = ws.receive_json()
+                            assert ai_msg["type"] == "ai_message"
 
-                        # Now finish
-                        ws.send_json({"type": "finish"})
-                        data = ws.receive_json()
-                        assert data["type"] == "diary_created"
-                        assert data["diary"]["translated_text"] == "I had a meeting at work today."
+                            tts_msg = ws.receive_json()
+                            assert tts_msg["type"] == "tts_audio"
+
+                            # Now finish
+                            ws.send_json({"type": "finish"})
+                            data = ws.receive_json()
+                            assert data["type"] == "diary_created"
+                            assert data["diary"]["translated_text"] == "I had a meeting at work today."

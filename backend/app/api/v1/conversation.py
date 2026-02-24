@@ -19,6 +19,25 @@ logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/conversation", tags=["conversation"])
 
 
+async def _send_tts(websocket: WebSocket, db, text: str) -> None:
+    """Generate TTS audio for text and send to client via WebSocket."""
+    try:
+        tts_service = TTSService(db)
+        tts_result = await tts_service.generate(text)
+        await websocket.send_json({
+            "type": "tts_audio",
+            "audio_url": tts_result["audio_url"],
+            "cached": tts_result.get("cached", False),
+        })
+    except Exception as e:
+        logger.error("TTS failed: %s", e)
+        await websocket.send_json({
+            "type": "error",
+            "code": "TTS_FAILED",
+            "message": str(e),
+        })
+
+
 @router.post("", response_model=ConversationCreateResponse, status_code=201)
 async def create_conversation(db: AsyncSession = Depends(get_db)):
     """Create a new conversation session. Returns AI's first question."""
@@ -172,6 +191,8 @@ async def conversation_websocket(websocket: WebSocket, session_id: str):
                             await websocket.send_json(
                                 {"type": "ai_message", "text": ai_reply}
                             )
+                            # TTS: AI 답변을 음성으로 변환해서 전송
+                            await _send_tts(websocket, db, ai_reply)
 
                 # ── text message ─────────────────────────────────
                 elif msg_type == "message":
@@ -201,21 +222,7 @@ async def conversation_websocket(websocket: WebSocket, session_id: str):
                         await websocket.send_json({"type": "ai_message", "text": ai_reply})
 
                         # TTS: AI 답변을 음성으로 변환해서 전송
-                        try:
-                            tts_service = TTSService(db)
-                            tts_result = await tts_service.generate(ai_reply)
-                            await websocket.send_json({
-                                "type": "tts_audio",
-                                "audio_url": tts_result["audio_url"],
-                                "cached": tts_result.get("cached", False),
-                            })
-                        except Exception as e:
-                            logger.error("TTS failed: %s", e)
-                            await websocket.send_json({
-                                "type": "error",
-                                "code": "TTS_FAILED",
-                                "message": str(e),
-                            })
+                        await _send_tts(websocket, db, ai_reply)
 
                 # ── finish ───────────────────────────────────────
                 elif msg_type == "finish":
