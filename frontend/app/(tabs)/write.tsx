@@ -1,6 +1,5 @@
 import React, { useCallback, useEffect, useRef } from 'react';
 import { View, Text, StyleSheet } from 'react-native';
-import { FlashList, type FlashListRef } from '@shopify/flash-list';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { useRouter } from 'expo-router';
@@ -8,48 +7,70 @@ import { useRouter } from 'expo-router';
 import { colors, fontSize, spacing } from '../../src/constants/theme';
 import { Button } from '../../src/components/common';
 import {
-  ChatBubble,
-  ChatInput,
   TurnIndicator,
-  TypingIndicator,
   ConnectionStatus,
   DiaryCreatingOverlay,
+  VoiceOrb,
+  VoiceStatus,
+  MicButton,
 } from '../../src/components/conversation';
 import { useConversationStore } from '../../src/stores/useConversationStore';
-import { Message } from '../../src/types';
 
 export default function WriteScreen() {
   const router = useRouter();
   const {
     sessionId,
-    messages,
     turnCount,
     maxTurns,
     connectionStatus,
-    isAiTyping,
     interimText,
     isCreatingDiary,
     createdDiary,
     isLoading,
     error,
+    voiceState,
+    volume,
     startConversation,
     sendMessage,
     finishConversation,
+    setVoiceState,
+    setVolume,
     reset,
   } = useConversationStore();
 
-  const listRef = useRef<FlashListRef<Message>>(null);
   const isActive = !!sessionId && !createdDiary;
+  const fakeVolumeRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
-  // Auto-scroll to bottom when messages change
+  // Fake volume simulation
   useEffect(() => {
-    if (messages.length > 0) {
-      const timer = setTimeout(() => {
-        listRef.current?.scrollToEnd({ animated: true });
+    if (voiceState === 'listening' || voiceState === 'ai_speaking') {
+      fakeVolumeRef.current = setInterval(() => {
+        setVolume(0.2 + Math.random() * 0.6);
       }, 100);
+    } else {
+      setVolume(0);
+      if (fakeVolumeRef.current) {
+        clearInterval(fakeVolumeRef.current);
+        fakeVolumeRef.current = null;
+      }
+    }
+    return () => {
+      if (fakeVolumeRef.current) {
+        clearInterval(fakeVolumeRef.current);
+        fakeVolumeRef.current = null;
+      }
+    };
+  }, [voiceState, setVolume]);
+
+  // Auto-transition from ai_speaking back to idle after a delay
+  useEffect(() => {
+    if (voiceState === 'ai_speaking') {
+      const timer = setTimeout(() => {
+        setVoiceState('idle');
+      }, 3000);
       return () => clearTimeout(timer);
     }
-  }, [messages.length, isAiTyping]);
+  }, [voiceState, setVoiceState]);
 
   // Cleanup on unmount
   useEffect(() => {
@@ -58,12 +79,15 @@ export default function WriteScreen() {
     };
   }, [reset]);
 
-  const handleSend = useCallback(
-    (text: string) => {
-      sendMessage(text);
-    },
-    [sendMessage],
-  );
+  const handleMicPress = useCallback(() => {
+    if (voiceState === 'listening') {
+      // Stop recording → send a simulated message
+      setVoiceState('processing');
+      sendMessage('(음성 입력)');
+    } else if (voiceState === 'idle') {
+      setVoiceState('listening');
+    }
+  }, [voiceState, setVoiceState, sendMessage]);
 
   const handleFinish = useCallback(() => {
     finishConversation();
@@ -78,7 +102,7 @@ export default function WriteScreen() {
     return (
       <SafeAreaView style={styles.container} edges={['top']}>
         <View style={styles.idleContainer}>
-          <Ionicons name="chatbubbles-outline" size={72} color={colors.primaryLight} />
+          <Ionicons name="mic-outline" size={72} color={colors.primaryLight} />
           <Text style={styles.idleTitle}>AI와 대화하기</Text>
           <Text style={styles.idleSubtitle}>
             오늘 하루에 대해 이야기하면{'\n'}AI가 영어 일기를 만들어드려요
@@ -87,7 +111,7 @@ export default function WriteScreen() {
             title="대화 시작하기"
             onPress={startConversation}
             size="lg"
-            icon={<Ionicons name="chatbubble-ellipses" size={20} color="#fff" />}
+            icon={<Ionicons name="mic" size={20} color="#fff" />}
             style={styles.startButton}
           />
           {error && <Text style={styles.errorText}>{error}</Text>}
@@ -140,10 +164,9 @@ export default function WriteScreen() {
     );
   }
 
-  // --- Active conversation ---
+  // --- Active conversation: Voice Orb UI ---
   const canFinish = turnCount >= 2 && connectionStatus === 'connected' && !isCreatingDiary;
-
-  const renderItem = ({ item }: { item: Message }) => <ChatBubble message={item} />;
+  const micDisabled = connectionStatus !== 'connected' || isCreatingDiary || voiceState === 'processing' || voiceState === 'ai_speaking';
 
   return (
     <SafeAreaView style={styles.container} edges={['top']}>
@@ -156,21 +179,15 @@ export default function WriteScreen() {
         <TurnIndicator current={turnCount} max={maxTurns} />
       </View>
 
-      {/* Message list */}
-      <View style={styles.listWrapper}>
-        <FlashList
-          ref={listRef}
-          data={messages}
-          renderItem={renderItem}
-          keyExtractor={(item) => item.id}
-          contentContainerStyle={styles.listContent}
-          ListFooterComponent={isAiTyping ? <TypingIndicator /> : null}
-        />
+      {/* Voice Orb area */}
+      <View style={styles.orbArea}>
+        <VoiceOrb volume={volume} state={voiceState} />
+        <VoiceStatus state={voiceState} interimText={interimText} />
       </View>
 
-      {/* Finish button */}
-      {isActive && (
-        <View style={styles.finishRow}>
+      {/* Bottom controls */}
+      <View style={styles.controls}>
+        {isActive && (
           <Button
             title="대화 완료"
             onPress={handleFinish}
@@ -179,15 +196,13 @@ export default function WriteScreen() {
             disabled={!canFinish}
             icon={<Ionicons name="checkmark-done" size={16} color={canFinish ? colors.primary : colors.textTertiary} />}
           />
-        </View>
-      )}
-
-      {/* Chat input */}
-      <ChatInput
-        onSend={handleSend}
-        disabled={connectionStatus !== 'connected' || isCreatingDiary || isAiTyping}
-        interimText={interimText}
-      />
+        )}
+        <MicButton
+          isRecording={voiceState === 'listening'}
+          disabled={micDisabled}
+          onPress={handleMicPress}
+        />
+      </View>
 
       {/* Diary creation overlay */}
       {isCreatingDiary && <DiaryCreatingOverlay />}
@@ -200,7 +215,7 @@ const styles = StyleSheet.create({
     flex: 1,
     backgroundColor: colors.background,
   },
-  // Idle
+  // Idle / Success
   idleContainer: {
     flex: 1,
     justifyContent: 'center',
@@ -253,17 +268,21 @@ const styles = StyleSheet.create({
     fontWeight: '700',
     color: colors.text,
   },
-  // List
-  listWrapper: {
+  // Voice Orb
+  orbArea: {
     flex: 1,
-  },
-  listContent: {
-    paddingVertical: spacing.md,
-  },
-  // Finish
-  finishRow: {
     alignItems: 'center',
-    paddingVertical: spacing.xs,
+    justifyContent: 'center',
+    gap: spacing.md,
+  },
+  // Bottom controls
+  controls: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: spacing.lg,
+    paddingVertical: spacing.lg,
+    paddingBottom: spacing.xl,
     backgroundColor: colors.background,
   },
 });

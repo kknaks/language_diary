@@ -4,3 +4,6 @@ export { default as TurnIndicator } from './TurnIndicator';
 export { default as TypingIndicator } from './TypingIndicator';
 export { default as ConnectionStatus } from './ConnectionStatus';
 export { default as DiaryCreatingOverlay } from './DiaryCreatingOverlay';
+export { default as VoiceOrb } from './VoiceOrb';
+export { default as VoiceStatus } from './VoiceStatus';
+export { default as MicButton } from './MicButton';

@@ -3,6 +3,8 @@ import { Conversation, Message, ConnectionStatus, Diary, ServerMessage } from '.
 import { createConversation, adaptDiary } from '../services/api';
 import { wsClient } from '../services/websocket';
 
+export type VoiceState = 'idle' | 'listening' | 'ai_speaking' | 'processing';
+
 interface ConversationState {
   // Session
   sessionId: string | null;
@@ -16,6 +18,10 @@ interface ConversationState {
   isAiTyping: boolean;
   interimText: string;
 
+  // Voice UI
+  voiceState: VoiceState;
+  volume: number;
+
   // Diary creation
   isCreatingDiary: boolean;
   createdDiary: Diary | null;
@@ -28,6 +34,8 @@ interface ConversationState {
   startConversation: () => Promise<void>;
   sendMessage: (text: string) => void;
   finishConversation: () => void;
+  setVoiceState: (state: VoiceState) => void;
+  setVolume: (volume: number) => void;
   reset: () => void;
 }
 
@@ -47,6 +55,8 @@ export const useConversationStore = create<ConversationState>((set, get) => ({
   connectionStatus: 'disconnected',
   isAiTyping: false,
   interimText: '',
+  voiceState: 'idle',
+  volume: 0,
   isCreatingDiary: false,
   createdDiary: null,
   isLoading: false,
@@ -112,6 +122,8 @@ export const useConversationStore = create<ConversationState>((set, get) => ({
       turnCount: state.turnCount + 1,
       interimText: '',
       isAiTyping: true,
+      voiceState: 'processing' as VoiceState,
+      volume: 0,
     }));
 
     wsClient.send({ type: 'message', text });
@@ -121,8 +133,16 @@ export const useConversationStore = create<ConversationState>((set, get) => ({
     const { connectionStatus } = get();
     if (connectionStatus !== 'connected') return;
 
-    set({ isCreatingDiary: true, isAiTyping: false });
+    set({ isCreatingDiary: true, isAiTyping: false, voiceState: 'processing' });
     wsClient.send({ type: 'finish' });
+  },
+
+  setVoiceState: (voiceState: VoiceState) => {
+    set({ voiceState });
+  },
+
+  setVolume: (volume: number) => {
+    set({ volume: Math.max(0, Math.min(1, volume)) });
   },
 
   reset: () => {
@@ -140,6 +160,8 @@ export const useConversationStore = create<ConversationState>((set, get) => ({
       connectionStatus: 'disconnected',
       isAiTyping: false,
       interimText: '',
+      voiceState: 'idle',
+      volume: 0,
       isCreatingDiary: false,
       createdDiary: null,
       isLoading: false,
@@ -174,12 +196,13 @@ function handleServerMessage(
         messages: [...state.messages, aiMessage],
         turnCount: state.turnCount + 1,
         isAiTyping: false,
+        voiceState: 'ai_speaking' as VoiceState,
       }));
       break;
     }
 
     case 'diary_created':
-      set({ isCreatingDiary: false, createdDiary: adaptDiary(msg.diary) });
+      set({ isCreatingDiary: false, createdDiary: adaptDiary(msg.diary), voiceState: 'idle' as VoiceState, volume: 0 });
       break;
 
     case 'error':
