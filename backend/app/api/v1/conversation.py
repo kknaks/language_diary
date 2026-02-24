@@ -12,6 +12,7 @@ from app.exceptions import AppError
 from app.schemas.conversation import ConversationCreateResponse, ConversationDetailResponse
 from app.services.conversation_service import ConversationService
 from app.services.stt_service import STTError, STTSession
+from app.services.tts_service import TTSService
 
 logger = logging.getLogger(__name__)
 
@@ -198,6 +199,23 @@ async def conversation_websocket(websocket: WebSocket, session_id: str):
                         break
                     else:
                         await websocket.send_json({"type": "ai_message", "text": ai_reply})
+
+                        # TTS: AI 답변을 음성으로 변환해서 전송
+                        try:
+                            tts_service = TTSService(db)
+                            tts_result = await tts_service.generate(ai_reply)
+                            await websocket.send_json({
+                                "type": "tts_audio",
+                                "audio_url": tts_result["audio_url"],
+                                "cached": tts_result.get("cached", False),
+                            })
+                        except Exception as e:
+                            logger.error("TTS failed: %s", e)
+                            await websocket.send_json({
+                                "type": "error",
+                                "code": "TTS_FAILED",
+                                "message": str(e),
+                            })
 
                 # ── finish ───────────────────────────────────────
                 elif msg_type == "finish":
