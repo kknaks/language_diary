@@ -115,24 +115,25 @@ async def test_full_conversation_to_learning_flow(client, seed_user, tmp_path):
     with patch("app.services.conversation_service.AIService", return_value=mock_ai):
         from tests.conftest import TestSession
         with patch("app.api.v1.conversation.async_session", TestSession):
-            with TestClient(app) as tc:
-                with tc.websocket_connect(f"/ws/conversation/{session_id}") as ws:
-                    # User message 1
-                    ws.send_json({"type": "message", "text": "회사에서 회의했어"})
-                    data = ws.receive_json()
-                    assert data["type"] == "ai_message"
-                    assert data["text"] == "어떤 회의였어? 누구랑 했어?"
+            with patch("app.api.v1.conversation._send_tts", new_callable=AsyncMock):
+                with TestClient(app) as tc:
+                    with tc.websocket_connect(f"/ws/conversation/{session_id}") as ws:
+                        # User message 1
+                        ws.send_json({"type": "message", "text": "회사에서 회의했어"})
+                        data = ws.receive_json()
+                        assert data["type"] == "ai_message"
+                        assert data["text"] == "어떤 회의였어? 누구랑 했어?"
 
-                    # User message 2
-                    ws.send_json({"type": "message", "text": "팀장님이랑 프로젝트 일정 잡았어"})
-                    data = ws.receive_json()
-                    assert data["type"] == "ai_message"
-                    assert data["text"] == "결과는 어땠어? 힘들진 않았어?"
+                        # User message 2
+                        ws.send_json({"type": "message", "text": "팀장님이랑 프로젝트 일정 잡았어"})
+                        data = ws.receive_json()
+                        assert data["type"] == "ai_message"
+                        assert data["text"] == "결과는 어땠어? 힘들진 않았어?"
 
-                    # ── Step 3: Finish conversation ──────────────────
-                    ws.send_json({"type": "finish"})
-                    data = ws.receive_json()
-                    assert data["type"] == "diary_created"
+                        # ── Step 3: Finish conversation ──────────────────
+                        ws.send_json({"type": "finish"})
+                        data = ws.receive_json()
+                        assert data["type"] == "diary_created"
 
                     diary = data["diary"]
                     assert diary["status"] == "translated"
@@ -249,26 +250,27 @@ async def test_conversation_with_audio_stt_then_finish(client, seed_user, tmp_pa
         with patch("app.api.v1.conversation.STTSession", return_value=mock_stt):
             from tests.conftest import TestSession
             with patch("app.api.v1.conversation.async_session", TestSession):
-                with TestClient(app) as tc:
-                    with tc.websocket_connect(f"/ws/conversation/{session_id}") as ws:
-                        # Audio streaming flow
-                        ws.send_json({"type": "audio_start"})
-                        ws.send_bytes(b"\x00\x01\x02\x03")
-                        ws.send_json({"type": "audio_end"})
+                with patch("app.api.v1.conversation._send_tts", new_callable=AsyncMock):
+                    with TestClient(app) as tc:
+                        with tc.websocket_connect(f"/ws/conversation/{session_id}") as ws:
+                            # Audio streaming flow
+                            ws.send_json({"type": "audio_start"})
+                            ws.send_bytes(b"\x00\x01\x02\x03")
+                            ws.send_json({"type": "audio_end"})
 
-                        stt_final = ws.receive_json()
-                        assert stt_final["type"] == "stt_final"
-                        assert stt_final["text"] == "친구랑 카페 갔어"
+                            stt_final = ws.receive_json()
+                            assert stt_final["type"] == "stt_final"
+                            assert stt_final["text"] == "친구랑 카페 갔어"
 
-                        ai_msg = ws.receive_json()
-                        assert ai_msg["type"] == "ai_message"
-                        assert ai_msg["text"] == "재밌었겠다!"
+                            ai_msg = ws.receive_json()
+                            assert ai_msg["type"] == "ai_message"
+                            assert ai_msg["text"] == "재밌었겠다!"
 
-                        # Finish
-                        ws.send_json({"type": "finish"})
-                        result = ws.receive_json()
-                        assert result["type"] == "diary_created"
-                        assert len(result["diary"]["learning_cards"]) == 1
+                            # Finish
+                            ws.send_json({"type": "finish"})
+                            result = ws.receive_json()
+                            assert result["type"] == "diary_created"
+                            assert len(result["diary"]["learning_cards"]) == 1
 
     # Verify diary persisted
     diary_id = result["diary"]["id"]

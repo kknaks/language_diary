@@ -57,19 +57,20 @@ async def test_max_turns_auto_finish(client, seed_user):
     with patch("app.services.conversation_service.AIService", return_value=mock_ai):
         from tests.conftest import TestSession
         with patch("app.api.v1.conversation.async_session", TestSession):
-            with TestClient(app) as tc:
-                with tc.websocket_connect(f"/ws/conversation/{session_id}") as ws:
-                    # Send 8 messages — get AI replies
-                    for i in range(8):
-                        ws.send_json({"type": "message", "text": f"메시지 {i+1}"})
-                        data = ws.receive_json()
-                        assert data["type"] == "ai_message", f"Turn {i+1}: expected ai_message, got {data['type']}"
+            with patch("app.api.v1.conversation._send_tts", new_callable=AsyncMock):
+                with TestClient(app) as tc:
+                    with tc.websocket_connect(f"/ws/conversation/{session_id}") as ws:
+                        # Send 8 messages — get AI replies
+                        for i in range(8):
+                            ws.send_json({"type": "message", "text": f"메시지 {i+1}"})
+                            data = ws.receive_json()
+                            assert data["type"] == "ai_message", f"Turn {i+1}: expected ai_message, got {data['type']}"
 
-                    # 9th message triggers auto-finish (turn_count=9, 9+1>=10)
-                    ws.send_json({"type": "message", "text": "메시지 9"})
-                    data = ws.receive_json()
-                    assert data["type"] == "diary_created"
-                    assert data["diary"]["translated_text"] == "Auto-completed diary"
+                        # 9th message triggers auto-finish (turn_count=9, 9+1>=10)
+                        ws.send_json({"type": "message", "text": "메시지 9"})
+                        data = ws.receive_json()
+                        assert data["type"] == "diary_created"
+                        assert data["diary"]["translated_text"] == "Auto-completed diary"
 
 
 # ---------------------------------------------------------------------------
