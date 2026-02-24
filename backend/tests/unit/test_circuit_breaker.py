@@ -1,6 +1,5 @@
 """Tests for Circuit Breaker + Retry utility."""
 
-import asyncio
 import pytest
 from unittest.mock import AsyncMock
 

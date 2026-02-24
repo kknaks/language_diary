@@ -10,7 +10,6 @@ from app.config import settings
 from app.database import async_session, get_db
 from app.exceptions import AppError
 from app.schemas.conversation import ConversationCreateResponse, ConversationDetailResponse
-from app.services.ai_service import AIService
 from app.services.conversation_service import ConversationService
 from app.services.stt_service import STTError, STTSession
 

@@ -1,7 +1,6 @@
 """Tests for consolidated error handlers and exception classes."""
 
 import pytest
-from httpx import ASGITransport, AsyncClient
 
 from app.exceptions import (
     AppError,

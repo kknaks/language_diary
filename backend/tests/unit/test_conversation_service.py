@@ -1,9 +1,8 @@
 """Unit tests for ConversationService with mocked AIService."""
 
 import pytest
-from unittest.mock import AsyncMock, patch
+from unittest.mock import AsyncMock
 
-from app.models.conversation import ConversationSession, ConversationMessage
 from app.services.conversation_service import ConversationService
 
 

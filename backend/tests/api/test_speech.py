@@ -2,9 +2,8 @@
 
 import struct
 import pytest
-from unittest.mock import AsyncMock, MagicMock, patch
+from unittest.mock import AsyncMock, patch
 
-from app.models.learning import LearningCard
 
 
 def _make_wav(sample_rate=16000, bits_per_sample=16, num_channels=1, data_size=3200):

@@ -1,10 +1,8 @@
 """Tests for WebSocket /ws/conversation/{session_id}."""
 
-import json
 import pytest
-from unittest.mock import AsyncMock, patch, MagicMock
+from unittest.mock import AsyncMock, patch
 
-from httpx import ASGITransport, AsyncClient
 from app.main import app
 from app.services.stt_service import STTError
 

@@ -6,8 +6,6 @@ from typing import Dict, List
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.exceptions import (
-    AppError,
-    ConflictError,
     NotFoundError,
     SessionAlreadyCompletedError,
     SessionExpiredError,

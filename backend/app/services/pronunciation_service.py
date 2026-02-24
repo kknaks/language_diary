@@ -6,13 +6,13 @@ import logging
 import uuid
 from decimal import Decimal
 from pathlib import Path
-from typing import Dict, List, Optional
+from typing import List
 
 import httpx
 from openai import AsyncOpenAI
 
 from app.config import settings
-from app.utils.audio import AudioValidationError, validate_wav_upload
+from app.utils.audio import validate_wav_upload
 from app.utils.circuit_breaker import CircuitBreaker, CircuitBreakerError, retry_with_backoff
 
 logger = logging.getLogger(__name__)
