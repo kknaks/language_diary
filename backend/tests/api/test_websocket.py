@@ -4,6 +4,7 @@ import pytest
 from unittest.mock import AsyncMock, patch
 
 from app.main import app
+from app.services.conversation_service import ConversationService
 from app.services.stt_service import STTError
 
 
@@ -299,9 +300,10 @@ async def test_websocket_audio_empty_final_text(client, seed_conversation):
 
                     # No ai_message should follow — user can try again
                     # Send another audio or text message
-                    mock_ai = AsyncMock()
-                    mock_ai.get_reply = AsyncMock(return_value="뭐라고 했어?")
-                    with patch("app.services.conversation_service.AIService", return_value=mock_ai):
+                    with patch.object(
+                        ConversationService, "handle_user_message",
+                        new_callable=AsyncMock, return_value="뭐라고 했어?",
+                    ):
                         ws.send_json({"type": "message", "text": "안녕"})
                         data = ws.receive_json()
                         assert data["type"] == "ai_message"
