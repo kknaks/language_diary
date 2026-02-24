@@ -210,12 +210,16 @@ function handleServerMessage(
     case 'tts_audio':
       playAudioFromUrl(msg.audio_url, () => {
         set({ voiceState: 'idle' as VoiceState, volume: 0 });
-      }).catch(() => {
+      }).catch((err) => {
+        console.error('[TTS] playAudioFromUrl error:', err);
         set({ voiceState: 'idle' as VoiceState, volume: 0 });
       });
       break;
 
     case 'error':
+      if (msg.code === 'TTS_FAILED') {
+        console.error('[TTS] Backend TTS failed:', msg.message);
+      }
       set({ isAiTyping: false, isCreatingDiary: false, error: msg.message });
       break;
   }

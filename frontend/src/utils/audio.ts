@@ -56,7 +56,8 @@ export async function playAudioFromUrl(
       sound.unloadAsync().catch(() => {});
       if (currentSound === sound) currentSound = null;
     };
-  } catch {
+  } catch (err) {
+    console.error('[TTS Audio] playback failed for', uri, err);
     onFinish?.();
     return () => {};
   }
