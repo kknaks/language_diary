@@ -48,7 +48,7 @@ export default function DiaryListItem({ diary, onPress, onDelete }: DiaryListIte
       onLongPress={handleLongPress}
       activeOpacity={0.7}
       delayLongPress={500}
-      accessibilityRole="button"
+      role="button"
       accessibilityLabel={`${diary.titleKo}, ${status.label}`}
       accessibilityHint="탭하여 상세 보기, 길게 누르면 삭제"
     >

@@ -11,7 +11,7 @@ export default function NetworkBanner({ isOffline }: NetworkBannerProps) {
   if (!isOffline) return null;
 
   return (
-    <View style={styles.container} accessibilityRole="alert" accessibilityLabel="인터넷 연결이 끊어졌습니다">
+    <View style={styles.container} role="alert" accessibilityLabel="인터넷 연결이 끊어졌습니다">
       <Ionicons name="cloud-offline-outline" size={16} color="#fff" />
       <Text style={styles.text}>인터넷 연결이 끊어졌습니다</Text>
     </View>

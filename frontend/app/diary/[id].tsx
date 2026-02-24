@@ -107,7 +107,7 @@ export default function DiaryDetailScreen() {
       <LanguageToggle selected={language} onSelect={setLanguage} />
 
       {/* Title */}
-      <Text style={styles.title} accessibilityRole="header">{currentTitle}</Text>
+      <Text style={styles.title} role="heading">{currentTitle}</Text>
 
       {/* Date */}
       <Text style={styles.date}>{formatDate(diary.createdAt)}</Text>

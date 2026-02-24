@@ -21,7 +21,7 @@ export default function Card({ children, onPress, style, accessibilityLabel }: C
       <TouchableOpacity
         onPress={onPress}
         activeOpacity={0.7}
-        accessibilityRole="button"
+        role="button"
         accessibilityLabel={accessibilityLabel}
       >
         {content}

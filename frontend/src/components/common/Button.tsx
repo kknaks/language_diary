@@ -26,7 +26,7 @@ export default function Button({
       onPress={onPress}
       disabled={isDisabled}
       activeOpacity={0.7}
-      accessibilityRole="button"
+      role="button"
       accessibilityLabel={title}
       accessibilityState={{ disabled: isDisabled }}
     >

@@ -32,7 +32,7 @@ export default function HomeScreen() {
   return (
     <View style={styles.container}>
       {/* Header */}
-      <View style={styles.header} accessibilityRole="header">
+      <View style={styles.header} role="heading">
         <View>
           <Text style={styles.greeting}>안녕하세요</Text>
           <Text style={styles.headerSubtitle}>오늘도 영어 일기를 써볼까요?</Text>

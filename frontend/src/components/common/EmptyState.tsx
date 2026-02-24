@@ -14,7 +14,7 @@ interface EmptyStateProps {
 
 export default function EmptyState({ icon = 'book-outline', title, description, actionLabel, onAction }: EmptyStateProps) {
   return (
-    <View style={styles.container} accessibilityRole="summary" accessibilityLabel={`${title}${description ? `. ${description}` : ''}`}>
+    <View style={styles.container} role="summary" accessibilityLabel={`${title}${description ? `. ${description}` : ''}`}>
       <Ionicons name={icon} size={64} color={colors.textTertiary} accessibilityElementsHidden />
       <Text style={styles.title}>{title}</Text>
       {description && <Text style={styles.description}>{description}</Text>}

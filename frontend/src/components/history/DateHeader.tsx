@@ -8,7 +8,7 @@ interface DateHeaderProps {
 
 export default function DateHeader({ title }: DateHeaderProps) {
   return (
-    <View style={styles.container} accessibilityRole="header">
+    <View style={styles.container} role="heading">
       <Text style={styles.text}>{title}</Text>
     </View>
   );
