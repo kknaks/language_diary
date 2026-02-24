@@ -2,6 +2,7 @@ import { create } from 'zustand';
 import { Conversation, Message, ConnectionStatus, Diary, ServerMessage } from '../types';
 import { createConversation, adaptDiary } from '../services/api';
 import { wsClient } from '../services/websocket';
+import { playAudioFromUrl, stopCurrentAudio } from '../utils/audio';
 
 export type VoiceState = 'idle' | 'listening' | 'ai_speaking' | 'processing';
 
@@ -151,6 +152,7 @@ export const useConversationStore = create<ConversationState>((set, get) => ({
     unsubStatus = null;
     unsubMessage = null;
     wsClient.disconnect();
+    stopCurrentAudio();
 
     set({
       sessionId: null,
@@ -206,7 +208,11 @@ function handleServerMessage(
       break;
 
     case 'tts_audio':
-      // TTS audio URL received — currently no playback; ignore gracefully
+      playAudioFromUrl(msg.audio_url, () => {
+        set({ voiceState: 'idle' as VoiceState, volume: 0 });
+      }).catch(() => {
+        set({ voiceState: 'idle' as VoiceState, volume: 0 });
+      });
       break;
 
     case 'error':
