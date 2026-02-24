@@ -35,6 +35,8 @@ async def setup_db():
     yield
     async with engine.begin() as conn:
         await conn.run_sync(Base.metadata.drop_all)
+    # aiosqlite 스레드가 이벤트 루프 종료 전에 정리되도록
+    await engine.dispose()
 
 
 @pytest_asyncio.fixture
