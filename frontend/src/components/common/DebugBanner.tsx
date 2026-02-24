@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { View, Text, StyleSheet, TouchableOpacity, ScrollView } from 'react-native';
 
 interface LogEntry {
@@ -9,14 +9,18 @@ interface LogEntry {
 
 const logs: LogEntry[] = [];
 const MAX_LOGS = 50;
-let _forceUpdate: (() => void) | null = null;
+const listeners: Set<() => void> = new Set();
+
+function notifyListeners() {
+  listeners.forEach((fn) => fn());
+}
 
 /** 앱 어디서든 호출 가능한 디버그 로거 */
 export function debugLog(type: LogEntry['type'], message: string) {
   const time = new Date().toLocaleTimeString('ko-KR', { hour12: false });
   logs.unshift({ time, type, message });
   if (logs.length > MAX_LOGS) logs.pop();
-  _forceUpdate?.();
+  notifyListeners();
 }
 
 /** 네트워크 요청 래퍼 — fetch를 감싸서 자동 로깅 */
@@ -28,14 +32,14 @@ export async function debugFetch(url: string, options?: RequestInit): Promise<Re
     const res = await fetch(url, options);
     if (!res.ok) {
       const body = await res.clone().text().catch(() => '');
-      debugLog('error', `← ${res.status} ${url}\n${body.slice(0, 200)}`);
+      debugLog('error', `← ${res.status} ${url} ${body.slice(0, 200)}`);
     } else {
       debugLog('info', `← ${res.status} ${url}`);
     }
     return res;
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err);
-    debugLog('error', `✘ ${method} ${url}\n${msg}`);
+    debugLog('error', `✘ ${method} ${url} ${msg}`);
     throw err;
   }
 }
@@ -43,38 +47,50 @@ export async function debugFetch(url: string, options?: RequestInit): Promise<Re
 /** 화면 하단 디버그 오버레이 (토글 가능) */
 export default function DebugBanner() {
   const [visible, setVisible] = useState(false);
-  const [, setTick] = useState(0);
-  _forceUpdate = () => setTick((t) => t + 1);
+  const [tick, setTick] = useState(0);
+  const scrollRef = useRef<ScrollView>(null);
+
+  useEffect(() => {
+    const listener = () => setTick((t) => t + 1);
+    listeners.add(listener);
+    return () => { listeners.delete(listener); };
+  }, []);
+
+  const errorCount = logs.filter((l) => l.type === 'error').length;
+  const currentLogs = [...logs]; // snapshot
 
   return (
     <View style={styles.wrapper} pointerEvents="box-none">
       <TouchableOpacity
-        style={[styles.toggle, visible && styles.toggleActive]}
+        style={[styles.toggle, errorCount > 0 && styles.toggleError]}
         onPress={() => setVisible(!visible)}
+        activeOpacity={0.7}
       >
         <Text style={styles.toggleText}>
-          {visible ? '🔽 Debug' : `🐛 ${logs.filter((l) => l.type === 'error').length} errors`}
+          {visible ? '🔽 닫기' : `🐛 Debug (${errorCount} errors, ${logs.length} logs)`}
         </Text>
       </TouchableOpacity>
 
       {visible && (
         <View style={styles.panel}>
-          <ScrollView style={styles.scroll}>
-            {logs.length === 0 && (
+          <ScrollView ref={scrollRef} style={styles.scroll} nestedScrollEnabled>
+            {currentLogs.length === 0 ? (
               <Text style={styles.empty}>로그 없음</Text>
+            ) : (
+              currentLogs.map((log, i) => (
+                <Text
+                  key={`${tick}-${i}`}
+                  style={[
+                    styles.log,
+                    log.type === 'error' && styles.logError,
+                    log.type === 'warn' && styles.logWarn,
+                  ]}
+                  selectable
+                >
+                  {log.time} [{log.type}] {log.message}
+                </Text>
+              ))
             )}
-            {logs.map((log, i) => (
-              <Text
-                key={i}
-                style={[
-                  styles.log,
-                  log.type === 'error' && styles.logError,
-                  log.type === 'warn' && styles.logWarn,
-                ]}
-              >
-                {log.time} [{log.type}] {log.message}
-              </Text>
-            ))}
           </ScrollView>
         </View>
       )}
@@ -85,37 +101,37 @@ export default function DebugBanner() {
 const styles = StyleSheet.create({
   wrapper: {
     position: 'absolute',
-    bottom: 80,
+    bottom: 90,
     left: 0,
     right: 0,
     zIndex: 9999,
     alignItems: 'center',
   },
   toggle: {
-    backgroundColor: 'rgba(0,0,0,0.7)',
-    paddingHorizontal: 12,
-    paddingVertical: 6,
-    borderRadius: 16,
+    backgroundColor: 'rgba(0,0,0,0.75)',
+    paddingHorizontal: 14,
+    paddingVertical: 8,
+    borderRadius: 20,
   },
-  toggleActive: {
-    backgroundColor: 'rgba(220,50,50,0.8)',
+  toggleError: {
+    backgroundColor: 'rgba(220,50,50,0.85)',
   },
   toggleText: {
     color: '#fff',
-    fontSize: 12,
-    fontWeight: '600',
+    fontSize: 13,
+    fontWeight: '700',
   },
   panel: {
-    backgroundColor: 'rgba(0,0,0,0.85)',
+    backgroundColor: 'rgba(0,0,0,0.9)',
     width: '95%',
-    maxHeight: 250,
-    borderRadius: 8,
-    marginTop: 4,
-    padding: 8,
+    maxHeight: 300,
+    borderRadius: 10,
+    marginTop: 6,
+    padding: 10,
   },
   scroll: { flex: 1 },
-  empty: { color: '#888', fontSize: 11, textAlign: 'center' },
-  log: { color: '#ccc', fontSize: 10, fontFamily: 'Courier', marginBottom: 2 },
+  empty: { color: '#888', fontSize: 12, textAlign: 'center', padding: 20 },
+  log: { color: '#ddd', fontSize: 11, fontFamily: 'Courier', marginBottom: 4, lineHeight: 16 },
   logError: { color: '#ff6b6b' },
   logWarn: { color: '#ffd43b' },
 });
