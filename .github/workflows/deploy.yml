@@ -1,0 +1,106 @@
+name: Deploy
+
+on:
+  # push:
+  #   branches: [main]
+  #   paths:
+  #     - "backend/**"
+  #     - "docker-compose.prod.yml"
+  #     - ".github/workflows/deploy.yml"
+  workflow_dispatch:  # 수동 실행만 가능
+
+env:
+  REGISTRY: ghcr.io
+
+jobs:
+  test-backend:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: backend
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: language_diary
+        ports:
+          - 15434:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres -d language_diary"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+    env:
+      DATABASE_URL: postgresql+asyncpg://postgres:postgres@localhost:15434/language_diary
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Install dependencies
+        run: pip install -r requirements.txt
+      - name: Lint with ruff
+        run: pip install ruff && ruff check .
+      - name: Run tests
+        run: pytest --tb=short -q
+
+  build-and-push:
+    needs: [test-backend]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+    steps:
+      - uses: actions/checkout@v4
+      - uses: docker/login-action@v3
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      - uses: docker/metadata-action@v5
+        id: meta
+        with:
+          images: ${{ env.REGISTRY }}/${{ github.repository_owner }}/language-diary-backend
+          tags: |
+            type=raw,value=latest
+            type=sha,prefix=
+      - uses: docker/build-push-action@v5
+        with:
+          context: ./backend
+          push: true
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+
+  deploy:
+    needs: build-and-push
+    runs-on: ubuntu-latest
+    steps:
+      - uses: appleboy/ssh-action@v1
+        with:
+          host: ${{ secrets.SERVER_HOST }}
+          username: ${{ secrets.SERVER_USER }}
+          key: ${{ secrets.SERVER_SSH_KEY }}
+          port: ${{ secrets.SERVER_PORT }}
+          envs: GHCR_OWNER,GHCR_TOKEN,SECRET_ENV
+          script: |
+            DEPLOY_DIR=~/language_diary
+            REPO_RAW="https://raw.githubusercontent.com/kknaks/language_diary/main"
+            mkdir -p "$DEPLOY_DIR"
+            cd "$DEPLOY_DIR"
+
+            # 1. compose + deploy 스크립트 받기
+            curl -fsSL "$REPO_RAW/docker-compose.prod.yml" -o docker-compose.prod.yml
+            curl -fsSL "$REPO_RAW/scripts/deploy.sh" -o deploy.sh
+            chmod +x deploy.sh
+
+            # 2. secret.env 생성
+            echo "$SECRET_ENV" > secret.env
+
+            # 3. 배포 실행
+            ./deploy.sh
+        env:
+          GHCR_OWNER: ${{ secrets.GHCR_OWNER }}
+          GHCR_TOKEN: ${{ secrets.GHCR_TOKEN }}
+          SECRET_ENV: ${{ secrets.SECRET_ENV }}

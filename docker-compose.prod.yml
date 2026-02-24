@@ -1,0 +1,47 @@
+# secret.env 예시:
+# GHCR_OWNER=kknaks
+# GHCR_TOKEN=ghp_xxxx
+# POSTGRES_USER=postgres
+# POSTGRES_PASSWORD=postgres
+# POSTGRES_DB=language_diary
+# DATABASE_URL=postgresql+asyncpg://postgres:postgres@db:5432/language_diary
+# OPENAI_API_KEY=sk-xxxx
+# ELEVENLABS_API_KEY=xxxx
+# AZURE_SPEECH_KEY=xxxx
+# AZURE_SPEECH_REGION=koreacentral
+# SECRET_KEY=xxxx
+
+services:
+  backend:
+    image: ghcr.io/${GHCR_OWNER}/language-diary-backend:latest
+    ports:
+      - "18002:8000"
+    env_file:
+      - secret.env
+    volumes:
+      - audio_data:/app/audio_files
+      - upload_data:/app/audio_uploads
+    depends_on:
+      db:
+        condition: service_healthy
+    restart: unless-stopped
+
+  db:
+    image: postgres:16-alpine
+    ports:
+      - "15434:5432"
+    env_file:
+      - secret.env
+    volumes:
+      - pg_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-postgres}"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+    restart: unless-stopped
+
+volumes:
+  pg_data:
+  audio_data:
+  upload_data:
