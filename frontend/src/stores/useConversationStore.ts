@@ -208,6 +208,7 @@ function handleServerMessage(
       break;
 
     case 'tts_audio':
+      console.log(`[TTS] 수신: ${msg.audio_url} (${Date.now()})`);
       playAudioFromUrl(msg.audio_url, () => {
         set({ voiceState: 'idle' as VoiceState, volume: 0 });
       }).catch((err) => {

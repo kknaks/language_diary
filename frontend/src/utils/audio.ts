@@ -34,6 +34,7 @@ export async function playAudioFromUrl(
   }
 
   const uri = resolveAudioUrl(audioUrl);
+  const loadStart = Date.now();
 
   try {
     await Audio.setAudioModeAsync({ playsInSilentModeIOS: true });
@@ -43,6 +44,7 @@ export async function playAudioFromUrl(
       { shouldPlay: true },
     );
     currentSound = sound;
+    console.log(`[TTS] 로드 완료: ${Date.now() - loadStart}ms`);
 
     sound.setOnPlaybackStatusUpdate((status: AVPlaybackStatus) => {
       if (status.isLoaded && status.didJustFinish) {
