@@ -10,14 +10,7 @@ export default ({ config }: ConfigContext): ExpoConfig => ({
   userInterfaceStyle: 'light',
   newArchEnabled: true,
   scheme: 'language-diary',
-  runtimeVersion: {
-    policy: 'appVersion',
-  },
-  updates: {
-    url: 'https://u.expo.dev/YOUR_PROJECT_ID',
-    enabled: true,
-    fallbackToCacheTimeout: 0,
-  },
+  // No OTA updates — local builds only
   splash: {
     image: './assets/splash-icon.png',
     resizeMode: 'contain',
@@ -41,11 +34,5 @@ export default ({ config }: ConfigContext): ExpoConfig => ({
   },
   plugins: [
     'expo-router',
-    'expo-updates',
   ],
-  extra: {
-    eas: {
-      projectId: 'YOUR_PROJECT_ID',
-    },
-  },
 });
