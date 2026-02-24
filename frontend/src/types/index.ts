@@ -112,5 +112,6 @@ export type ServerMessage =
   | { type: 'stt_interim'; text: string }
   | { type: 'stt_final'; text: string }
   | { type: 'ai_message'; text: string }
+  | { type: 'tts_audio'; audio_url: string; cached?: boolean }
   | { type: 'diary_created'; diary: Diary }
   | { type: 'error'; code: string; message: string };

@@ -1,4 +1,4 @@
-import React, { useEffect, useRef } from 'react';
+import React, { useEffect, useMemo, useRef } from 'react';
 import { View, Animated, StyleSheet } from 'react-native';
 import { colors } from '../../constants/theme';
 import type { VoiceState } from '../../stores/useConversationStore';
@@ -21,6 +21,7 @@ export default function VoiceOrb({ volume, state }: VoiceOrbProps) {
   const scaleAnim = useRef(new Animated.Value(1)).current;
   const pulseAnim = useRef(new Animated.Value(1)).current;
   const pulseRef = useRef<Animated.CompositeAnimation | null>(null);
+  const scaleTimingRef = useRef<Animated.CompositeAnimation | null>(null);
 
   // Pulse animation for idle state
   useEffect(() => {
@@ -53,17 +54,30 @@ export default function VoiceOrb({ volume, state }: VoiceOrbProps) {
 
   // Volume-driven scale animation
   useEffect(() => {
+    // Stop previous animation before starting new one
+    scaleTimingRef.current?.stop();
+
     const targetScale = 1 + volume * 0.8; // 0→1.0, 1→1.8
-    Animated.timing(scaleAnim, {
+    const anim = Animated.timing(scaleAnim, {
       toValue: targetScale,
       duration: 100,
       useNativeDriver: true,
-    }).start();
+    });
+    scaleTimingRef.current = anim;
+    anim.start();
+
+    return () => {
+      scaleTimingRef.current?.stop();
+    };
   }, [volume, scaleAnim]);
 
   const orbColor = STATE_COLORS[state];
   const combinedScale = state === 'idle' ? pulseAnim : scaleAnim;
-  const glowScale = Animated.multiply(combinedScale, 1.3);
+
+  // Memoize Animated.multiply to avoid creating new nodes on every render
+  const glowScaleIdle = useMemo(() => Animated.multiply(pulseAnim, 1.3), [pulseAnim]);
+  const glowScaleActive = useMemo(() => Animated.multiply(scaleAnim, 1.3), [scaleAnim]);
+  const glowScale = state === 'idle' ? glowScaleIdle : glowScaleActive;
 
   return (
     <View style={styles.container}>

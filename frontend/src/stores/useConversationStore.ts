@@ -205,6 +205,10 @@ function handleServerMessage(
       set({ isCreatingDiary: false, createdDiary: adaptDiary(msg.diary), voiceState: 'idle' as VoiceState, volume: 0 });
       break;
 
+    case 'tts_audio':
+      // TTS audio URL received — currently no playback; ignore gracefully
+      break;
+
     case 'error':
       set({ isAiTyping: false, isCreatingDiary: false, error: msg.message });
       break;
