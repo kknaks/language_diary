@@ -4,7 +4,7 @@ import asyncio
 import base64
 import json
 import pytest
-from unittest.mock import AsyncMock, patch
+from unittest.mock import AsyncMock, call, patch
 
 from app.services.stt_service import (
     STTError,
@@ -97,7 +97,8 @@ class TestSTTSessionConnect:
             await session.close()
 
     @pytest.mark.asyncio
-    async def test_connect_passes_correct_url(self):
+    async def test_connect_passes_correct_url_with_vad(self):
+        """Default connect uses VAD strategy with VAD params in URL."""
         fake_ws = FakeElevenLabsWS([
             json.dumps({"message_type": "session_started"}),
         ])
@@ -112,7 +113,44 @@ class TestSTTSessionConnect:
             assert f"model_id={ELEVENLABS_STT_MODEL}" in url
             assert "language_code=ko" in url
             assert "sample_rate=16000" in url
+            assert "commit_strategy=vad" in url
+            assert "vad_silence_threshold_secs=1.5" in url
+            assert "vad_threshold=0.4" in url
             assert call_args[1]["additional_headers"]["xi-api-key"] == "my-api-key"
+            await session.close()
+
+    @pytest.mark.asyncio
+    async def test_connect_custom_vad_params(self):
+        """Custom VAD threshold values are reflected in the URL."""
+        fake_ws = FakeElevenLabsWS([
+            json.dumps({"message_type": "session_started"}),
+        ])
+        mock_connect = AsyncMock(return_value=fake_ws)
+        with patch("app.services.stt_service.websockets.connect", mock_connect):
+            session = STTSession("key")
+            await session.connect(
+                vad_silence_threshold_secs=2.0,
+                vad_threshold=0.6,
+            )
+            url = mock_connect.call_args[0][0]
+            assert "vad_silence_threshold_secs=2.0" in url
+            assert "vad_threshold=0.6" in url
+            await session.close()
+
+    @pytest.mark.asyncio
+    async def test_connect_manual_mode_no_vad_params(self):
+        """Manual commit strategy does not include VAD params in URL."""
+        fake_ws = FakeElevenLabsWS([
+            json.dumps({"message_type": "session_started"}),
+        ])
+        mock_connect = AsyncMock(return_value=fake_ws)
+        with patch("app.services.stt_service.websockets.connect", mock_connect):
+            session = STTSession("key")
+            await session.connect(commit_strategy="manual")
+            url = mock_connect.call_args[0][0]
+            assert "commit_strategy=manual" in url
+            assert "vad_silence_threshold_secs" not in url
+            assert "vad_threshold" not in url
             await session.close()
 
     @pytest.mark.asyncio
@@ -160,6 +198,27 @@ class TestSTTSessionSendAudio:
             await session.close()
 
     @pytest.mark.asyncio
+    async def test_send_audio_no_chunking_for_large_data(self):
+        """Real-time mode sends the entire chunk as-is, no splitting."""
+        fake_ws = FakeElevenLabsWS([
+            json.dumps({"message_type": "session_started"}),
+        ])
+        with patch("app.services.stt_service.websockets.connect", AsyncMock(return_value=fake_ws)):
+            session = STTSession("test-key")
+            await session.connect()
+
+            # 6400 bytes = 200ms of audio — previously would be split into 2 chunks
+            audio = b"\x00" * 6400
+            await session.send_audio(audio)
+
+            # Should be sent as a single message (no pacing/splitting)
+            assert len(fake_ws.sent) == 1
+            sent = json.loads(fake_ws.sent[0])
+            assert base64.b64decode(sent["audio_base_64"]) == audio
+            assert session._total_chunks_sent == 1
+            await session.close()
+
+    @pytest.mark.asyncio
     async def test_send_audio_skips_invalid_pcm(self):
         fake_ws = FakeElevenLabsWS([
             json.dumps({"message_type": "session_started"}),
@@ -181,7 +240,76 @@ class TestSTTSessionSendAudio:
 
 
 # ---------------------------------------------------------------------------
-# STTSession.commit_and_wait_final
+# STTSession.wait_for_final (VAD mode)
+# ---------------------------------------------------------------------------
+
+class TestSTTSessionWaitForFinal:
+    @pytest.mark.asyncio
+    async def test_wait_for_final_returns_vad_committed_text(self):
+        """VAD auto-commits and wait_for_final returns the text."""
+        fake_ws = FakeElevenLabsWS([
+            json.dumps({"message_type": "session_started"}),
+            json.dumps({"message_type": "committed_transcript", "text": "오늘 회의했어"}),
+        ])
+        with patch("app.services.stt_service.websockets.connect", AsyncMock(return_value=fake_ws)):
+            session = STTSession("test-key")
+            await session.connect()
+
+            final = await session.wait_for_final()
+            assert final == "오늘 회의했어"
+
+            # No commit message should have been sent (VAD handles it)
+            assert len(fake_ws.sent) == 0
+            await session.close()
+
+    @pytest.mark.asyncio
+    async def test_wait_for_final_not_connected(self):
+        session = STTSession("test-key")
+        with pytest.raises(STTError, match="연결되지 않았습니다"):
+            await session.wait_for_final()
+
+    @pytest.mark.asyncio
+    async def test_wait_for_final_error_from_elevenlabs(self):
+        """ElevenLabs error during VAD wait raises STTError."""
+        fake_ws = FakeElevenLabsWS([
+            json.dumps({"message_type": "session_started"}),
+            json.dumps({"message_type": "quota_exceeded", "message": "Quota exceeded"}),
+        ])
+        with patch("app.services.stt_service.websockets.connect", AsyncMock(return_value=fake_ws)):
+            session = STTSession("test-key")
+            await session.connect()
+
+            with pytest.raises(STTError, match="Quota exceeded"):
+                await session.wait_for_final()
+            await session.close()
+
+    @pytest.mark.asyncio
+    async def test_wait_for_final_with_interim_before(self):
+        """Partial transcripts arrive before VAD commit."""
+        mock_client_ws = AsyncMock()
+        fake_ws = FakeElevenLabsWS([
+            json.dumps({"message_type": "session_started"}),
+            json.dumps({"message_type": "partial_transcript", "text": "오늘"}),
+            json.dumps({"message_type": "partial_transcript", "text": "오늘 회의"}),
+            json.dumps({"message_type": "committed_transcript", "text": "오늘 회의했어"}),
+        ])
+        with patch("app.services.stt_service.websockets.connect", AsyncMock(return_value=fake_ws)):
+            session = STTSession("test-key", client_ws=mock_client_ws)
+            await session.connect()
+
+            final = await session.wait_for_final()
+            assert final == "오늘 회의했어"
+
+            # Verify interim + final were sent to client
+            calls = mock_client_ws.send_json.call_args_list
+            assert call({"type": "stt_interim", "text": "오늘"}) in calls
+            assert call({"type": "stt_interim", "text": "오늘 회의"}) in calls
+            assert call({"type": "stt_final", "text": "오늘 회의했어"}) in calls
+            await session.close()
+
+
+# ---------------------------------------------------------------------------
+# STTSession.commit_and_wait_final (manual mode, kept for backward compat)
 # ---------------------------------------------------------------------------
 
 class TestSTTSessionCommit:
@@ -202,28 +330,6 @@ class TestSTTSessionCommit:
             commit_msg = json.loads(fake_ws.sent[0])
             assert commit_msg["commit"] is True
             assert commit_msg["audio_base_64"] == ""
-            await session.close()
-
-    @pytest.mark.asyncio
-    async def test_commit_with_interim_before_final(self):
-        mock_client_ws = AsyncMock()
-        fake_ws = FakeElevenLabsWS([
-            json.dumps({"message_type": "session_started"}),
-            json.dumps({"message_type": "partial_transcript", "text": "안녕"}),
-            json.dumps({"message_type": "committed_transcript", "text": "안녕하세요"}),
-        ])
-        with patch("app.services.stt_service.websockets.connect", AsyncMock(return_value=fake_ws)):
-            session = STTSession("test-key", client_ws=mock_client_ws)
-            await session.connect()
-
-            final = await session.commit_and_wait_final()
-            assert final == "안녕하세요"
-
-            # Interim result should have been forwarded
-            mock_client_ws.send_json.assert_called_with({
-                "type": "stt_interim",
-                "text": "안녕",
-            })
             await session.close()
 
     @pytest.mark.asyncio
@@ -276,7 +382,7 @@ class TestSTTSessionClose:
 
 
 # ---------------------------------------------------------------------------
-# STTSession — interim forwarding
+# STTSession — stt_interim relay (partial_transcript)
 # ---------------------------------------------------------------------------
 
 class TestSTTInterimForwarding:
@@ -292,7 +398,7 @@ class TestSTTInterimForwarding:
             session = STTSession("test-key", client_ws=None)
             await session.connect()
 
-            final = await session.commit_and_wait_final()
+            final = await session.wait_for_final()
             assert final == "test final"
             await session.close()
 
@@ -309,6 +415,78 @@ class TestSTTInterimForwarding:
             session = STTSession("test-key", client_ws=mock_client_ws)
             await session.connect()
 
-            await session.commit_and_wait_final()
-            mock_client_ws.send_json.assert_not_called()
+            await session.wait_for_final()
+            # Only stt_final should be sent (no stt_interim for empty text)
+            assert mock_client_ws.send_json.call_count == 1
+            mock_client_ws.send_json.assert_called_with({
+                "type": "stt_final",
+                "text": "done",
+            })
+            await session.close()
+
+
+# ---------------------------------------------------------------------------
+# STTSession — stt_final relay (committed_transcript)
+# ---------------------------------------------------------------------------
+
+class TestSTTFinalRelay:
+    @pytest.mark.asyncio
+    async def test_stt_final_sent_on_committed_transcript(self):
+        """committed_transcript sends stt_final to client WebSocket."""
+        mock_client_ws = AsyncMock()
+        fake_ws = FakeElevenLabsWS([
+            json.dumps({"message_type": "session_started"}),
+            json.dumps({"message_type": "committed_transcript", "text": "안녕하세요"}),
+        ])
+        with patch("app.services.stt_service.websockets.connect", AsyncMock(return_value=fake_ws)):
+            session = STTSession("test-key", client_ws=mock_client_ws)
+            await session.connect()
+
+            final = await session.wait_for_final()
+            assert final == "안녕하세요"
+
+            mock_client_ws.send_json.assert_called_once_with({
+                "type": "stt_final",
+                "text": "안녕하세요",
+            })
+            await session.close()
+
+    @pytest.mark.asyncio
+    async def test_stt_final_not_sent_without_client_ws(self):
+        """No error when client_ws is None and committed_transcript arrives."""
+        fake_ws = FakeElevenLabsWS([
+            json.dumps({"message_type": "session_started"}),
+            json.dumps({"message_type": "committed_transcript", "text": "hello"}),
+        ])
+        with patch("app.services.stt_service.websockets.connect", AsyncMock(return_value=fake_ws)):
+            session = STTSession("test-key", client_ws=None)
+            await session.connect()
+
+            final = await session.wait_for_final()
+            assert final == "hello"
+            await session.close()
+
+    @pytest.mark.asyncio
+    async def test_stt_final_relay_with_interim_sequence(self):
+        """Full sequence: stt_interim, stt_interim, stt_final."""
+        mock_client_ws = AsyncMock()
+        fake_ws = FakeElevenLabsWS([
+            json.dumps({"message_type": "session_started"}),
+            json.dumps({"message_type": "partial_transcript", "text": "안"}),
+            json.dumps({"message_type": "partial_transcript", "text": "안녕"}),
+            json.dumps({"message_type": "committed_transcript", "text": "안녕하세요"}),
+        ])
+        with patch("app.services.stt_service.websockets.connect", AsyncMock(return_value=fake_ws)):
+            session = STTSession("test-key", client_ws=mock_client_ws)
+            await session.connect()
+
+            final = await session.wait_for_final()
+            assert final == "안녕하세요"
+
+            # Verify the complete sequence of messages sent to client
+            assert mock_client_ws.send_json.call_count == 3
+            calls = mock_client_ws.send_json.call_args_list
+            assert calls[0] == call({"type": "stt_interim", "text": "안"})
+            assert calls[1] == call({"type": "stt_interim", "text": "안녕"})
+            assert calls[2] == call({"type": "stt_final", "text": "안녕하세요"})
             await session.close()

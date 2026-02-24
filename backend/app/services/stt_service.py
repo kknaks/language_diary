@@ -72,14 +72,32 @@ class STTSession:
         self,
         language: str = DEFAULT_LANGUAGE,
         sample_rate: int = DEFAULT_SAMPLE_RATE,
+        commit_strategy: str = "vad",
+        vad_silence_threshold_secs: float = 1.5,
+        vad_threshold: float = 0.4,
     ):
-        """Connect to ElevenLabs STT WebSocket and start listening."""
+        """Connect to ElevenLabs STT WebSocket and start listening.
+
+        Args:
+            language: Language code for transcription.
+            sample_rate: Audio sample rate in Hz.
+            commit_strategy: 'vad' for automatic silence-based commit,
+                             'manual' for explicit commit control.
+            vad_silence_threshold_secs: Seconds of silence before VAD commits.
+            vad_threshold: VAD sensitivity (0.0-1.0).
+        """
         url = (
             f"{ELEVENLABS_STT_URL}"
             f"?model_id={ELEVENLABS_STT_MODEL}"
             f"&language_code={language}"
             f"&sample_rate={sample_rate}"
+            f"&commit_strategy={commit_strategy}"
         )
+        if commit_strategy == "vad":
+            url += (
+                f"&vad_silence_threshold_secs={vad_silence_threshold_secs}"
+                f"&vad_threshold={vad_threshold}"
+            )
         headers = {"xi-api-key": self.api_key}
 
         try:
@@ -107,11 +125,10 @@ class STTSession:
         logger.info("ElevenLabs STT session started")
 
     async def send_audio(self, audio_bytes: bytes):
-        """Send an audio chunk to ElevenLabs for transcription.
+        """Send a real-time audio chunk to ElevenLabs for transcription.
 
-        Large chunks are split into ~100ms segments (3200 bytes at 16kHz/16bit/mono).
-        When sending pre-recorded audio (large buffer), pacing is applied so
-        ElevenLabs doesn't get overwhelmed and return commit_throttled.
+        In real-time streaming mode, chunks arrive from the microphone at
+        natural pace (~100ms intervals), so no splitting or pacing is needed.
 
         Args:
             audio_bytes: Raw PCM audio data (16kHz, 16-bit, mono).
@@ -123,28 +140,38 @@ class STTSession:
             logger.warning("Invalid PCM audio chunk: %d bytes", len(audio_bytes))
             return
 
-        # 100ms of audio at 16kHz 16-bit mono = 3200 bytes
-        chunk_size = DEFAULT_SAMPLE_RATE * EXPECTED_SAMPLE_WIDTH // 10
-        total_chunks = (len(audio_bytes) + chunk_size - 1) // chunk_size
-        # Apply pacing for pre-recorded audio (> 1 chunk) to avoid commit_throttled
-        needs_pacing = total_chunks > 1
-
         try:
-            for i, offset in enumerate(range(0, len(audio_bytes), chunk_size)):
-                segment = audio_bytes[offset:offset + chunk_size]
-                audio_b64 = base64.b64encode(segment).decode("ascii")
-                await self._ws.send(json.dumps({
-                    "message_type": "input_audio_chunk",
-                    "audio_base_64": audio_b64,
-                }))
-                # Pace chunks: send ~10 chunks then yield briefly
-                # This simulates real-time streaming without being too slow
-                if needs_pacing and (i + 1) % 10 == 0:
-                    await asyncio.sleep(0.05)
-            self._total_chunks_sent += total_chunks
-            logger.info("Sent %d audio chunks (%d bytes total)", total_chunks, len(audio_bytes))
+            audio_b64 = base64.b64encode(audio_bytes).decode("ascii")
+            await self._ws.send(json.dumps({
+                "message_type": "input_audio_chunk",
+                "audio_base_64": audio_b64,
+            }))
+            self._total_chunks_sent += 1
         except Exception as e:
             raise STTError(f"오디오 전송 실패: {e}")
+
+    async def wait_for_final(self, timeout: float = 10.0) -> str:
+        """Wait for VAD to automatically commit and return the final text.
+
+        In VAD mode, ElevenLabs detects silence and sends committed_transcript
+        automatically. This method simply waits for that event without sending
+        a manual commit signal.
+
+        Returns:
+            The committed transcription text.
+        """
+        if not self._connected or not self._ws:
+            raise STTError("STT 세션이 연결되지 않았습니다.")
+
+        try:
+            await asyncio.wait_for(self._final_event.wait(), timeout=timeout)
+        except asyncio.TimeoutError:
+            raise STTError("STT 최종 결과 대기 시간 초과")
+
+        if self._error:
+            raise STTError(self._error)
+
+        return self._final_text
 
     async def commit_and_wait_final(self, timeout: float = 10.0) -> str:
         """Send commit signal and wait for the final transcription.
@@ -224,6 +251,15 @@ class STTSession:
                 elif msg_type == "committed_transcript":
                     self._final_text = data.get("text", "")
                     self._final_event.set()
+                    # Relay final transcript to client
+                    if self.client_ws:
+                        try:
+                            await self.client_ws.send_json({
+                                "type": "stt_final",
+                                "text": self._final_text,
+                            })
+                        except Exception:
+                            pass
 
                 elif msg_type in (
                     "auth_error",

@@ -6,7 +6,7 @@ Uses Circuit Breaker + Retry with exponential backoff for resilience.
 import json
 import logging
 import re
-from typing import Any, AsyncGenerator, Dict, List
+from typing import Any, AsyncGenerator, Dict, List, Optional
 
 from openai import AsyncOpenAI
 
@@ -218,7 +218,7 @@ _SENTENCE_BOUNDARY = re.compile(
 )
 
 
-def _split_first_sentence(text: str) -> tuple[str | None, str]:
+def _split_first_sentence(text: str) -> "tuple[Optional[str], str]":
     """Split the first complete sentence from text.
 
     Returns (sentence, remaining) if a boundary is found,

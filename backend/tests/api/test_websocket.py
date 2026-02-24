@@ -246,7 +246,7 @@ def _make_mock_stt(final_text="회사에서 회의했어"):
     mock = AsyncMock()
     mock.connect = AsyncMock()
     mock.send_audio = AsyncMock()
-    mock.commit_and_wait_final = AsyncMock(return_value=final_text)
+    mock.wait_for_final = AsyncMock(return_value=final_text)
     mock.close = AsyncMock()
     return mock
 
@@ -308,7 +308,7 @@ async def test_websocket_audio_full_flow(client, seed_user):
                             # Verify STT session lifecycle
                             mock_stt.connect.assert_called_once()
                             assert mock_stt.send_audio.call_count == 2
-                            mock_stt.commit_and_wait_final.assert_called_once()
+                            mock_stt.wait_for_final.assert_called_once()
                             mock_stt.close.assert_called()
 
 
@@ -354,7 +354,7 @@ async def test_websocket_audio_stt_connect_error(client, seed_user):
 async def test_websocket_audio_stt_commit_error(client, seed_user):
     """STT commit failure sends error but keeps WebSocket alive."""
     mock_stt = _make_mock_stt()
-    mock_stt.commit_and_wait_final = AsyncMock(side_effect=STTError("STT 최종 결과 대기 시간 초과"))
+    mock_stt.wait_for_final = AsyncMock(side_effect=STTError("STT 최종 결과 대기 시간 초과"))
 
     mock_ai = _make_mock_ai()
     mock_ai.get_reply_streaming = _make_streaming_reply("어떤 회의였어?")

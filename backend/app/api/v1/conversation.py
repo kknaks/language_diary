@@ -4,6 +4,7 @@ import asyncio
 import base64
 import json
 import logging
+from typing import Optional
 
 from fastapi import APIRouter, Depends, WebSocket, WebSocketDisconnect
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -21,7 +22,7 @@ logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/conversation", tags=["conversation"])
 
 
-async def _send_tts(websocket: WebSocket, db, text: str, index: int | None = None) -> None:
+async def _send_tts(websocket: WebSocket, db, text: str, index: Optional[int] = None) -> None:
     """Generate TTS audio for text and send base64-encoded data to client via WebSocket."""
     try:
         tts_service = TTSService(db)
@@ -241,10 +242,14 @@ async def conversation_websocket(websocket: WebSocket):
                         })
                         continue
 
+                    # In VAD mode, committed_transcript arrives automatically
+                    # when silence is detected. wait_for_final() just waits
+                    # for that event (no manual commit needed).
+                    # stt_final is already sent to the client by _listen().
                     try:
-                        final_text = await stt_session.commit_and_wait_final()
+                        final_text = await stt_session.wait_for_final()
                     except STTError as e:
-                        logger.error("STT commit failed: %s", e)
+                        logger.error("STT wait_for_final failed: %s", e)
                         await websocket.send_json({
                             "type": "error",
                             "code": "STT_FAILED",
@@ -258,7 +263,8 @@ async def conversation_websocket(websocket: WebSocket):
                             await stt_session.close()
                             stt_session = None
 
-                    # Send final transcription to client
+                    # Send stt_final (may duplicate _listen() relay, but
+                    # ensures the client always gets the final text)
                     await websocket.send_json({
                         "type": "stt_final",
                         "text": final_text,
