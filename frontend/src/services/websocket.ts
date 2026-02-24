@@ -1,6 +1,7 @@
 import { ClientMessage, ServerMessage, ConnectionStatus } from '../types';
+import { env } from '../config/env';
 
-const WS_BASE_URL = process.env.EXPO_PUBLIC_WS_BASE_URL || 'ws://localhost:8000';
+const WS_BASE_URL = env.WS_BASE_URL;
 const MAX_RECONNECT_ATTEMPTS = 3;
 const BASE_RECONNECT_DELAY = 1000; // 1s
 
