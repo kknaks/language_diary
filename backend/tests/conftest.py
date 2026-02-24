@@ -1,4 +1,8 @@
+import asyncio
+import os
+
 import pytest_asyncio
+import sqlalchemy
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 from httpx import ASGITransport, AsyncClient
 
@@ -9,9 +13,14 @@ from app.models import (  # noqa: ensure models loaded
     User, Diary, LearningCard, ConversationSession, ConversationMessage,
 )
 
-TEST_DB_URL = "sqlite+aiosqlite:///./test.db"
+TEST_DB_PATH = "./test.db"
+TEST_DB_URL = f"sqlite+aiosqlite:///{TEST_DB_PATH}"
 
-engine = create_async_engine(TEST_DB_URL, echo=False)
+engine = create_async_engine(
+    TEST_DB_URL,
+    echo=False,
+    connect_args={"timeout": 10},
+)
 TestSession = async_sessionmaker(engine, class_=AsyncSession, expire_on_commit=False)
 
 
@@ -30,12 +39,21 @@ async def setup_db():
     if app.middleware_stack is not None:
         _reset_rate_limiter()
 
+    # Ensure clean state: dispose stale connections from previous tests
+    # (WebSocket tests run in threads that may hold DB connections briefly)
+    # Forcefully dispose all connections and delete DB file to avoid
+    # "database is locked" errors from Starlette WS test threads.
+    await engine.dispose()
+    await asyncio.sleep(0.05)
+    for suffix in ("", "-wal", "-shm"):
+        try:
+            os.unlink(TEST_DB_PATH + suffix)
+        except FileNotFoundError:
+            pass
+
     async with engine.begin() as conn:
         await conn.run_sync(Base.metadata.create_all)
     yield
-    async with engine.begin() as conn:
-        await conn.run_sync(Base.metadata.drop_all)
-    # aiosqlite 스레드가 이벤트 루프 종료 전에 정리되도록
     await engine.dispose()
 
 

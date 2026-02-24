@@ -1,65 +1,69 @@
-import { Audio, AVPlaybackStatus } from 'expo-av';
-import { env } from '../config/env';
+import { createAudioPlayer, AudioPlayer } from 'expo-audio';
+import { File, Paths } from 'expo-file-system';
 
-/**
- * Resolve a potentially relative audio URL to an absolute URL.
- * If the URL already starts with http(s), it's returned as-is.
- */
-export function resolveAudioUrl(audioUrl: string): string {
-  if (audioUrl.startsWith('http://') || audioUrl.startsWith('https://')) {
-    return audioUrl;
+let currentPlayer: AudioPlayer | null = null;
+let finishCleanup: (() => void) | null = null;
+
+function base64ToUint8Array(base64: string): Uint8Array {
+  const binaryString = atob(base64);
+  const bytes = new Uint8Array(binaryString.length);
+  for (let i = 0; i < binaryString.length; i++) {
+    bytes[i] = binaryString.charCodeAt(i);
   }
-  return `${env.API_BASE_URL}${audioUrl}`;
+  return bytes;
 }
 
-let currentSound: Audio.Sound | null = null;
-
 /**
- * Play audio from a URL (fire-and-forget).
- * Automatically stops any previously playing TTS audio.
- * Returns a cleanup function to stop playback early.
+ * Play audio from base64-encoded MP3 data.
+ * Writes to a temp file (iOS doesn't support data URIs) then plays.
  */
-export async function playAudioFromUrl(
-  audioUrl: string,
+export async function playAudioFromBase64(
+  base64Data: string,
   onFinish?: () => void,
 ): Promise<() => void> {
   // Stop previous playback
-  if (currentSound) {
-    try {
-      await currentSound.unloadAsync();
-    } catch {
-      // ignore
-    }
-    currentSound = null;
-  }
+  await stopCurrentAudio();
 
-  const uri = resolveAudioUrl(audioUrl);
-  const loadStart = Date.now();
+  const filename = `tts_${Date.now()}.mp3`;
+  const file = new File(Paths.cache, filename);
 
   try {
-    await Audio.setAudioModeAsync({ playsInSilentModeIOS: true });
+    // Decode base64 → bytes, create file, then write
+    const bytes = base64ToUint8Array(base64Data);
+    file.create();
+    file.write(bytes);
 
-    const { sound } = await Audio.Sound.createAsync(
-      { uri },
-      { shouldPlay: true },
-    );
-    currentSound = sound;
-    console.log(`[TTS] 로드 완료: ${Date.now() - loadStart}ms`);
+    const player = createAudioPlayer(file.uri);
+    currentPlayer = player;
 
-    sound.setOnPlaybackStatusUpdate((status: AVPlaybackStatus) => {
-      if (status.isLoaded && status.didJustFinish) {
-        sound.unloadAsync().catch(() => {});
-        if (currentSound === sound) currentSound = null;
+    // Listen for playback end
+    const subscription = player.addListener('playbackStatusUpdate', (status) => {
+      if (status.didJustFinish) {
+        cleanup();
         onFinish?.();
       }
     });
 
+    const cleanup = () => {
+      subscription.remove();
+      player.release();
+      if (currentPlayer === player) currentPlayer = null;
+      finishCleanup = null;
+      // Clean up temp file
+      try { file.delete(); } catch { /* ignore */ }
+    };
+
+    finishCleanup = cleanup;
+
+    player.play();
+
     return () => {
-      sound.unloadAsync().catch(() => {});
-      if (currentSound === sound) currentSound = null;
+      cleanup();
     };
   } catch (err) {
-    console.error('[TTS Audio] playback failed for', uri, err);
+    console.error('[TTS Audio] playback failed:', err);
+    // Clean up temp file on error
+    try { file.delete(); } catch { /* ignore */ }
     onFinish?.();
     return () => {};
   }
@@ -69,12 +73,15 @@ export async function playAudioFromUrl(
  * Stop any currently playing TTS audio (used during cleanup/reset).
  */
 export async function stopCurrentAudio(): Promise<void> {
-  if (currentSound) {
+  if (finishCleanup) {
+    finishCleanup();
+    finishCleanup = null;
+  } else if (currentPlayer) {
     try {
-      await currentSound.unloadAsync();
+      currentPlayer.release();
     } catch {
       // ignore
     }
-    currentSound = null;
+    currentPlayer = null;
   }
 }

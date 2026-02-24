@@ -1,7 +1,7 @@
 """Conversation Service — orchestrates the conversation flow."""
 
 import uuid
-from typing import Dict, List
+from typing import AsyncGenerator, Dict, List
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -59,6 +59,30 @@ class ConversationService:
             first_message=first_message,
             created_at=session.created_at,
         )
+
+    async def create_session_ws(self) -> str:
+        """Create a new conversation session (DB only, no AI message).
+
+        Returns the session_id. Used by WebSocket handler.
+        """
+        session_id = _generate_session_id()
+        await self.repo.create_session(session_id, MVP_USER_ID)
+        await self.db.commit()
+        return session_id
+
+    async def generate_greeting(self, session_id: str) -> str:
+        """Generate AI first greeting message and save to DB.
+
+        Returns the greeting text.
+        """
+        try:
+            first_message = await self.ai.get_first_message()
+        except AIServiceError as e:
+            raise TranslationFailedError(detail=str(e))
+
+        await self.repo.add_message(session_id, "ai", first_message, message_order=1)
+        await self.db.commit()
+        return first_message
 
     async def get_session(self, session_id: str) -> ConversationDetailResponse:
         """Get session status and message history."""
@@ -128,6 +152,53 @@ class ConversationService:
 
         await self.db.commit()
         return ai_reply
+
+    async def handle_user_message_streaming(
+        self, session_id: str, text: str,
+    ) -> AsyncGenerator[str, None]:
+        """Process user message and stream AI reply sentence by sentence.
+
+        Yields sentences as they are generated. After the generator is exhausted,
+        the full AI reply is saved to DB.
+        Raises AppError if the session cannot handle messages.
+        """
+        session = await self.repo.get_session(session_id)
+        if not session:
+            raise NotFoundError(
+                code="SESSION_NOT_FOUND",
+                message="대화 세션을 찾을 수 없습니다.",
+                detail=f"session_id={session_id}",
+            )
+
+        self._validate_session_active(session)
+
+        current_order = len(session.messages) + 1
+
+        # Save user message
+        await self.repo.add_message(session_id, "user", text, message_order=current_order)
+        await self.repo.increment_turn(session)
+
+        # Build conversation history for OpenAI
+        history = self._build_openai_history(session.messages, text, current_order)
+
+        # Check if max turns reached — signal to caller (yield nothing)
+        if session.turn_count + 1 >= MAX_TURNS:
+            await self.db.commit()
+            return
+
+        # Stream AI reply sentence by sentence
+        full_reply_parts: list[str] = []
+        try:
+            async for sentence in self.ai.get_reply_streaming(history):
+                full_reply_parts.append(sentence)
+                yield sentence
+        except AIServiceError as e:
+            raise TranslationFailedError(detail=str(e))
+
+        # Save full AI reply
+        full_reply = " ".join(full_reply_parts)
+        await self.repo.add_message(session_id, "ai", full_reply, message_order=current_order + 1)
+        await self.db.commit()
 
     async def finish_conversation(self, session_id: str) -> DiaryDetailResponse:
         """Finish conversation: generate diary + learning points.

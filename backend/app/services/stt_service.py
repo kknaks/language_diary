@@ -12,7 +12,7 @@ import websockets
 logger = logging.getLogger(__name__)
 
 ELEVENLABS_STT_URL = "wss://api.elevenlabs.io/v1/speech-to-text/realtime"
-ELEVENLABS_STT_MODEL = "scribe_v1"
+ELEVENLABS_STT_MODEL = "scribe_v2_realtime"
 DEFAULT_LANGUAGE = "ko"
 DEFAULT_SAMPLE_RATE = 16000
 
@@ -66,6 +66,7 @@ class STTSession:
         self._final_event = asyncio.Event()
         self._error: Optional[str] = None
         self._connected = False
+        self._total_chunks_sent = 0
 
     async def connect(
         self,
@@ -108,6 +109,10 @@ class STTSession:
     async def send_audio(self, audio_bytes: bytes):
         """Send an audio chunk to ElevenLabs for transcription.
 
+        Large chunks are split into ~100ms segments (3200 bytes at 16kHz/16bit/mono).
+        When sending pre-recorded audio (large buffer), pacing is applied so
+        ElevenLabs doesn't get overwhelmed and return commit_throttled.
+
         Args:
             audio_bytes: Raw PCM audio data (16kHz, 16-bit, mono).
         """
@@ -118,12 +123,26 @@ class STTSession:
             logger.warning("Invalid PCM audio chunk: %d bytes", len(audio_bytes))
             return
 
-        audio_b64 = base64.b64encode(audio_bytes).decode("ascii")
+        # 100ms of audio at 16kHz 16-bit mono = 3200 bytes
+        chunk_size = DEFAULT_SAMPLE_RATE * EXPECTED_SAMPLE_WIDTH // 10
+        total_chunks = (len(audio_bytes) + chunk_size - 1) // chunk_size
+        # Apply pacing for pre-recorded audio (> 1 chunk) to avoid commit_throttled
+        needs_pacing = total_chunks > 1
+
         try:
-            await self._ws.send(json.dumps({
-                "message_type": "input_audio_chunk",
-                "audio_base_64": audio_b64,
-            }))
+            for i, offset in enumerate(range(0, len(audio_bytes), chunk_size)):
+                segment = audio_bytes[offset:offset + chunk_size]
+                audio_b64 = base64.b64encode(segment).decode("ascii")
+                await self._ws.send(json.dumps({
+                    "message_type": "input_audio_chunk",
+                    "audio_base_64": audio_b64,
+                }))
+                # Pace chunks: send ~10 chunks then yield briefly
+                # This simulates real-time streaming without being too slow
+                if needs_pacing and (i + 1) % 10 == 0:
+                    await asyncio.sleep(0.05)
+            self._total_chunks_sent += total_chunks
+            logger.info("Sent %d audio chunks (%d bytes total)", total_chunks, len(audio_bytes))
         except Exception as e:
             raise STTError(f"오디오 전송 실패: {e}")
 
@@ -139,6 +158,9 @@ class STTSession:
         self._final_event.clear()
         self._final_text = ""
         self._error = None
+
+        # Brief delay to let ElevenLabs process streamed audio before commit
+        await asyncio.sleep(0.3)
 
         try:
             await self._ws.send(json.dumps({

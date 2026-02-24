@@ -73,7 +73,7 @@ app.add_exception_handler(Exception, generic_error_handler)
 app.include_router(api_router, prefix="/api/v1")
 
 # WebSocket endpoint (outside /api/v1 prefix per PRD spec)
-app.add_api_websocket_route("/ws/conversation/{session_id}", conversation_websocket)
+app.add_api_websocket_route("/ws/conversation", conversation_websocket)
 
 
 @app.get("/health", tags=["system"])

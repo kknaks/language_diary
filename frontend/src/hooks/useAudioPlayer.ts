@@ -1,7 +1,7 @@
 import { useState, useCallback, useRef, useEffect } from 'react';
-import { Audio, AVPlaybackStatus } from 'expo-av';
+import { createAudioPlayer, AudioPlayer } from 'expo-audio';
+import { File, Paths } from 'expo-file-system';
 import { requestTts } from '../services/api';
-import { resolveAudioUrl } from '../utils/audio';
 
 type AudioState = 'idle' | 'loading' | 'playing' | 'paused';
 
@@ -16,89 +16,86 @@ interface UseAudioPlayerReturn {
 
 export function useAudioPlayer(): UseAudioPlayerReturn {
   const [state, setState] = useState<AudioState>('idle');
-  const soundRef = useRef<Audio.Sound | null>(null);
+  const playerRef = useRef<AudioPlayer | null>(null);
+  const subRef = useRef<{ remove: () => void } | null>(null);
 
-  const unloadSound = useCallback(async () => {
-    if (soundRef.current) {
+  const releasePlayer = useCallback(() => {
+    subRef.current?.remove();
+    subRef.current = null;
+    if (playerRef.current) {
       try {
-        await soundRef.current.unloadAsync();
+        playerRef.current.release();
       } catch {
         // ignore cleanup errors
       }
-      soundRef.current = null;
+      playerRef.current = null;
     }
   }, []);
 
   useEffect(() => {
     return () => {
-      // eslint-disable-next-line react-hooks/exhaustive-deps
-      soundRef.current?.unloadAsync().catch(() => {});
+      releasePlayer();
     };
-  }, []);
-
-  const handleStatus = useCallback(
-    (status: AVPlaybackStatus) => {
-      if (status.isLoaded && status.didJustFinish) {
-        setState('idle');
-        unloadSound();
-      }
-    },
-    [unloadSound],
-  );
+  }, [releasePlayer]);
 
   const playFromUrl = useCallback(
     async (audioUrl: string) => {
-      await unloadSound();
+      releasePlayer();
       setState('loading');
 
       try {
-        await Audio.setAudioModeAsync({ playsInSilentModeIOS: true });
+        const player = createAudioPlayer(audioUrl);
+        playerRef.current = player;
 
-        const uri = resolveAudioUrl(audioUrl);
-        const { sound } = await Audio.Sound.createAsync(
-          { uri },
-          { shouldPlay: true },
-        );
-        soundRef.current = sound;
+        const sub = player.addListener('playbackStatusUpdate', (status) => {
+          if (status.didJustFinish) {
+            setState('idle');
+            releasePlayer();
+          }
+        });
+        subRef.current = sub;
+
+        player.play();
         setState('playing');
-
-        sound.setOnPlaybackStatusUpdate(handleStatus);
       } catch {
         setState('idle');
       }
     },
-    [unloadSound, handleStatus],
+    [releasePlayer],
   );
 
   const play = useCallback(
     async (text: string) => {
-      await unloadSound();
+      releasePlayer();
       setState('loading');
 
       try {
         const ttsResponse = await requestTts(text);
-        await Audio.setAudioModeAsync({ playsInSilentModeIOS: true });
 
-        const uri = resolveAudioUrl(ttsResponse.audioUrl);
-        const { sound } = await Audio.Sound.createAsync(
-          { uri },
-          { shouldPlay: true },
-        );
-        soundRef.current = sound;
+        const player = createAudioPlayer(ttsResponse.audioUrl);
+        playerRef.current = player;
+
+        const sub = player.addListener('playbackStatusUpdate', (status) => {
+          if (status.didJustFinish) {
+            setState('idle');
+            releasePlayer();
+          }
+        });
+        subRef.current = sub;
+
+        player.play();
         setState('playing');
-
-        sound.setOnPlaybackStatusUpdate(handleStatus);
       } catch {
         setState('idle');
       }
     },
-    [unloadSound, handleStatus],
+    [releasePlayer],
   );
 
   const pause = useCallback(async () => {
-    if (soundRef.current) {
+    if (playerRef.current) {
       try {
-        await soundRef.current.pauseAsync();
+        playerRef.current.pause();
         setState('paused');
       } catch {
         // ignore
@@ -107,9 +104,9 @@ export function useAudioPlayer(): UseAudioPlayerReturn {
   }, []);
 
   const resume = useCallback(async () => {
-    if (soundRef.current) {
+    if (playerRef.current) {
       try {
-        await soundRef.current.playAsync();
+        playerRef.current.play();
         setState('playing');
       } catch {
         // ignore
@@ -118,9 +115,9 @@ export function useAudioPlayer(): UseAudioPlayerReturn {
   }, []);
 
   const stop = useCallback(async () => {
-    await unloadSound();
+    releasePlayer();
     setState('idle');
-  }, [unloadSound]);
+  }, [releasePlayer]);
 
   return { state, play, playFromUrl, pause, resume, stop };
 }

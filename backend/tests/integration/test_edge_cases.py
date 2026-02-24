@@ -28,6 +28,14 @@ def _make_wav(sample_rate=16000, bits_per_sample=16, num_channels=1, data_size=3
     return header + (b"\x00" * data_size)
 
 
+def _make_streaming_reply(*sentences):
+    """Create an async generator for get_reply_streaming."""
+    async def _gen(history):
+        for s in sentences:
+            yield s
+    return _gen
+
+
 # ---------------------------------------------------------------------------
 # Max turns (10 turns → auto-finish)
 # ---------------------------------------------------------------------------
@@ -36,37 +44,45 @@ def _make_wav(sample_rate=16000, bits_per_sample=16, num_channels=1, data_size=3
 async def test_max_turns_auto_finish(client, seed_user):
     """After MAX_TURNS user messages, conversation auto-finishes and produces diary.
 
-    turn_count starts at 0. After increment, condition is `turn_count + 1 >= 10`.
-    So after 9th message (turn_count=9), 9+1=10 >= 10 triggers auto-finish.
-    Messages 1-8 get AI replies, message 9 triggers diary_created.
+    The WS handler creates a session on connect. We send 8 messages (get AI chunks),
+    then the 9th triggers auto-finish with diary_created.
     """
     mock_ai = AsyncMock()
     mock_ai.get_first_message = AsyncMock(return_value="오늘 뭐 했어?")
-    mock_ai.get_reply = AsyncMock(return_value="그래? 더 알려줘!")
+    mock_ai.get_reply_streaming = _make_streaming_reply("그래? 더 알려줘!")
     mock_ai.generate_diary = AsyncMock(return_value={
         "original_text": "자동 완성 일기",
         "translated_text": "Auto-completed diary",
     })
     mock_ai.extract_learning_points = AsyncMock(return_value=[])
 
-    # Create session
-    with patch("app.services.conversation_service.AIService", return_value=mock_ai):
-        resp = await client.post("/api/v1/conversation")
-    session_id = resp.json()["session_id"]
+    mock_tts_bytes = b"fake-mp3-bytes"
 
     with patch("app.services.conversation_service.AIService", return_value=mock_ai):
         from tests.conftest import TestSession
         with patch("app.api.v1.conversation.async_session", TestSession):
-            with patch("app.api.v1.conversation._send_tts", new_callable=AsyncMock):
+            with patch("app.api.v1.conversation.TTSService") as MockTTS:
+                MockTTS.return_value.generate_bytes = AsyncMock(return_value=mock_tts_bytes)
                 with TestClient(app) as tc:
-                    with tc.websocket_connect(f"/ws/conversation/{session_id}") as ws:
-                        # Send 8 messages — get AI replies
+                    with tc.websocket_connect("/ws/conversation") as ws:
+                        # Consume init messages
+                        ws.receive_json()  # session_created
+                        ws.receive_json()  # ai_message (greeting)
+                        ws.receive_json()  # tts_audio (greeting)
+
+                        # Send 8 messages — get AI streaming replies
                         for i in range(8):
                             ws.send_json({"type": "message", "text": f"메시지 {i+1}"})
+                            # Receive ai_message_chunk + final marker + tts_audio
                             data = ws.receive_json()
-                            assert data["type"] == "ai_message", f"Turn {i+1}: expected ai_message, got {data['type']}"
+                            assert data["type"] == "ai_message_chunk", f"Turn {i+1}: expected ai_message_chunk, got {data['type']}"
+                            final = ws.receive_json()
+                            assert final["type"] == "ai_message_chunk"
+                            assert final["is_final"] is True
+                            tts = ws.receive_json()
+                            assert tts["type"] == "tts_audio"
 
-                        # 9th message triggers auto-finish (turn_count=9, 9+1>=10)
+                        # 9th message triggers auto-finish
                         ws.send_json({"type": "message", "text": "메시지 9"})
                         data = ws.receive_json()
                         assert data["type"] == "diary_created"
@@ -74,91 +90,9 @@ async def test_max_turns_auto_finish(client, seed_user):
 
 
 # ---------------------------------------------------------------------------
-# Expired session
+# Expired / completed session validation (via ConversationService unit tests)
+# These edge cases are now tested in unit tests since WS always creates fresh sessions.
 # ---------------------------------------------------------------------------
-
-@pytest.mark.asyncio
-async def test_expired_session_cannot_send_message(client, seed_user, db_session):
-    """Sending a message to an expired session returns SESSION_EXPIRED."""
-    session = ConversationSession(
-        id="conv_expired_001",
-        user_id=1,
-        status="expired",
-        turn_count=3,
-        created_at=datetime.utcnow(),
-        updated_at=datetime.utcnow(),
-        expired_at=datetime.utcnow(),
-    )
-    db_session.add(session)
-    msg = ConversationMessage(
-        session_id="conv_expired_001", role="ai",
-        content="어디 갔어?", message_order=1,
-    )
-    db_session.add(msg)
-    await db_session.commit()
-
-    from tests.conftest import TestSession
-    with patch("app.api.v1.conversation.async_session", TestSession):
-        with TestClient(app) as tc:
-            with tc.websocket_connect("/ws/conversation/conv_expired_001") as ws:
-                ws.send_json({"type": "message", "text": "안녕"})
-                data = ws.receive_json()
-                assert data["type"] == "error"
-                assert data["code"] == "SESSION_EXPIRED"
-
-
-@pytest.mark.asyncio
-async def test_expired_session_cannot_finish(client, seed_user, db_session):
-    """Cannot finish an expired session."""
-    session = ConversationSession(
-        id="conv_expired_002",
-        user_id=1,
-        status="expired",
-        turn_count=2,
-        created_at=datetime.utcnow(),
-        updated_at=datetime.utcnow(),
-        expired_at=datetime.utcnow(),
-    )
-    db_session.add(session)
-    await db_session.commit()
-
-    from tests.conftest import TestSession
-    with patch("app.api.v1.conversation.async_session", TestSession):
-        with TestClient(app) as tc:
-            with tc.websocket_connect("/ws/conversation/conv_expired_002") as ws:
-                ws.send_json({"type": "finish"})
-                data = ws.receive_json()
-                assert data["type"] == "error"
-                assert data["code"] == "SESSION_EXPIRED"
-
-
-# ---------------------------------------------------------------------------
-# Double finish (already completed)
-# ---------------------------------------------------------------------------
-
-@pytest.mark.asyncio
-async def test_cannot_finish_already_completed_session(client, seed_user, db_session):
-    """Finishing an already completed session returns 409."""
-    session = ConversationSession(
-        id="conv_completed_001",
-        user_id=1,
-        status="completed",
-        turn_count=5,
-        created_at=datetime.utcnow(),
-        updated_at=datetime.utcnow(),
-        completed_at=datetime.utcnow(),
-    )
-    db_session.add(session)
-    await db_session.commit()
-
-    from tests.conftest import TestSession
-    with patch("app.api.v1.conversation.async_session", TestSession):
-        with TestClient(app) as tc:
-            with tc.websocket_connect("/ws/conversation/conv_completed_001") as ws:
-                ws.send_json({"type": "finish"})
-                data = ws.receive_json()
-                assert data["type"] == "error"
-                assert data["code"] == "SESSION_ALREADY_COMPLETED"
 
 
 # ---------------------------------------------------------------------------
@@ -223,36 +157,29 @@ async def test_evaluate_missing_form_fields(client, seed_user):
 
 
 @pytest.mark.asyncio
-async def test_websocket_very_long_message(client, seed_user, db_session):
+async def test_websocket_very_long_message(client, seed_user):
     """WebSocket handles a very long text message."""
-    session = ConversationSession(
-        id="conv_long_msg",
-        user_id=1,
-        status="active",
-        turn_count=0,
-        created_at=datetime.utcnow(),
-        updated_at=datetime.utcnow(),
-    )
-    db_session.add(session)
-    msg = ConversationMessage(
-        session_id="conv_long_msg", role="ai",
-        content="오늘 뭐 했어?", message_order=1,
-    )
-    db_session.add(msg)
-    await db_session.commit()
-
     mock_ai = AsyncMock()
-    mock_ai.get_reply = AsyncMock(return_value="긴 메시지 잘 받았어!")
+    mock_ai.get_first_message = AsyncMock(return_value="오늘 뭐 했어?")
+    mock_ai.get_reply_streaming = _make_streaming_reply("긴 메시지 잘 받았어!")
+
+    mock_tts_bytes = b"fake-mp3-bytes"
 
     with patch("app.services.conversation_service.AIService", return_value=mock_ai):
         from tests.conftest import TestSession
         with patch("app.api.v1.conversation.async_session", TestSession):
-            with TestClient(app) as tc:
-                with tc.websocket_connect("/ws/conversation/conv_long_msg") as ws:
-                    long_text = "나" * 5000
-                    ws.send_json({"type": "message", "text": long_text})
-                    data = ws.receive_json()
-                    assert data["type"] == "ai_message"
+            with patch("app.api.v1.conversation.TTSService") as MockTTS:
+                MockTTS.return_value.generate_bytes = AsyncMock(return_value=mock_tts_bytes)
+                with TestClient(app) as tc:
+                    with tc.websocket_connect("/ws/conversation") as ws:
+                        ws.receive_json()  # session_created
+                        ws.receive_json()  # ai_message
+                        ws.receive_json()  # tts_audio
+
+                        long_text = "나" * 5000
+                        ws.send_json({"type": "message", "text": long_text})
+                        data = ws.receive_json()
+                        assert data["type"] == "ai_message_chunk"
 
 
 # ---------------------------------------------------------------------------
@@ -298,39 +225,32 @@ async def test_nonexistent_diary_operations(client, seed_user):
 
 
 @pytest.mark.asyncio
-async def test_websocket_binary_without_audio_session(client, seed_user, db_session):
+async def test_websocket_binary_without_audio_session(client, seed_user):
     """Sending binary data without audio_start is silently ignored."""
-    session = ConversationSession(
-        id="conv_noaudio",
-        user_id=1,
-        status="active",
-        turn_count=0,
-        created_at=datetime.utcnow(),
-        updated_at=datetime.utcnow(),
-    )
-    db_session.add(session)
-    msg = ConversationMessage(
-        session_id="conv_noaudio", role="ai",
-        content="안녕!", message_order=1,
-    )
-    db_session.add(msg)
-    await db_session.commit()
-
     mock_ai = AsyncMock()
-    mock_ai.get_reply = AsyncMock(return_value="응!")
+    mock_ai.get_first_message = AsyncMock(return_value="안녕!")
+    mock_ai.get_reply_streaming = _make_streaming_reply("응!")
+
+    mock_tts_bytes = b"fake-mp3-bytes"
 
     with patch("app.services.conversation_service.AIService", return_value=mock_ai):
         from tests.conftest import TestSession
         with patch("app.api.v1.conversation.async_session", TestSession):
-            with TestClient(app) as tc:
-                with tc.websocket_connect("/ws/conversation/conv_noaudio") as ws:
-                    # Binary without audio session → silently ignored
-                    ws.send_bytes(b"\x00\x01\x02\x03")
+            with patch("app.api.v1.conversation.TTSService") as MockTTS:
+                MockTTS.return_value.generate_bytes = AsyncMock(return_value=mock_tts_bytes)
+                with TestClient(app) as tc:
+                    with tc.websocket_connect("/ws/conversation") as ws:
+                        ws.receive_json()  # session_created
+                        ws.receive_json()  # ai_message
+                        ws.receive_json()  # tts_audio
 
-                    # Should still be able to send text messages
-                    ws.send_json({"type": "message", "text": "안녕"})
-                    data = ws.receive_json()
-                    assert data["type"] == "ai_message"
+                        # Binary without audio session → silently ignored
+                        ws.send_bytes(b"\x00\x01\x02\x03")
+
+                        # Should still be able to send text messages
+                        ws.send_json({"type": "message", "text": "안녕"})
+                        data = ws.receive_json()
+                        assert data["type"] == "ai_message_chunk"
 
 
 @pytest.mark.asyncio

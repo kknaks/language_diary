@@ -3,6 +3,7 @@ import { View, Text, StyleSheet } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { useRouter } from 'expo-router';
+import { useAudioRecorder, requestRecordingPermissionsAsync, setAudioModeAsync, IOSOutputFormat, AudioQuality, type RecordingOptions } from 'expo-audio';
 
 import { colors, fontSize, spacing } from '../../src/constants/theme';
 import { Button } from '../../src/components/common';
@@ -15,6 +16,28 @@ import {
   MicButton,
 } from '../../src/components/conversation';
 import { useConversationStore } from '../../src/stores/useConversationStore';
+
+const PCM_16K_MONO: RecordingOptions = {
+  extension: '.wav',
+  sampleRate: 16000,
+  numberOfChannels: 1,
+  bitRate: 256000,
+  android: {
+    outputFormat: 'default',
+    audioEncoder: 'default',
+  },
+  ios: {
+    outputFormat: IOSOutputFormat.LINEARPCM,
+    audioQuality: AudioQuality.HIGH,
+    linearPCMBitDepth: 16,
+    linearPCMIsBigEndian: false,
+    linearPCMIsFloat: false,
+  },
+  web: {
+    mimeType: 'audio/wav',
+    bitsPerSecond: 256000,
+  },
+};
 
 export default function WriteScreen() {
   const router = useRouter();
@@ -31,7 +54,7 @@ export default function WriteScreen() {
     voiceState,
     volume,
     startConversation,
-    sendMessage,
+    sendAudio,
     finishConversation,
     setVoiceState,
     setVolume,
@@ -40,6 +63,13 @@ export default function WriteScreen() {
 
   const isActive = !!sessionId && !createdDiary;
   const fakeVolumeRef = useRef<ReturnType<typeof setInterval> | null>(null);
+
+  const audioRecorder = useAudioRecorder(PCM_16K_MONO);
+
+  // Request mic permission on mount
+  useEffect(() => {
+    requestRecordingPermissionsAsync();
+  }, []);
 
   // Fake volume simulation
   useEffect(() => {
@@ -62,15 +92,8 @@ export default function WriteScreen() {
     };
   }, [voiceState, setVolume]);
 
-  // Auto-transition from ai_speaking back to idle after a delay
-  useEffect(() => {
-    if (voiceState === 'ai_speaking') {
-      const timer = setTimeout(() => {
-        setVoiceState('idle');
-      }, 3000);
-      return () => clearTimeout(timer);
-    }
-  }, [voiceState, setVoiceState]);
+  // Note: ai_speaking → idle transition is handled by playNextTts() in the store
+  // when all TTS chunks finish playing.
 
   // Cleanup on unmount
   useEffect(() => {
@@ -79,15 +102,30 @@ export default function WriteScreen() {
     };
   }, [reset]);
 
-  const handleMicPress = useCallback(() => {
+  const handleMicPress = useCallback(async () => {
     if (voiceState === 'listening') {
-      // Stop recording → send a simulated message
+      // Stop recording → send audio to server for STT
       setVoiceState('processing');
-      sendMessage('(음성 입력)');
+      await audioRecorder.stop();
+      const uri = audioRecorder.uri;
+      if (uri) {
+        sendAudio(uri);
+      } else {
+        setVoiceState('idle');
+      }
     } else if (voiceState === 'idle') {
+      // Start recording
       setVoiceState('listening');
+      try {
+        await setAudioModeAsync({ allowsRecording: true, playsInSilentMode: true });
+        await audioRecorder.prepareToRecordAsync();
+        audioRecorder.record();
+      } catch (err) {
+        console.error('[Mic] Failed to start recording:', err);
+        setVoiceState('idle');
+      }
     }
-  }, [voiceState, setVoiceState, sendMessage]);
+  }, [voiceState, setVoiceState, audioRecorder, sendAudio]);
 
   const handleFinish = useCallback(() => {
     finishConversation();

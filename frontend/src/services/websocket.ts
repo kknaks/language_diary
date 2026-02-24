@@ -2,17 +2,12 @@ import { ClientMessage, ServerMessage, ConnectionStatus } from '../types';
 import { env } from '../config/env';
 
 const WS_BASE_URL = env.WS_BASE_URL;
-const MAX_RECONNECT_ATTEMPTS = 3;
-const BASE_RECONNECT_DELAY = 1000; // 1s
 
 type StatusListener = (status: ConnectionStatus) => void;
 type MessageListener = (message: ServerMessage) => void;
 
 export class WebSocketClient {
   private ws: WebSocket | null = null;
-  private sessionId: string | null = null;
-  private reconnectAttempts = 0;
-  private reconnectTimer: ReturnType<typeof setTimeout> | null = null;
   private intentionalClose = false;
 
   private statusListeners = new Set<StatusListener>();
@@ -43,41 +38,14 @@ export class WebSocketClient {
     };
   }
 
-  connect(sessionId: string) {
+  connect() {
     this.intentionalClose = false;
-    this.sessionId = sessionId;
-    this.reconnectAttempts = 0;
-    this.openConnection();
-  }
+    this.setStatus('connecting');
 
-  disconnect() {
-    this.intentionalClose = true;
-    this.clearReconnectTimer();
-    if (this.ws) {
-      this.ws.close();
-      this.ws = null;
-    }
-    this.sessionId = null;
-    this.setStatus('disconnected');
-  }
-
-  send(message: ClientMessage) {
-    if (!this.ws || this.ws.readyState !== WebSocket.OPEN) {
-      return;
-    }
-    this.ws.send(JSON.stringify(message));
-  }
-
-  private openConnection() {
-    if (!this.sessionId) return;
-
-    this.setStatus(this.reconnectAttempts > 0 ? 'reconnecting' : 'connecting');
-
-    const url = `${WS_BASE_URL}/ws/conversation/${this.sessionId}`;
+    const url = `${WS_BASE_URL}/ws/conversation`;
     this.ws = new WebSocket(url);
 
     this.ws.onopen = () => {
-      this.reconnectAttempts = 0;
       this.setStatus('connected');
     };
 
@@ -95,30 +63,42 @@ export class WebSocketClient {
     };
 
     this.ws.onclose = () => {
+      this.ws = null;
       if (this.intentionalClose) return;
-      this.attemptReconnect();
+      // No auto-reconnect: each connection creates a new session.
+      // Notify listeners that connection is lost.
+      this.setStatus('disconnected');
+      this.messageListeners.forEach((fn) =>
+        fn({
+          type: 'error',
+          code: 'CONNECTION_LOST',
+          message: '서버 연결이 끊어졌습니다.',
+        }),
+      );
     };
   }
 
-  private attemptReconnect() {
-    if (this.reconnectAttempts >= MAX_RECONNECT_ATTEMPTS) {
-      this.setStatus('disconnected');
-      return;
+  disconnect() {
+    this.intentionalClose = true;
+    if (this.ws) {
+      this.ws.close();
+      this.ws = null;
     }
-    this.reconnectAttempts++;
-    this.setStatus('reconnecting');
-
-    const delay = BASE_RECONNECT_DELAY * Math.pow(2, this.reconnectAttempts - 1);
-    this.reconnectTimer = setTimeout(() => {
-      this.openConnection();
-    }, delay);
+    this.setStatus('disconnected');
   }
 
-  private clearReconnectTimer() {
-    if (this.reconnectTimer) {
-      clearTimeout(this.reconnectTimer);
-      this.reconnectTimer = null;
+  send(message: ClientMessage) {
+    if (!this.ws || this.ws.readyState !== WebSocket.OPEN) {
+      return;
     }
+    this.ws.send(JSON.stringify(message));
+  }
+
+  sendBinary(data: ArrayBuffer) {
+    if (!this.ws || this.ws.readyState !== WebSocket.OPEN) {
+      return;
+    }
+    this.ws.send(data);
   }
 }
 

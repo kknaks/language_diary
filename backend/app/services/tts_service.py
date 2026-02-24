@@ -148,6 +148,15 @@ class TTSService:
             "duration_ms": cache_entry.duration_ms,
         }
 
+    async def generate_bytes(
+        self,
+        text: str,
+        voice_id: Optional[str] = None,
+    ) -> bytes:
+        """Generate TTS audio and return raw MP3 bytes (no file save)."""
+        voice = voice_id or DEFAULT_VOICE_ID
+        return await self._generate_with_fallback(text, voice)
+
     async def _generate_with_fallback(self, text: str, voice_id: str) -> bytes:
         """Try ElevenLabs TTS, fall back to OpenAI TTS on failure."""
         # Try ElevenLabs

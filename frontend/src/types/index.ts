@@ -109,9 +109,12 @@ export interface PronunciationResult {
 
 // ===== WebSocket 메시지 (서버 → 클라이언트) =====
 export type ServerMessage =
+  | { type: 'session_created'; session_id: string }
   | { type: 'stt_interim'; text: string }
   | { type: 'stt_final'; text: string }
   | { type: 'ai_message'; text: string }
-  | { type: 'tts_audio'; audio_url: string; cached?: boolean }
+  | { type: 'ai_message_chunk'; text: string; index: number; is_final: boolean }
+  | { type: 'tts_audio'; audio_data: string; format?: string; index?: number }
   | { type: 'diary_created'; diary: Diary }
+  | { type: 'stt_empty'; message: string }
   | { type: 'error'; code: string; message: string };

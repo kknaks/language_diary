@@ -5,7 +5,8 @@ Uses Circuit Breaker + Retry with exponential backoff for resilience.
 
 import json
 import logging
-from typing import Any, Dict, List
+import re
+from typing import Any, AsyncGenerator, Dict, List
 
 from openai import AsyncOpenAI
 
@@ -95,6 +96,54 @@ class AIService:
         messages.extend(conversation_history)
         return await self._chat(messages=messages, max_tokens=200, temperature=0.8)
 
+    async def get_reply_streaming(
+        self, conversation_history: List[Dict[str, str]]
+    ) -> AsyncGenerator[str, None]:
+        """Generate AI reply with streaming, yielding complete sentences.
+
+        Yields sentences as they are detected (split on .!? and Korean endings).
+        """
+        messages = [{"role": "system", "content": SYSTEM_PROMPT_CONVERSATION}]
+        messages.extend(conversation_history)
+
+        if _openai_cb and not _openai_cb.allow_request():
+            raise AIServiceError("OpenAI 서비스를 일시적으로 사용할 수 없습니다.")
+
+        try:
+            stream = await self.client.chat.completions.create(
+                model="gpt-4o-mini",
+                messages=messages,
+                max_tokens=200,
+                temperature=0.8,
+                stream=True,
+            )
+
+            buffer = ""
+            async for chunk in stream:
+                delta = chunk.choices[0].delta
+                if delta.content:
+                    buffer += delta.content
+                    # Try to split off complete sentences
+                    while True:
+                        sentence, rest = _split_first_sentence(buffer)
+                        if sentence is None:
+                            break
+                        buffer = rest
+                        yield sentence
+
+            # Yield remaining text
+            remaining = buffer.strip()
+            if remaining:
+                yield remaining
+
+            if _openai_cb:
+                _openai_cb.record_success()
+
+        except Exception as e:
+            if _openai_cb:
+                _openai_cb.record_failure()
+            raise AIServiceError(f"OpenAI API 호출 실패: {e}")
+
     async def generate_diary(self, conversation_history: List[Dict[str, str]]) -> Dict[str, str]:
         """Generate diary (Korean original + English translation) from conversation."""
         conversation_text = "\n".join(
@@ -159,3 +208,27 @@ class AIService:
         except json.JSONDecodeError:
             logger.error("Failed to parse AI response as JSON: %s", text[:200])
             return default
+
+
+# Sentence boundary pattern: matches .!? followed by space or end-of-string,
+# or Korean sentence endings (다, 요, 죠, 네, 까) followed by space/end.
+_SENTENCE_BOUNDARY = re.compile(
+    r'([.!?](?:\s|$))'           # Latin punctuation
+    r'|([다요죠네까][\.\!\?]?\s)'  # Korean endings + optional punctuation + space
+)
+
+
+def _split_first_sentence(text: str) -> tuple[str | None, str]:
+    """Split the first complete sentence from text.
+
+    Returns (sentence, remaining) if a boundary is found,
+    or (None, text) if no complete sentence yet.
+    """
+    match = _SENTENCE_BOUNDARY.search(text)
+    if match:
+        end = match.end()
+        sentence = text[:end].strip()
+        remaining = text[end:]
+        if sentence:
+            return sentence, remaining
+    return None, text

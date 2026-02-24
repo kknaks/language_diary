@@ -1,8 +1,8 @@
 """Integration tests — full user flow from conversation creation to pronunciation evaluation.
 
 Tests the complete lifecycle:
-  1. Create conversation → AI first message
-  2. Send messages via WebSocket → AI replies
+  1. Connect to WebSocket → session created → AI greeting
+  2. Send messages via WebSocket → AI streaming replies
   3. Finish conversation → diary + learning cards created
   4. Verify diary appears in list and detail endpoints
   5. Generate TTS for learning card text
@@ -34,6 +34,14 @@ def _make_wav(sample_rate=16000, bits_per_sample=16, num_channels=1, data_size=3
         b"data", data_size,
     )
     return header + (b"\x00" * data_size)
+
+
+def _make_streaming_reply(*sentences):
+    """Create an async generator for get_reply_streaming."""
+    async def _gen(history):
+        for s in sentences:
+            yield s
+    return _gen
 
 
 MOCK_DIARY = {
@@ -92,45 +100,62 @@ SAMPLE_GPT4O_RESULT = {
 
 @pytest.mark.asyncio
 async def test_full_conversation_to_learning_flow(client, seed_user, tmp_path):
-    """Full flow: create conversation → messages → finish → diary → TTS → pronunciation."""
+    """Full flow: WS connect → messages → finish → diary → TTS → pronunciation."""
 
-    # ── Step 1: Create conversation ──────────────────────────────────
     mock_ai = AsyncMock()
-    mock_ai.get_first_message = AsyncMock(return_value="오늘 하루 어땠어? 😊")
-    mock_ai.get_reply = AsyncMock(side_effect=[
-        "어떤 회의였어? 누구랑 했어?",
-        "결과는 어땠어? 힘들진 않았어?",
-    ])
+    mock_ai.get_first_message = AsyncMock(return_value="오늘 하루 어땠어?")
+    mock_ai.get_reply_streaming = AsyncMock()  # will be overridden below
     mock_ai.generate_diary = AsyncMock(return_value=MOCK_DIARY)
     mock_ai.extract_learning_points = AsyncMock(return_value=MOCK_LEARNING_POINTS)
 
-    with patch("app.services.conversation_service.AIService", return_value=mock_ai):
-        resp = await client.post("/api/v1/conversation")
+    # Two streaming replies
+    reply_count = 0
+    replies = ["어떤 회의였어? 누구랑 했어?", "결과는 어땠어? 힘들진 않았어?"]
 
-    assert resp.status_code == 201
-    session_id = resp.json()["session_id"]
-    assert resp.json()["first_message"] == "오늘 하루 어땠어? 😊"
+    async def streaming_reply(history):
+        nonlocal reply_count
+        text = replies[reply_count] if reply_count < len(replies) else "알겠어!"
+        reply_count += 1
+        yield text
 
-    # ── Step 2: Send messages via WebSocket ──────────────────────────
+    mock_ai.get_reply_streaming = streaming_reply
+
+    mock_tts_bytes = b"fake-mp3-bytes"
+
     with patch("app.services.conversation_service.AIService", return_value=mock_ai):
         from tests.conftest import TestSession
         with patch("app.api.v1.conversation.async_session", TestSession):
-            with patch("app.api.v1.conversation._send_tts", new_callable=AsyncMock):
+            with patch("app.api.v1.conversation.TTSService") as MockTTS:
+                MockTTS.return_value.generate_bytes = AsyncMock(return_value=mock_tts_bytes)
                 with TestClient(app) as tc:
-                    with tc.websocket_connect(f"/ws/conversation/{session_id}") as ws:
-                        # User message 1
+                    with tc.websocket_connect("/ws/conversation") as ws:
+                        # ── Step 1: Session created on WS connect ──
+                        data = ws.receive_json()
+                        assert data["type"] == "session_created"
+                        session_id = data["session_id"]
+
+                        data = ws.receive_json()
+                        assert data["type"] == "ai_message"
+                        assert data["text"] == "오늘 하루 어땠어?"
+
+                        ws.receive_json()  # tts_audio for greeting
+
+                        # ── Step 2: Send messages ──
                         ws.send_json({"type": "message", "text": "회사에서 회의했어"})
                         data = ws.receive_json()
-                        assert data["type"] == "ai_message"
+                        assert data["type"] == "ai_message_chunk"
                         assert data["text"] == "어떤 회의였어? 누구랑 했어?"
+                        ws.receive_json()  # final marker
+                        ws.receive_json()  # tts_audio
 
-                        # User message 2
                         ws.send_json({"type": "message", "text": "팀장님이랑 프로젝트 일정 잡았어"})
                         data = ws.receive_json()
-                        assert data["type"] == "ai_message"
+                        assert data["type"] == "ai_message_chunk"
                         assert data["text"] == "결과는 어땠어? 힘들진 않았어?"
+                        ws.receive_json()  # final marker
+                        ws.receive_json()  # tts_audio
 
-                        # ── Step 3: Finish conversation ──────────────────
+                        # ── Step 3: Finish conversation ──
                         ws.send_json({"type": "finish"})
                         data = ws.receive_json()
                         assert data["type"] == "diary_created"
@@ -213,10 +238,10 @@ async def test_full_conversation_to_learning_flow(client, seed_user, tmp_path):
 
 @pytest.mark.asyncio
 async def test_conversation_with_audio_stt_then_finish(client, seed_user, tmp_path):
-    """Integration: audio streaming → STT → AI reply → finish → diary."""
+    """Integration: WS connect → audio streaming → STT → AI reply → finish → diary."""
     mock_ai = AsyncMock()
     mock_ai.get_first_message = AsyncMock(return_value="오늘 뭐 했어?")
-    mock_ai.get_reply = AsyncMock(return_value="재밌었겠다!")
+    mock_ai.get_reply_streaming = _make_streaming_reply("재밌었겠다!")
     mock_ai.generate_diary = AsyncMock(return_value={
         "original_text": "오늘 친구와 카페에 갔다.",
         "translated_text": "I went to a cafe with a friend today.",
@@ -233,12 +258,6 @@ async def test_conversation_with_audio_stt_then_finish(client, seed_user, tmp_pa
         },
     ])
 
-    # Create conversation
-    with patch("app.services.conversation_service.AIService", return_value=mock_ai):
-        resp = await client.post("/api/v1/conversation")
-    assert resp.status_code == 201
-    session_id = resp.json()["session_id"]
-
     # Mock STT session
     mock_stt = AsyncMock()
     mock_stt.connect = AsyncMock()
@@ -246,13 +265,23 @@ async def test_conversation_with_audio_stt_then_finish(client, seed_user, tmp_pa
     mock_stt.commit_and_wait_final = AsyncMock(return_value="친구랑 카페 갔어")
     mock_stt.close = AsyncMock()
 
+    mock_tts_bytes = b"fake-mp3-bytes"
+
     with patch("app.services.conversation_service.AIService", return_value=mock_ai):
         with patch("app.api.v1.conversation.STTSession", return_value=mock_stt):
             from tests.conftest import TestSession
             with patch("app.api.v1.conversation.async_session", TestSession):
-                with patch("app.api.v1.conversation._send_tts", new_callable=AsyncMock):
+                with patch("app.api.v1.conversation.TTSService") as MockTTS:
+                    MockTTS.return_value.generate_bytes = AsyncMock(return_value=mock_tts_bytes)
                     with TestClient(app) as tc:
-                        with tc.websocket_connect(f"/ws/conversation/{session_id}") as ws:
+                        with tc.websocket_connect("/ws/conversation") as ws:
+                            # Consume init
+                            session_data = ws.receive_json()
+                            assert session_data["type"] == "session_created"
+                            session_id = session_data["session_id"]
+                            ws.receive_json()  # ai_message
+                            ws.receive_json()  # tts_audio
+
                             # Audio streaming flow
                             ws.send_json({"type": "audio_start"})
                             ws.send_bytes(b"\x00\x01\x02\x03")
@@ -262,9 +291,12 @@ async def test_conversation_with_audio_stt_then_finish(client, seed_user, tmp_pa
                             assert stt_final["type"] == "stt_final"
                             assert stt_final["text"] == "친구랑 카페 갔어"
 
-                            ai_msg = ws.receive_json()
-                            assert ai_msg["type"] == "ai_message"
-                            assert ai_msg["text"] == "재밌었겠다!"
+                            ai_chunk = ws.receive_json()
+                            assert ai_chunk["type"] == "ai_message_chunk"
+                            assert ai_chunk["text"] == "재밌었겠다!"
+
+                            ws.receive_json()  # final marker
+                            ws.receive_json()  # tts_audio
 
                             # Finish
                             ws.send_json({"type": "finish"})
@@ -281,7 +313,7 @@ async def test_conversation_with_audio_stt_then_finish(client, seed_user, tmp_pa
 
 @pytest.mark.asyncio
 async def test_diary_edit_after_creation(client, seed_user):
-    """Integration: create diary via conversation, then edit it."""
+    """Integration: create diary via WS conversation, then edit it."""
     mock_ai = AsyncMock()
     mock_ai.get_first_message = AsyncMock(return_value="오늘 어땠어?")
     mock_ai.generate_diary = AsyncMock(return_value={
@@ -290,20 +322,23 @@ async def test_diary_edit_after_creation(client, seed_user):
     })
     mock_ai.extract_learning_points = AsyncMock(return_value=[])
 
-    # Create and finish conversation
-    with patch("app.services.conversation_service.AIService", return_value=mock_ai):
-        resp = await client.post("/api/v1/conversation")
-        session_id = resp.json()["session_id"]
+    mock_tts_bytes = b"fake-mp3-bytes"
 
     with patch("app.services.conversation_service.AIService", return_value=mock_ai):
         from tests.conftest import TestSession
         with patch("app.api.v1.conversation.async_session", TestSession):
-            with TestClient(app) as tc:
-                with tc.websocket_connect(f"/ws/conversation/{session_id}") as ws:
-                    ws.send_json({"type": "finish"})
-                    data = ws.receive_json()
-                    assert data["type"] == "diary_created"
-                    diary_id = data["diary"]["id"]
+            with patch("app.api.v1.conversation.TTSService") as MockTTS:
+                MockTTS.return_value.generate_bytes = AsyncMock(return_value=mock_tts_bytes)
+                with TestClient(app) as tc:
+                    with tc.websocket_connect("/ws/conversation") as ws:
+                        ws.receive_json()  # session_created
+                        ws.receive_json()  # ai_message
+                        ws.receive_json()  # tts_audio
+
+                        ws.send_json({"type": "finish"})
+                        data = ws.receive_json()
+                        assert data["type"] == "diary_created"
+                        diary_id = data["diary"]["id"]
 
     # Edit the diary
     resp = await client.put(
@@ -330,18 +365,22 @@ async def test_diary_complete_and_delete_flow(client, seed_user):
     })
     mock_ai.extract_learning_points = AsyncMock(return_value=[])
 
-    with patch("app.services.conversation_service.AIService", return_value=mock_ai):
-        resp = await client.post("/api/v1/conversation")
-        session_id = resp.json()["session_id"]
+    mock_tts_bytes = b"fake-mp3-bytes"
 
     with patch("app.services.conversation_service.AIService", return_value=mock_ai):
         from tests.conftest import TestSession
         with patch("app.api.v1.conversation.async_session", TestSession):
-            with TestClient(app) as tc:
-                with tc.websocket_connect(f"/ws/conversation/{session_id}") as ws:
-                    ws.send_json({"type": "finish"})
-                    data = ws.receive_json()
-                    diary_id = data["diary"]["id"]
+            with patch("app.api.v1.conversation.TTSService") as MockTTS:
+                MockTTS.return_value.generate_bytes = AsyncMock(return_value=mock_tts_bytes)
+                with TestClient(app) as tc:
+                    with tc.websocket_connect("/ws/conversation") as ws:
+                        ws.receive_json()  # session_created
+                        ws.receive_json()  # ai_message
+                        ws.receive_json()  # tts_audio
+
+                        ws.send_json({"type": "finish"})
+                        data = ws.receive_json()
+                        diary_id = data["diary"]["id"]
 
     # Mark complete
     resp = await client.post(f"/api/v1/diary/{diary_id}/complete")

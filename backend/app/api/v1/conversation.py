@@ -1,5 +1,7 @@
 """Conversation API — REST endpoints + WebSocket for real-time chat."""
 
+import asyncio
+import base64
 import json
 import logging
 
@@ -19,16 +21,20 @@ logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/conversation", tags=["conversation"])
 
 
-async def _send_tts(websocket: WebSocket, db, text: str) -> None:
-    """Generate TTS audio for text and send to client via WebSocket."""
+async def _send_tts(websocket: WebSocket, db, text: str, index: int | None = None) -> None:
+    """Generate TTS audio for text and send base64-encoded data to client via WebSocket."""
     try:
         tts_service = TTSService(db)
-        tts_result = await tts_service.generate(text)
-        await websocket.send_json({
+        audio_bytes = await tts_service.generate_bytes(text)
+        audio_b64 = base64.b64encode(audio_bytes).decode("ascii")
+        msg: dict = {
             "type": "tts_audio",
-            "audio_url": tts_result["audio_url"],
-            "cached": tts_result.get("cached", False),
-        })
+            "audio_data": audio_b64,
+            "format": "mp3",
+        }
+        if index is not None:
+            msg["index"] = index
+        await websocket.send_json(msg)
     except Exception as e:
         logger.error("TTS failed: %s", e)
         await websocket.send_json({
@@ -54,8 +60,80 @@ async def get_conversation(session_id: str, db: AsyncSession = Depends(get_db)):
 
 # --- WebSocket endpoint (mounted at app level, not under /api/v1) ---
 
-async def conversation_websocket(websocket: WebSocket, session_id: str):
+async def _handle_ai_reply_streaming(
+    websocket: WebSocket, db, service: ConversationService, session_id: str, user_text: str,
+):
+    """Handle user message with streaming AI reply + parallel TTS.
+
+    Sends ai_message_chunk for each sentence, then tts_audio for each.
+    If max turns reached, the generator yields nothing and auto-finishes.
+    Returns True to continue message loop, False to break.
+    """
+    try:
+        sentences = []
+        tts_generators = []
+        index = 0
+
+        async for sentence in service.handle_user_message_streaming(session_id, user_text):
+            sentences.append(sentence)
+            await websocket.send_json({
+                "type": "ai_message_chunk",
+                "text": sentence,
+                "index": index,
+                "is_final": False,
+            })
+            # Pre-generate TTS bytes in parallel (but don't send yet)
+            tts_service = TTSService(db)
+            task = asyncio.create_task(tts_service.generate_bytes(sentence))
+            tts_generators.append((index, task))
+            index += 1
+
+        if sentences:
+            # Send final marker
+            await websocket.send_json({
+                "type": "ai_message_chunk",
+                "text": "",
+                "index": index,
+                "is_final": True,
+            })
+            # Now send all TTS results in order as base64
+            for tts_index, task in tts_generators:
+                try:
+                    audio_bytes = await task
+                    audio_b64 = base64.b64encode(audio_bytes).decode("ascii")
+                    await websocket.send_json({
+                        "type": "tts_audio",
+                        "audio_data": audio_b64,
+                        "format": "mp3",
+                        "index": tts_index,
+                    })
+                except Exception as e:
+                    logger.error("TTS failed for chunk %d: %s", tts_index, e)
+                    await websocket.send_json({
+                        "type": "error",
+                        "code": "TTS_FAILED",
+                        "message": str(e),
+                    })
+            return True  # continue loop
+        else:
+            # No sentences yielded — max turns reached, auto-finish happened
+            diary_resp = await service.finish_conversation(session_id)
+            await websocket.send_json(
+                {"type": "diary_created", "diary": diary_resp.model_dump(mode="json")}
+            )
+            return False  # break loop
+
+    except AppError as e:
+        await websocket.send_json(
+            {"type": "error", "code": e.code, "message": e.message}
+        )
+        return False  # break loop
+
+
+async def conversation_websocket(websocket: WebSocket):
     """WebSocket handler for real-time conversation with audio streaming.
+
+    On connect: creates session, sends greeting + TTS, then enters message loop.
 
     Client → Server:
       { "type": "message", "text": "..." }       — Text message
@@ -65,9 +143,12 @@ async def conversation_websocket(websocket: WebSocket, session_id: str):
       { "type": "finish" }                        — Finish conversation
 
     Server → Client:
+      { "type": "session_created", "session_id": "..." } — Session ready
       { "type": "stt_interim", "text": "..." }    — Real-time interim transcription
       { "type": "stt_final", "text": "..." }      — Final transcription
-      { "type": "ai_message", "text": "..." }     — AI follow-up question
+      { "type": "ai_message", "text": "..." }     — AI follow-up question (single)
+      { "type": "ai_message_chunk", "text": "...", "index": N, "is_final": bool }
+      { "type": "tts_audio", "audio_data": "<base64>", "format": "mp3", "index": N }
       { "type": "diary_created", "diary": {...} }  — Diary + learning cards
       { "type": "error", "code": "...", "message": "..." }
     """
@@ -78,6 +159,22 @@ async def conversation_websocket(websocket: WebSocket, session_id: str):
         stt_session = None
 
         try:
+            # --- Session creation on connect ---
+            session_id = await service.create_session_ws()
+            await websocket.send_json({
+                "type": "session_created",
+                "session_id": session_id,
+            })
+
+            # --- AI greeting ---
+            greeting = await service.generate_greeting(session_id)
+            await websocket.send_json({
+                "type": "ai_message",
+                "text": greeting,
+            })
+            await _send_tts(websocket, db, greeting, index=0)
+
+            # --- Message loop ---
             while True:
                 raw = await websocket.receive()
 
@@ -169,30 +266,17 @@ async def conversation_websocket(websocket: WebSocket, session_id: str):
 
                     # STT → AI pipeline: feed transcribed text to conversation
                     if final_text.strip():
-                        try:
-                            ai_reply = await service.handle_user_message(
-                                session_id, final_text
-                            )
-                        except AppError as e:
-                            await websocket.send_json(
-                                {"type": "error", "code": e.code, "message": e.message}
-                            )
+                        cont = await _handle_ai_reply_streaming(
+                            websocket, db, service, session_id, final_text,
+                        )
+                        if not cont:
                             break
-
-                        if ai_reply is None:
-                            # Max turns reached — auto-finish
-                            await db.commit()
-                            diary_resp = await service.finish_conversation(session_id)
-                            await websocket.send_json(
-                                {"type": "diary_created", "diary": diary_resp.model_dump(mode="json")}
-                            )
-                            break
-                        else:
-                            await websocket.send_json(
-                                {"type": "ai_message", "text": ai_reply}
-                            )
-                            # TTS: AI 답변을 음성으로 변환해서 전송
-                            await _send_tts(websocket, db, ai_reply)
+                    else:
+                        # Empty transcription — notify client to reset UI
+                        await websocket.send_json({
+                            "type": "stt_empty",
+                            "message": "음성이 인식되지 않았습니다. 다시 시도해주세요.",
+                        })
 
                 # ── text message ─────────────────────────────────
                 elif msg_type == "message":
@@ -203,26 +287,11 @@ async def conversation_websocket(websocket: WebSocket, session_id: str):
                         )
                         continue
 
-                    try:
-                        ai_reply = await service.handle_user_message(session_id, text)
-                    except AppError as e:
-                        await websocket.send_json(
-                            {"type": "error", "code": e.code, "message": e.message}
-                        )
+                    cont = await _handle_ai_reply_streaming(
+                        websocket, db, service, session_id, text,
+                    )
+                    if not cont:
                         break
-
-                    if ai_reply is None:
-                        await db.commit()
-                        diary_resp = await service.finish_conversation(session_id)
-                        await websocket.send_json(
-                            {"type": "diary_created", "diary": diary_resp.model_dump(mode="json")}
-                        )
-                        break
-                    else:
-                        await websocket.send_json({"type": "ai_message", "text": ai_reply})
-
-                        # TTS: AI 답변을 음성으로 변환해서 전송
-                        await _send_tts(websocket, db, ai_reply)
 
                 # ── finish ───────────────────────────────────────
                 elif msg_type == "finish":
@@ -244,9 +313,9 @@ async def conversation_websocket(websocket: WebSocket, session_id: str):
                     )
 
         except WebSocketDisconnect:
-            logger.info("WebSocket disconnected: session_id=%s", session_id)
+            logger.info("WebSocket disconnected: session_id=%s", session_id if 'session_id' in dir() else 'unknown')
         except Exception:
-            logger.exception("WebSocket error: session_id=%s", session_id)
+            logger.exception("WebSocket error")
             try:
                 await websocket.send_json(
                     {"type": "error", "code": "INTERNAL_ERROR", "message": "서버 내부 오류가 발생했습니다."}
