@@ -20,6 +20,9 @@ export default ({ config }: ConfigContext): ExpoConfig => ({
     supportsTablet: true,
     bundleIdentifier: 'com.kknaks.languagediary',
     appleTeamId: 'UYQF47UCVR',
+    infoPlist: {
+      ITSAppUsesNonExemptEncryption: false,
+    },
   },
   android: {
     adaptiveIcon: {
