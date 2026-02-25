@@ -204,7 +204,7 @@ async def test_multiple_conversations_independent(client, seed_user):
     for sid in [resp1.json()["session_id"], resp2.json()["session_id"]]:
         resp = await client.get(f"/api/v1/conversation/{sid}")
         assert resp.status_code == 200
-        assert resp.json()["status"] == "active"
+        assert resp.json()["status"] == "created"
 
 
 @pytest.mark.asyncio

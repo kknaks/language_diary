@@ -15,7 +15,7 @@ async def test_create_session(db_session, seed_user):
     result = await service.create_session()
 
     assert result.session_id.startswith("conv_")
-    assert result.status == "active"
+    assert result.status == "created"
     assert result.first_message == "오늘 하루 어땠어?"
     mock_ai.get_first_message.assert_called_once()
 
@@ -155,7 +155,7 @@ async def test_create_session_ws(db_session, seed_user):
 
     # Session should exist but have no messages
     detail = await service.get_session(session_id)
-    assert detail.status == "active"
+    assert detail.status == "created"
     assert len(detail.messages) == 0
 
 

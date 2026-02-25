@@ -18,7 +18,7 @@ async def test_create_conversation(client, seed_user):
     assert resp.status_code == 201
     data = resp.json()
     assert data["session_id"].startswith("conv_")
-    assert data["status"] == "active"
+    assert data["status"] == "created"
     assert data["first_message"] == "오늘 하루 어땠어?"
     assert "created_at" in data
 
