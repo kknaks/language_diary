@@ -421,3 +421,55 @@ interface VADOptions {
 - zustand store 액션 + expo-audio-studio 훅을 useEffect 의존성에 넣으면 매 렌더마다 재생성 → 무한 루프
 - **해결**: `useRef`로 최신 함수 참조 유지, useEffect 의존성은 상태값만
 - cleanup effect는 `[]` 의존성 + `useRef.current()` 호출 패턴
+
+### iOS 오디오 세션 충돌 (녹음 + 재생 동시)
+
+**증상**: 마이크 녹음 시작 후 TTS 오디오 재생이 시작되면 녹음이 중단됨 (Chunk #1만 수신 후 멈춤)
+
+**원인**: iOS 기본 오디오 세션 카테고리가 `playback` 전용. 재생이 시작되면 녹음 세션이 종료됨.
+
+**에러 로그 패턴**:
+```
+[MediaToolbox] <<<< Boss >>>> signalled err=-12371
+[MediaToolbox] <<<< FigFilePlayer >>>> signalled err=-12864
+[CoreAudio] AudioDeviceStop: no device with given ID
+[AudioToolbox] AQMEIO_HAL.cpp: Waiting for Stop to be signaled timed out
+```
+
+**해결 (3가지 필요)**:
+
+1. **`setAudioModeAsync` 호출** — 앱 시작 시 `playAndRecord` + `mixWithOthers` 모드 설정:
+```typescript
+// audio.ts
+import { setAudioModeAsync } from 'expo-audio';
+await setAudioModeAsync({
+  allowsRecording: true,
+  playsInSilentMode: true,
+  interruptionMode: 'mixWithOthers',
+});
+```
+
+2. **마이크 강제 재시작** — AI 오디오 재생 후 녹음이 죽었을 가능성이 높으므로 `forceRestart` 패턴 사용:
+```typescript
+// useRealtimeRecorder.ts
+const forceRestart = async () => {
+  await recorder.stopRecording();       // 현재 녹음 정리
+  await new Promise(r => setTimeout(r, 200)); // iOS 오디오 세션 안정화 대기
+  await recorder.startRecording({...}); // 재시작
+};
+```
+
+3. **voiceState 전이 감지** — `ai_speaking → listening` 전이 시 forceRestart 호출:
+```typescript
+// write.tsx
+const prevVoiceStateRef = useRef(voiceState);
+useEffect(() => {
+  const prevState = prevVoiceStateRef.current;
+  prevVoiceStateRef.current = voiceState;
+  if (voiceState === 'listening' && prevState === 'ai_speaking') {
+    forceRestart(); // AI 말하기 끝 → 마이크 복구
+  }
+}, [voiceState]);
+```
+
+**핵심 교훈**: iOS에서 녹음과 재생을 동시에 하려면 반드시 `AVAudioSessionCategoryPlayAndRecord` 설정이 필요하며, 그래도 재생이 녹음을 죽일 수 있으므로 강제 재시작 로직이 안전장치로 필요.
