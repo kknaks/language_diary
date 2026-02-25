@@ -265,6 +265,7 @@ async def test_conversation_with_audio_stt_then_finish(client, seed_user, tmp_pa
     mock_stt.connect = AsyncMock()
     mock_stt.send_audio = AsyncMock()
     mock_stt.wait_for_final = AsyncMock(return_value="친구랑 카페 갔어")
+    mock_stt.commit_and_wait_final = AsyncMock(return_value="친구랑 카페 갔어")
     mock_stt.close = AsyncMock()
 
     mock_tts_bytes = b"fake-mp3-bytes"

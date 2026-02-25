@@ -320,6 +320,7 @@ async def conversation_websocket(websocket: WebSocket):
       { "type": "audio_start" }                   — Begin audio streaming
       (binary frames)                             — Audio chunks (PCM 16kHz 16-bit mono)
       { "type": "audio_end" }                     — End audio streaming
+      { "type": "barge_in" }                      — Cancel current AI reply + TTS
       { "type": "finish" }                        — Finish conversation
 
     Server → Client:
@@ -337,6 +338,32 @@ async def conversation_websocket(websocket: WebSocket):
     async with async_session() as db:
         service = ConversationService(db)
         stt_session = None
+        # pipeline_state is shared between the message loop and
+        # _handle_ai_reply_streaming so that barge_in can cancel running tasks.
+        pipeline_state: dict = {}
+        ai_pipeline_task: Optional[asyncio.Task] = None
+
+        async def _cancel_pipeline() -> None:
+            """Cancel in-flight LLM / TTS / relay tasks (barge-in)."""
+            nonlocal ai_pipeline_task
+            for key in ("llm_task", "relay_task"):
+                task = pipeline_state.pop(key, None)
+                if task and not task.done():
+                    task.cancel()
+                    try:
+                        await task
+                    except (asyncio.CancelledError, Exception):
+                        pass
+            tts_sess = pipeline_state.pop("tts_session", None)
+            if tts_sess:
+                await tts_sess.close()
+            if ai_pipeline_task and not ai_pipeline_task.done():
+                ai_pipeline_task.cancel()
+                try:
+                    await ai_pipeline_task
+                except (asyncio.CancelledError, Exception):
+                    pass
+                ai_pipeline_task = None
 
         try:
             # --- Session creation on connect ---
@@ -426,14 +453,13 @@ async def conversation_websocket(websocket: WebSocket):
                         })
                         continue
 
-                    # In VAD mode, committed_transcript arrives automatically
-                    # when silence is detected. wait_for_final() just waits
-                    # for that event (no manual commit needed).
-                    # stt_final is already sent to the client by _listen().
+                    # Frontend VAD detected silence and sent audio_end.
+                    # Use commit_and_wait_final() for explicit commit —
+                    # more reliable than waiting for server-side VAD.
                     try:
-                        final_text = await stt_session.wait_for_final()
+                        final_text = await stt_session.commit_and_wait_final()
                     except STTError as e:
-                        logger.error("STT wait_for_final failed: %s", e)
+                        logger.error("STT commit_and_wait_final failed: %s", e)
                         await websocket.send_json({
                             "type": "error",
                             "code": "STT_FAILED",
@@ -458,6 +484,7 @@ async def conversation_websocket(websocket: WebSocket):
                     if final_text.strip():
                         cont = await _handle_ai_reply_streaming(
                             websocket, db, service, session_id, final_text,
+                            pipeline_state=pipeline_state,
                         )
                         if not cont:
                             break
@@ -479,12 +506,21 @@ async def conversation_websocket(websocket: WebSocket):
 
                     cont = await _handle_ai_reply_streaming(
                         websocket, db, service, session_id, text,
+                        pipeline_state=pipeline_state,
                     )
                     if not cont:
                         break
 
+                # ── barge_in ─────────────────────────────────────
+                elif msg_type == "barge_in":
+                    logger.info("Barge-in received, cancelling pipeline")
+                    await _cancel_pipeline()
+                    await websocket.send_json({"type": "barge_in_ack"})
+
                 # ── finish ───────────────────────────────────────
                 elif msg_type == "finish":
+                    # Cancel any in-flight pipeline before finishing
+                    await _cancel_pipeline()
                     try:
                         diary_resp = await service.finish_conversation(session_id)
                         await websocket.send_json(
@@ -513,6 +549,7 @@ async def conversation_websocket(websocket: WebSocket):
             except Exception:
                 pass
         finally:
+            await _cancel_pipeline()
             if stt_session:
                 await stt_session.close()
             try:
