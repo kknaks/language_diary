@@ -4,6 +4,7 @@ import asyncio
 import base64
 import json
 import logging
+import time
 from typing import Optional
 
 from fastapi import APIRouter, Depends, WebSocket, WebSocketDisconnect
@@ -18,6 +19,9 @@ from app.services.stt_service import STTError, STTSession
 from app.services.tts_service import TTSError, TTSService, TTSStreamSession
 
 logger = logging.getLogger(__name__)
+
+# STT silence timeout: if no final transcript after this many seconds, send stt_empty
+STT_SILENCE_TIMEOUT_SECS = 15.0
 
 router = APIRouter(prefix="/conversation", tags=["conversation"])
 

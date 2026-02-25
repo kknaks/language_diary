@@ -88,6 +88,7 @@ export type ClientMessage =
   | { type: 'message'; text: string }
   | { type: 'audio_start' }
   | { type: 'audio_end' }
+  | { type: 'barge_in' }
   | { type: 'finish' };
 
 // ===== TTS 응답 =====
@@ -114,6 +115,7 @@ export type ServerMessage =
   | { type: 'stt_final'; text: string }
   | { type: 'ai_message'; text: string }
   | { type: 'ai_message_chunk'; text: string; index: number; is_final: boolean }
+  | { type: 'ai_done' }
   | { type: 'tts_audio'; audio_data: string; format?: string; index?: number }
   | { type: 'diary_created'; diary: Diary }
   | { type: 'stt_empty'; message: string }

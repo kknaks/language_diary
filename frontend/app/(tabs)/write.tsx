@@ -3,7 +3,7 @@ import { View, Text, StyleSheet } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { useRouter } from 'expo-router';
-import { useAudioRecorder, requestRecordingPermissionsAsync, setAudioModeAsync, IOSOutputFormat, AudioQuality, type RecordingOptions } from 'expo-audio';
+import { ExpoAudioStreamModule } from '@siteed/expo-audio-studio';
 
 import { colors, fontSize, spacing } from '../../src/constants/theme';
 import { Button } from '../../src/components/common';
@@ -16,28 +16,7 @@ import {
   MicButton,
 } from '../../src/components/conversation';
 import { useConversationStore } from '../../src/stores/useConversationStore';
-
-const PCM_16K_MONO: RecordingOptions = {
-  extension: '.wav',
-  sampleRate: 16000,
-  numberOfChannels: 1,
-  bitRate: 256000,
-  android: {
-    outputFormat: 'default',
-    audioEncoder: 'default',
-  },
-  ios: {
-    outputFormat: IOSOutputFormat.LINEARPCM,
-    audioQuality: AudioQuality.HIGH,
-    linearPCMBitDepth: 16,
-    linearPCMIsBigEndian: false,
-    linearPCMIsFloat: false,
-  },
-  web: {
-    mimeType: 'audio/wav',
-    bitsPerSecond: 256000,
-  },
-};
+import { useRealtimeRecorder } from '../../src/hooks/useRealtimeRecorder';
 
 export default function WriteScreen() {
   const router = useRouter();
@@ -54,7 +33,7 @@ export default function WriteScreen() {
     voiceState,
     volume,
     startConversation,
-    sendAudio,
+    prepareStreaming,
     finishConversation,
     setVoiceState,
     setVolume,
@@ -64,12 +43,19 @@ export default function WriteScreen() {
   const isActive = !!sessionId && !createdDiary;
   const fakeVolumeRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
-  const audioRecorder = useAudioRecorder(PCM_16K_MONO);
+  const { isStreaming, startStreaming, stopStreaming } = useRealtimeRecorder();
 
   // Request mic permission on mount
   useEffect(() => {
-    requestRecordingPermissionsAsync();
+    ExpoAudioStreamModule.requestPermissionsAsync();
   }, []);
+
+  // Auto-stop streaming when VAD triggers stt_final (voiceState transitions away from 'listening')
+  useEffect(() => {
+    if (voiceState !== 'listening' && isStreaming) {
+      stopStreaming();
+    }
+  }, [voiceState, isStreaming, stopStreaming]);
 
   // Fake volume simulation
   useEffect(() => {
@@ -104,28 +90,21 @@ export default function WriteScreen() {
 
   const handleMicPress = useCallback(async () => {
     if (voiceState === 'listening') {
-      // Stop recording → send audio to server for STT
+      // Manual stop — wait for stt_final from backend (VAD may have already committed)
       setVoiceState('processing');
-      await audioRecorder.stop();
-      const uri = audioRecorder.uri;
-      if (uri) {
-        sendAudio(uri);
-      } else {
-        setVoiceState('idle');
-      }
+      await stopStreaming();
     } else if (voiceState === 'idle') {
-      // Start recording
-      setVoiceState('listening');
+      // Start real-time streaming
+      const ok = prepareStreaming();
+      if (!ok) return;
       try {
-        await setAudioModeAsync({ allowsRecording: true, playsInSilentMode: true });
-        await audioRecorder.prepareToRecordAsync();
-        audioRecorder.record();
+        await startStreaming();
       } catch (err) {
-        console.error('[Mic] Failed to start recording:', err);
+        console.error('[Mic] Failed to start streaming:', err);
         setVoiceState('idle');
       }
     }
-  }, [voiceState, setVoiceState, audioRecorder, sendAudio]);
+  }, [voiceState, setVoiceState, prepareStreaming, startStreaming, stopStreaming]);
 
   const handleFinish = useCallback(() => {
     finishConversation();

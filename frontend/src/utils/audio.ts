@@ -1,17 +1,9 @@
 import { createAudioPlayer, AudioPlayer } from 'expo-audio';
 import { File, Paths } from 'expo-file-system';
+import { toByteArray } from 'base64-js';
 
 let currentPlayer: AudioPlayer | null = null;
 let finishCleanup: (() => void) | null = null;
-
-function base64ToUint8Array(base64: string): Uint8Array {
-  const binaryString = atob(base64);
-  const bytes = new Uint8Array(binaryString.length);
-  for (let i = 0; i < binaryString.length; i++) {
-    bytes[i] = binaryString.charCodeAt(i);
-  }
-  return bytes;
-}
 
 /**
  * Play audio from base64-encoded MP3 data.
@@ -29,7 +21,7 @@ export async function playAudioFromBase64(
 
   try {
     // Decode base64 → bytes, create file, then write
-    const bytes = base64ToUint8Array(base64Data);
+    const bytes = toByteArray(base64Data);
     file.create();
     file.write(bytes);
 

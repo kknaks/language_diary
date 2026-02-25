@@ -13,7 +13,9 @@
   },
   "dependencies": {
     "@shopify/flash-list": "^2.0.2",
+    "@siteed/expo-audio-studio": "^2.18.5",
     "axios": "^1.13.5",
+    "base64-js": "^1.5.1",
     "expo": "~54.0.33",
     "expo-audio": "~1.1.1",
     "expo-av": "~16.0.8",

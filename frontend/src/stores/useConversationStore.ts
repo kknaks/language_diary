@@ -1,5 +1,4 @@
 import { create } from 'zustand';
-import { File } from 'expo-file-system';
 import { Conversation, Message, ConnectionStatus, Diary, ServerMessage } from '../types';
 import { normalizeDiary } from '../services/api';
 import { wsClient } from '../services/websocket';
@@ -43,7 +42,7 @@ interface ConversationState {
   // Actions
   startConversation: () => Promise<void>;
   sendMessage: (text: string) => void;
-  sendAudio: (fileUri: string) => Promise<void>;
+  prepareStreaming: () => boolean;
   finishConversation: () => void;
   setVoiceState: (state: VoiceState) => void;
   setVolume: (volume: number) => void;
@@ -55,32 +54,6 @@ let unsubMessage: (() => void) | null = null;
 
 function generateId(): string {
   return `msg_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`;
-}
-
-/**
- * Parse WAV file to find the actual start of PCM data.
- * WAV files have a RIFF header + fmt chunk + possibly other chunks before "data".
- * Returns the byte offset where PCM audio data starts.
- */
-function findWavDataOffset(bytes: Uint8Array): number {
-  // Minimum WAV header: RIFF(4) + size(4) + WAVE(4) = 12 bytes
-  if (bytes.length < 12) return 0;
-
-  // Search for "data" chunk marker (0x64 0x61 0x74 0x61)
-  for (let i = 12; i < Math.min(bytes.length - 8, 500); i++) {
-    if (
-      bytes[i] === 0x64 &&     // 'd'
-      bytes[i + 1] === 0x61 && // 'a'
-      bytes[i + 2] === 0x74 && // 't'
-      bytes[i + 3] === 0x61    // 'a'
-    ) {
-      // "data" marker found; data starts 8 bytes after (4 for "data" + 4 for size)
-      return i + 8;
-    }
-  }
-
-  // Fallback: standard 44-byte header
-  return 44;
 }
 
 export const useConversationStore = create<ConversationState>((set, get) => ({
@@ -170,49 +143,24 @@ export const useConversationStore = create<ConversationState>((set, get) => ({
     wsClient.send({ type: 'message', text });
   },
 
-  sendAudio: async (fileUri: string) => {
+  prepareStreaming: () => {
     const { sessionId, connectionStatus } = get();
-    if (!sessionId || connectionStatus !== 'connected') return;
+    if (!sessionId || connectionStatus !== 'connected') return false;
 
     stopCurrentAudio();
 
-    set((state) => ({
+    set({
       interimText: '',
-      isAiTyping: true,
-      voiceState: 'processing' as VoiceState,
+      isAiTyping: false,
+      voiceState: 'listening' as VoiceState,
       volume: 0,
       pendingAiText: '',
       ttsQueue: new Map(),
       nextTtsIndex: 0,
       isPlayingTts: false,
-    }));
+    });
 
-    try {
-      // Read recorded WAV file and find the PCM data section
-      const file = new File(fileUri);
-      const allBytes = await file.bytes();
-
-      // Parse WAV header to find actual "data" chunk offset
-      const dataOffset = findWavDataOffset(allBytes);
-      const pcmBytes = allBytes.slice(dataOffset);
-
-      console.log(`[Audio] WAV total=${allBytes.length}, dataOffset=${dataOffset}, pcm=${pcmBytes.length}`);
-
-      if (pcmBytes.length === 0) {
-        console.error('[Audio] No PCM data found in WAV file');
-        set({ isAiTyping: false, voiceState: 'idle', error: '녹음 데이터가 비어있습니다.' });
-        return;
-      }
-
-      // Send audio_start → binary PCM → audio_end
-      wsClient.send({ type: 'audio_start' });
-      // Use .buffer.slice() to get a proper standalone ArrayBuffer
-      wsClient.sendBinary(pcmBytes.buffer.slice(pcmBytes.byteOffset, pcmBytes.byteOffset + pcmBytes.byteLength));
-      wsClient.send({ type: 'audio_end' });
-    } catch (err) {
-      console.error('[Audio] Failed to send audio:', err);
-      set({ isAiTyping: false, voiceState: 'idle', error: '음성 전송에 실패했습니다.' });
-    }
+    return true;
   },
 
   finishConversation: () => {
@@ -335,9 +283,29 @@ function handleServerMessage(
       set({ interimText: msg.text });
       break;
 
-    case 'stt_final':
-      set({ interimText: '' });
+    case 'stt_final': {
+      // VAD committed transcript — add user message and wait for AI response
+      const userMessage: Message = {
+        id: generateId(),
+        conversationId: get().sessionId ?? '',
+        role: 'user',
+        content: msg.text,
+        createdAt: new Date().toISOString(),
+      };
+      set((state) => ({
+        messages: [...state.messages, userMessage],
+        turnCount: state.turnCount + 1,
+        interimText: '',
+        isAiTyping: true,
+        voiceState: 'processing' as VoiceState,
+        volume: 0,
+        pendingAiText: '',
+        ttsQueue: new Map(),
+        nextTtsIndex: 0,
+        isPlayingTts: false,
+      }));
       break;
+    }
 
     case 'stt_empty':
       // STT returned empty transcription — reset UI so user can retry
@@ -390,6 +358,33 @@ function handleServerMessage(
       break;
     }
 
+    case 'ai_done': {
+      // AI response complete — finalize any remaining pending text
+      const remainingText = get().pendingAiText;
+      if (remainingText) {
+        const finalAiMessage: Message = {
+          id: generateId(),
+          conversationId: get().sessionId ?? '',
+          role: 'assistant',
+          content: remainingText,
+          createdAt: new Date().toISOString(),
+        };
+        set((state) => ({
+          messages: [...state.messages, finalAiMessage],
+          isAiTyping: false,
+          pendingAiText: '',
+        }));
+      } else {
+        set({ isAiTyping: false });
+      }
+      // If no TTS is queued or playing (e.g. TTS failed), reset voiceState to idle
+      const afterDone = get();
+      if (!afterDone.isPlayingTts && afterDone.ttsQueue.size === 0) {
+        set({ voiceState: 'idle' as VoiceState, volume: 0 });
+      }
+      break;
+    }
+
     case 'diary_created':
       set({ isCreatingDiary: false, createdDiary: normalizeDiary(msg.diary), voiceState: 'idle' as VoiceState, volume: 0 });
       break;
@@ -401,6 +396,12 @@ function handleServerMessage(
 
       set((state) => {
         const newQueue = new Map(state.ttsQueue);
+        // Enforce max queue size (10) to prevent memory bloat
+        if (newQueue.size >= 10) {
+          console.warn('[TTS] Queue full, dropping oldest unplayed entry');
+          const minKey = Math.min(...newQueue.keys());
+          newQueue.delete(minKey);
+        }
         newQueue.set(index, msg.audio_data);
         return { ttsQueue: newQueue };
       });
