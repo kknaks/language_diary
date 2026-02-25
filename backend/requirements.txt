@@ -19,6 +19,7 @@ azure-cognitiveservices-speech==1.42.*
 # Auth (Phase 2)
 python-jose[cryptography]==3.3.*
 passlib[bcrypt]==1.7.*
+google-auth>=2.0.0
 
 # Utilities
 python-multipart==0.0.*
