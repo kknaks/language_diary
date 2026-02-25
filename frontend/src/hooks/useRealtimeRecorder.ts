@@ -25,6 +25,13 @@ export interface VADCallbacks {
  * On iOS, audio playback can kill the recording session.
  * forceRestart() stops and re-starts the recorder to recover.
  */
+// Ambient noise calibration duration (ms)
+const AMBIENT_CALIBRATION_MS = 1500;
+// How many dB above ambient noise counts as speech
+const SPEECH_MARGIN_DB = 8;
+// Fallback threshold if calibration data is insufficient
+const FALLBACK_THRESHOLD_DB = -40;
+
 export function useRealtimeRecorder() {
   const recorder = useAudioRecorder();
   const streamingRef = useRef(false);
@@ -35,6 +42,12 @@ export function useRealtimeRecorder() {
 
   // VAD state tracking
   const wasSpeakingRef = useRef(false);
+
+  // Ambient noise calibration
+  const calibratingRef = useRef(false);
+  const calibrationStartRef = useRef(0);
+  const ambientDbSamplesRef = useRef<number[]>([]);
+  const speechThresholdDbRef = useRef(FALLBACK_THRESHOLD_DB);
 
   // Request mic permission on mount
   useEffect(() => {
@@ -54,6 +67,13 @@ export function useRealtimeRecorder() {
     callbackRef.current = onAudioChunk;
     vadCallbacksRef.current = vadCallbacks ?? null;
     wasSpeakingRef.current = false;
+
+    // Start ambient calibration
+    calibratingRef.current = true;
+    calibrationStartRef.current = Date.now();
+    ambientDbSamplesRef.current = [];
+    speechThresholdDbRef.current = FALLBACK_THRESHOLD_DB;
+    console.log('[VAD] Ambient calibration started (1.5s)');
 
     await ensureAudioMode();
     console.log('[Mic] Starting recording with VAD...');
@@ -93,11 +113,43 @@ export function useRealtimeRecorder() {
         const lastPoint = analysis.dataPoints[analysis.dataPoints.length - 1];
         if (!lastPoint) return;
 
-        // Determine speech activity: prefer speech.isActive, fallback to dB threshold
-        const isActive = lastPoint.speech?.isActive ?? (!lastPoint.silent && lastPoint.dB > -40);
+        const db = lastPoint.dB;
+
+        // --- Ambient noise calibration phase (first 1.5s) ---
+        if (calibratingRef.current) {
+          const elapsed = Date.now() - calibrationStartRef.current;
+          if (elapsed < AMBIENT_CALIBRATION_MS) {
+            // Collect dB samples during silence
+            if (isFinite(db) && db < -20) { // only collect plausible ambient samples
+              ambientDbSamplesRef.current.push(db);
+            }
+            return; // Skip VAD during calibration
+          } else {
+            // Calibration done — compute threshold
+            calibratingRef.current = false;
+            const samples = ambientDbSamplesRef.current;
+            if (samples.length >= 5) {
+              // Use 90th percentile of ambient dB as baseline (conservative)
+              const sorted = [...samples].sort((a, b) => b - a); // descending
+              const p90idx = Math.floor(sorted.length * 0.1);
+              const ambientDb = sorted[p90idx];
+              speechThresholdDbRef.current = ambientDb + SPEECH_MARGIN_DB;
+              console.log(
+                `[VAD] Calibration done: ambient=${ambientDb.toFixed(1)}dB, threshold=${speechThresholdDbRef.current.toFixed(1)}dB (${samples.length} samples)`,
+              );
+            } else {
+              console.log(`[VAD] Calibration insufficient (${samples.length} samples), using fallback ${FALLBACK_THRESHOLD_DB}dB`);
+            }
+          }
+        }
+
+        // --- Normal VAD phase ---
+        // Determine speech activity: prefer speech.isActive, fallback to dynamic dB threshold
+        const threshold = speechThresholdDbRef.current;
+        const isActive = lastPoint.speech?.isActive ?? (!lastPoint.silent && db > threshold);
 
         // Report energy for volume visualization (dB → 0~1)
-        const energy = Math.max(0, Math.min(1, (lastPoint.dB + 60) / 60));
+        const energy = Math.max(0, Math.min(1, (db + 60) / 60));
         vadCallbacksRef.current?.onEnergy?.(energy);
 
         // Detect speech transitions
@@ -149,10 +201,14 @@ export function useRealtimeRecorder() {
     // Small delay to let iOS audio session settle
     await new Promise((resolve) => setTimeout(resolve, 200));
 
-    // Re-start with same callbacks
+    // Re-start with same callbacks — preserve existing threshold, skip re-calibration
+    const savedThreshold = speechThresholdDbRef.current;
     try {
       await doStartRecording(callbackRef.current, vadCallbacksRef.current ?? undefined);
-      console.log('[Mic] forceRestart: recording restarted successfully');
+      // doStartRecording resets calibration — restore the saved threshold immediately
+      calibratingRef.current = false;
+      speechThresholdDbRef.current = savedThreshold;
+      console.log(`[Mic] forceRestart: recording restarted, threshold restored to ${savedThreshold.toFixed(1)}dB`);
     } catch (err) {
       console.error('[Mic] forceRestart failed:', err);
     }
