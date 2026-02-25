@@ -470,6 +470,7 @@ MVP 히스토리 탭 구조 그대로:
   - 화면 출력 언어 (앱 UI 언어) ← `user_profiles.app_locale`
   - 모국어 ← `user_profiles.native_language_id`
   - 학습 언어 ← `user_profiles.target_language_id`
+  - 학습 레벨 (CEFR: A1~C2) ← `user_language_levels.cefr_level`
 
 - **3. 아바타 설정**
   - 아바타 외형 변경 ← `user_profiles.avatar_id`
