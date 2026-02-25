@@ -1,5 +1,7 @@
 """ConvAI Service — fetches signed WebSocket URLs from ElevenLabs Conversational AI."""
 
+from __future__ import annotations
+
 import logging
 
 import httpx
