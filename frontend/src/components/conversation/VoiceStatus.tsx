@@ -11,7 +11,7 @@ interface VoiceStatusProps {
 const STATE_LABELS: Record<VoiceState, string> = {
   idle: '탭해서 말하기',
   listening: '듣고 있어요...',
-  ai_speaking: 'AI가 말하고 있어요...',
+  ai_speaking: '탭해서 끼어들기',
   processing: '생각하고 있어요...',
 };
 

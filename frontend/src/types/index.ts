@@ -119,4 +119,5 @@ export type ServerMessage =
   | { type: 'tts_audio'; audio_data: string; format?: string; index?: number }
   | { type: 'diary_created'; diary: Diary }
   | { type: 'stt_empty'; message: string }
+  | { type: 'barge_in_ack' }
   | { type: 'error'; code: string; message: string };

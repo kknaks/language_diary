@@ -1,5 +1,5 @@
 import React, { useCallback, useEffect, useRef } from 'react';
-import { View, Text, StyleSheet } from 'react-native';
+import { View, Text, StyleSheet, TouchableOpacity } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { useRouter } from 'expo-router';
@@ -34,9 +34,11 @@ export default function WriteScreen() {
     volume,
     startConversation,
     prepareStreaming,
+    bargeIn,
     finishConversation,
     setVoiceState,
     setVolume,
+    clearError,
     reset,
   } = useConversationStore();
 
@@ -93,6 +95,15 @@ export default function WriteScreen() {
       // Manual stop — wait for stt_final from backend (VAD may have already committed)
       setVoiceState('processing');
       await stopStreaming();
+    } else if (voiceState === 'ai_speaking') {
+      // Barge-in: interrupt AI and start new input
+      bargeIn();
+      try {
+        await startStreaming();
+      } catch (err) {
+        console.error('[Mic] Failed to start streaming after barge-in:', err);
+        setVoiceState('idle');
+      }
     } else if (voiceState === 'idle') {
       // Start real-time streaming
       const ok = prepareStreaming();
@@ -104,7 +115,7 @@ export default function WriteScreen() {
         setVoiceState('idle');
       }
     }
-  }, [voiceState, setVoiceState, prepareStreaming, startStreaming, stopStreaming]);
+  }, [voiceState, setVoiceState, prepareStreaming, bargeIn, startStreaming, stopStreaming]);
 
   const handleFinish = useCallback(() => {
     finishConversation();
@@ -183,12 +194,21 @@ export default function WriteScreen() {
 
   // --- Active conversation: Voice Orb UI ---
   const canFinish = turnCount >= 2 && connectionStatus === 'connected' && !isCreatingDiary;
-  const micDisabled = connectionStatus !== 'connected' || isCreatingDiary || voiceState === 'processing' || voiceState === 'ai_speaking';
+  const micDisabled = connectionStatus !== 'connected' || isCreatingDiary || voiceState === 'processing';
 
   return (
     <SafeAreaView style={styles.container} edges={['top']}>
       {/* Connection status banner */}
       <ConnectionStatus status={connectionStatus} />
+
+      {/* Error banner (dismissible) */}
+      {error && (
+        <TouchableOpacity style={styles.errorBanner} onPress={clearError} activeOpacity={0.8}>
+          <Ionicons name="alert-circle" size={16} color="#fff" />
+          <Text style={styles.errorBannerText} numberOfLines={2}>{error}</Text>
+          <Ionicons name="close" size={16} color="#fff" />
+        </TouchableOpacity>
+      )}
 
       {/* Header */}
       <View style={styles.header}>
@@ -260,6 +280,21 @@ const styles = StyleSheet.create({
     fontSize: fontSize.sm,
     color: colors.error,
     marginTop: spacing.sm,
+  },
+  errorBanner: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: spacing.xs,
+    backgroundColor: colors.error,
+    paddingVertical: spacing.xs + 2,
+    paddingHorizontal: spacing.md,
+  },
+  errorBannerText: {
+    flex: 1,
+    fontSize: fontSize.xs,
+    fontWeight: '600',
+    color: '#fff',
   },
   diaryPreview: {
     fontSize: fontSize.sm,

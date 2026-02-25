@@ -43,9 +43,11 @@ interface ConversationState {
   startConversation: () => Promise<void>;
   sendMessage: (text: string) => void;
   prepareStreaming: () => boolean;
+  bargeIn: () => void;
   finishConversation: () => void;
   setVoiceState: (state: VoiceState) => void;
   setVolume: (volume: number) => void;
+  clearError: () => void;
   reset: () => void;
 }
 
@@ -158,9 +160,33 @@ export const useConversationStore = create<ConversationState>((set, get) => ({
       ttsQueue: new Map(),
       nextTtsIndex: 0,
       isPlayingTts: false,
+      error: null,
     });
 
     return true;
+  },
+
+  bargeIn: () => {
+    const { connectionStatus } = get();
+    if (connectionStatus !== 'connected') return;
+
+    // 1. Stop current audio playback + clear queue
+    stopCurrentAudio();
+
+    // 2. Reset state for new listening
+    set({
+      interimText: '',
+      isAiTyping: false,
+      pendingAiText: '',
+      ttsQueue: new Map(),
+      nextTtsIndex: 0,
+      isPlayingTts: false,
+      error: null,
+    });
+
+    // 3. Send barge_in to backend
+    wsClient.send({ type: 'barge_in' });
+    console.log('[Barge-in] Sent barge_in to backend');
   },
 
   finishConversation: () => {
@@ -178,6 +204,10 @@ export const useConversationStore = create<ConversationState>((set, get) => ({
 
   setVolume: (volume: number) => {
     set({ volume: Math.max(0, Math.min(1, volume)) });
+  },
+
+  clearError: () => {
+    set({ error: null });
   },
 
   reset: () => {
@@ -412,6 +442,21 @@ function handleServerMessage(
       }
       break;
     }
+
+    case 'barge_in_ack':
+      // Backend confirmed barge-in — pipeline is reset, ready for new input
+      console.log('[Barge-in] Received barge_in_ack');
+      stopCurrentAudio();
+      set({
+        voiceState: 'listening' as VoiceState,
+        isAiTyping: false,
+        pendingAiText: '',
+        ttsQueue: new Map(),
+        nextTtsIndex: 0,
+        isPlayingTts: false,
+        interimText: '',
+      });
+      break;
 
     case 'error':
       if (msg.code === 'TTS_FAILED') {
