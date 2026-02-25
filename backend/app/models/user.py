@@ -17,6 +17,9 @@ class User(Base):
     native_lang: Mapped[str] = mapped_column(String(10), server_default="ko", nullable=False)
     target_lang: Mapped[str] = mapped_column(String(10), server_default="en", nullable=False)
     is_active: Mapped[bool] = mapped_column(Boolean, server_default="true", nullable=False)
+    social_provider: Mapped[Optional[str]] = mapped_column(String(50), nullable=True)
+    social_id: Mapped[Optional[str]] = mapped_column(String(255), nullable=True)
+    deleted_at: Mapped[Optional[datetime]] = mapped_column(DateTime, nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now(), nullable=False)
     updated_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now(), onupdate=func.now(), nullable=False)
 
@@ -24,3 +27,6 @@ class User(Base):
     diaries = relationship("Diary", back_populates="user")
     conversation_sessions = relationship("ConversationSession", back_populates="user")
     pronunciation_results = relationship("PronunciationResult", back_populates="user")
+    profile = relationship("UserProfile", back_populates="user", uselist=False)
+    refresh_tokens = relationship("RefreshToken", back_populates="user")
+    language_levels = relationship("UserLanguageLevel", back_populates="user")

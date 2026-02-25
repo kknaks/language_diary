@@ -1,3 +1,5 @@
+from typing import List
+
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -28,6 +30,10 @@ class Settings(BaseSettings):
     SECRET_KEY: str = "change-me"
     DEBUG: bool = False
 
+    # JWT
+    JWT_SECRET_KEY: str = "change-me-in-production"
+    JWT_ALGORITHM: str = "HS256"
+
     # CORS — comma-separated origins, "*" for all (dev only)
     ALLOWED_ORIGINS: str = "*"
 
@@ -39,7 +45,7 @@ class Settings(BaseSettings):
         return self.DATABASE_URL.replace("+asyncpg", "+psycopg2")
 
     @property
-    def cors_origins(self) -> list[str]:
+    def cors_origins(self) -> List[str]:
         if self.ALLOWED_ORIGINS == "*":
             return ["*"]
         return [o.strip() for o in self.ALLOWED_ORIGINS.split(",") if o.strip()]

@@ -1,0 +1,7 @@
+[
+  {"id": 1, "code": "ko", "name_native": "한국어", "is_active": true},
+  {"id": 2, "code": "en", "name_native": "English", "is_active": true},
+  {"id": 3, "code": "ja", "name_native": "日本語", "is_active": true},
+  {"id": 4, "code": "zh", "name_native": "中文", "is_active": true},
+  {"id": 5, "code": "es", "name_native": "Español", "is_active": true}
+]

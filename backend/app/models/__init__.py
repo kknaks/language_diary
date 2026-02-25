@@ -4,6 +4,9 @@ from app.models.diary import Diary
 from app.models.conversation import ConversationSession, ConversationMessage
 from app.models.learning import LearningCard, PronunciationResult
 from app.models.tts_cache import TTSCache
+from app.models.seed import Language, Avatar, Voice
+from app.models.profile import UserProfile
+from app.models.auth import RefreshToken, UserLanguageLevel
 
 __all__ = [
     "Base",
@@ -14,4 +17,10 @@ __all__ = [
     "LearningCard",
     "PronunciationResult",
     "TTSCache",
+    "Language",
+    "Avatar",
+    "Voice",
+    "UserProfile",
+    "RefreshToken",
+    "UserLanguageLevel",
 ]

@@ -116,6 +116,63 @@ class RateLimitedError(AppError):
         )
 
 
+# --- Phase 2: Auth / Profile errors ---
+
+class UnauthorizedError(AppError):
+    def __init__(self, code: str = "UNAUTHORIZED", message: str = "인증이 필요합니다.", detail: str = ""):
+        super().__init__(code=code, message=message, detail=detail, status_code=status.HTTP_401_UNAUTHORIZED)
+
+
+class InvalidAccessTokenError(UnauthorizedError):
+    def __init__(self, detail: str = ""):
+        super().__init__(code="INVALID_ACCESS_TOKEN", message="유효하지 않은 액세스 토큰입니다.", detail=detail)
+
+
+class InvalidRefreshTokenError(UnauthorizedError):
+    def __init__(self, detail: str = ""):
+        super().__init__(code="INVALID_REFRESH_TOKEN", message="유효하지 않은 리프레시 토큰입니다.", detail=detail)
+
+
+class TokenExpiredError(UnauthorizedError):
+    def __init__(self, detail: str = ""):
+        super().__init__(code="TOKEN_EXPIRED", message="토큰이 만료되었습니다.", detail=detail)
+
+
+class ForbiddenError(AppError):
+    def __init__(self, code: str = "FORBIDDEN", message: str = "접근이 거부되었습니다.", detail: str = ""):
+        super().__init__(code=code, message=message, detail=detail, status_code=status.HTTP_403_FORBIDDEN)
+
+
+class OnboardingRequiredError(ForbiddenError):
+    def __init__(self, detail: str = ""):
+        super().__init__(code="ONBOARDING_REQUIRED", message="온보딩이 필요합니다.", detail=detail)
+
+
+class AccountDeactivatedError(ForbiddenError):
+    def __init__(self, detail: str = ""):
+        super().__init__(code="ACCOUNT_DEACTIVATED", message="비활성화된 계정입니다.", detail=detail)
+
+
+class ProfileAlreadyExistsError(ConflictError):
+    def __init__(self, detail: str = ""):
+        super().__init__(code="PROFILE_ALREADY_EXISTS", message="프로필이 이미 존재합니다.", detail=detail)
+
+
+class ProfileNotFoundError(NotFoundError):
+    def __init__(self, detail: str = ""):
+        super().__init__(code="PROFILE_NOT_FOUND", message="프로필을 찾을 수 없습니다.", detail=detail)
+
+
+class InvalidPersonalitySumError(BadRequestError):
+    def __init__(self, detail: str = ""):
+        super().__init__(code="INVALID_PERSONALITY_SUM", message="성격 합계가 100이 아닙니다.", detail=detail)
+
+
+class VoiceLanguageMismatchError(BadRequestError):
+    def __init__(self, detail: str = ""):
+        super().__init__(code="VOICE_LANGUAGE_MISMATCH", message="음성과 언어가 일치하지 않습니다.", detail=detail)
+
+
 # --- Exception Handlers ---
 
 async def app_error_handler(_request: Request, exc: AppError) -> JSONResponse:

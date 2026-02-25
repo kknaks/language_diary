@@ -1,0 +1,5 @@
+[
+  {"id": 1, "language_id": 2, "name": "Sarah", "gender": "female", "tone": "활발한", "elevenlabs_voice_id": "EXAVITQu4vr4xnSDxMaL", "sample_url": "/static/voices/sarah-sample.mp3", "description": "밝고 활기찬 여성 영어 목소리", "is_active": true},
+  {"id": 2, "language_id": 2, "name": "Adam", "gender": "male", "tone": "차분한", "elevenlabs_voice_id": "pNInz6obpgDQGcFmaJgB", "sample_url": "/static/voices/adam-sample.mp3", "description": "차분하고 안정적인 남성 영어 목소리", "is_active": true},
+  {"id": 3, "language_id": 3, "name": "Hana", "gender": "female", "tone": "친근한", "elevenlabs_voice_id": "jBpfuIE2acCmo8qp5ANm", "sample_url": "/static/voices/hana-sample.mp3", "description": "친근한 일본어 여성 목소리", "is_active": true}
+]
