@@ -196,6 +196,45 @@ tts_cache (독립)
 
 > UNIQUE(user_id, language_id) — 유저당 언어별 1개 레벨만 존재.
 
+#### 시드 데이터
+
+**투입 방식:** JSON 파일 → DB 매핑 스크립트
+- `seeds/languages.json`, `seeds/avatars.json`, `seeds/voices.json`
+- 서버 초기 기동 시 또는 마이그레이션 스크립트에서 upsert (code/id 기준 중복 방지)
+- 운영 중 추가/수정도 JSON 업데이트 → 스크립트 재실행으로 처리
+
+**languages 초기 데이터:**
+
+```json
+[
+  { "code": "ko", "name_native": "한국어" },
+  { "code": "en", "name_native": "English" },
+  { "code": "ja", "name_native": "日本語" },
+  { "code": "zh", "name_native": "中文" },
+  { "code": "es", "name_native": "Español" }
+]
+```
+
+**avatars 초기 데이터:**
+
+```json
+[
+  {
+    "name": "Mark",
+    "thumbnail_url": "",
+    "model_url": null,
+    "primary_color": "#6C63FF"
+  }
+]
+```
+
+> thumbnail_url, model_url 등 리소스 경로는 에셋 준비 후 채움.
+
+**voices 초기 데이터:** 추후 JSON으로 제공 예정
+
+> voices 테이블 구조 참고:
+> `language_id` (언어), `name` (이름), `gender` (male/female), `tone` (성인/귀여운/차분한/활발한), `elevenlabs_voice_id`, `sample_url`, `description`
+
 #### 테이블 정의 — 서비스
 
 **diaries**
