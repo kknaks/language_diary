@@ -54,8 +54,9 @@ AI: → 대화를 종합해서 영어 일기 텍스트 자동 생성
 
 | # | 기능 | 설명 |
 |---|------|------|
-| F8 | DB 스키마 (인증/온보딩) | users, user_profiles, languages, avatars, voices, refresh_tokens 테이블 생성 |
+| F8 | DB 스키마 (전체) | users, user_profiles, languages, avatars, voices, refresh_tokens + 서비스 테이블 생성 |
 | F9 | 소셜 로그인 + 개인설정 | Google/Apple OAuth 소셜 로그인 → 자체 JWT 발급 → 개인설정(온보딩) → 홈 진입 |
+| F10 | 탭 구성 개편 | 홈(MVP 개량) + 일기 쓰기(MVP 유지) + 마이페이지(신규) 3탭 구조. 복습 탭은 추후 추가 |
 
 ---
 
@@ -159,6 +160,7 @@ tts_cache (독립)
 |------|------|------|
 | id | SERIAL PK | 프로필 ID |
 | user_id | INT UNIQUE FK → users.id | 유저 (1:1) |
+| app_locale | VARCHAR(10) NOT NULL DEFAULT 'ko' | 앱 UI 언어 (ko, en, ja 등) |
 | native_language_id | INT FK → languages.id | 모국어 |
 | target_language_id | INT FK → languages.id | 학습 언어 |
 | avatar_id | INT FK → avatars.id | 선택한 아바타 외형 |
@@ -407,6 +409,72 @@ tts_cache (독립)
 ```
 
 > DB 스키마는 F8 상세 참고.
+
+---
+
+### F10 상세: 탭 구성 개편
+
+MVP 3탭(홈/일기쓰기/히스토리) → **3탭** 구조로 개편. 복습 탭은 추후 구상 후 추가.
+
+#### 탭 구조
+
+| 탭 | 이름 | 설명 |
+|----|------|------|
+| 1 | 홈 | MVP 개량. 인사말 + 캐릭터 정보 + 최근 일기 |
+| 2 | 일기 쓰기 | MVP 플로우 그대로 (AI 대화 → 일기 생성 → 학습) |
+| 3 | 마이페이지 | 유저 프로필 수정 (온보딩 설정 변경) |
+
+#### 탭 1: 홈 (MVP 개량)
+
+**화면 구성:**
+- 인사말 영역
+  - "안녕하세요 {닉네임}님 👋"
+  - "오늘도 {타겟언어} 일기를 써볼까요?"
+- 캐릭터 정보 표시
+  - 선택한 아바타 이미지 (thumbnail or Live2D)
+  - 아바타 이름 (유저가 붙인 이름 or 기본 캐릭터명)
+- 최근 일기 목록
+  - 최근 작성한 일기 미리보기 (3~5개)
+  - 빈 상태: "AI와 대화하며 첫 일기를 만들어보세요"
+- [AI와 대화하기] CTA 버튼 → 탭 2(일기 쓰기)로 이동
+
+#### 탭 2: 일기 쓰기 (MVP 유지)
+
+MVP 플로우 그대로:
+- AI 대화 → 일기 생성 → 일기 확인/수정 → 학습 카드 → 학습 완료
+
+> 상세는 PRD 섹션 8 "사용자 플로우" 참고.
+
+#### 탭 3: 마이페이지 (신규)
+
+**화면 구성:**
+
+- 프로필 헤더
+  - 아바타 이미지 + 아바타 이름 + 닉네임
+
+- **1. 유저 설정**
+  - 닉네임 (수정 가능) ← `users.nickname`
+  - SNS 타입 (읽기 전용, 아이콘 표시) ← `users.social_provider` (Google / Apple)
+  - 이메일 (읽기 전용) ← `users.email`
+
+- **2. 언어 설정**
+  - 화면 출력 언어 (앱 UI 언어) ← `user_profiles.app_locale`
+  - 모국어 ← `user_profiles.native_language_id`
+  - 학습 언어 ← `user_profiles.target_language_id`
+
+- **3. 아바타 설정**
+  - 아바타 외형 변경 ← `user_profiles.avatar_id`
+  - 커스텀 이름 변경 ← `user_profiles.avatar_name`
+  - 목소리 변경 ← `user_profiles.voice_id` (학습 언어 기준 필터)
+  - 성격 변경 (공감/직관/논리 슬라이더) ← `user_profiles.empathy, intuition, logic`
+
+- **계정**
+  - 로그아웃
+  - 회원 탈퇴 (소프트 삭제)
+
+- **앱 정보**
+  - 이용약관 / 개인정보처리방침
+  - 앱 버전
 
 ## 5. 인증 (MVP: 하드코딩 유저)
 
