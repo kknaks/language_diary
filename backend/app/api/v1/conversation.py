@@ -26,6 +26,11 @@ STT_SILENCE_TIMEOUT_SECS = 15.0
 router = APIRouter(prefix="/conversation", tags=["conversation"])
 
 
+def _ms_since(t0: float) -> float:
+    """Return milliseconds elapsed since *t0* (from time.monotonic())."""
+    return (time.monotonic() - t0) * 1000.0
+
+
 async def _send_tts_rest(websocket: WebSocket, db, text: str, index: Optional[int] = None) -> None:
     """Fallback: Generate TTS audio via REST and send base64-encoded data to client."""
     try:
@@ -103,7 +108,12 @@ async def get_conversation(session_id: str, db: AsyncSession = Depends(get_db)):
 # --- WebSocket endpoint (mounted at app level, not under /api/v1) ---
 
 async def _handle_ai_reply_streaming(
-    websocket: WebSocket, db, service: ConversationService, session_id: str, user_text: str,
+    websocket: WebSocket,
+    db,
+    service: ConversationService,
+    session_id: str,
+    user_text: str,
+    pipeline_state: Optional[dict] = None,
 ):
     """Handle user message with streaming AI reply + TTS WebSocket streaming.
 
@@ -114,8 +124,16 @@ async def _handle_ai_reply_streaming(
     4. On turn end → ai_done + TTS close
     5. Falls back to REST TTS if WebSocket connection fails
 
+    *pipeline_state* is a mutable dict shared with the WS message loop so that
+    a ``barge_in`` message can cancel the running LLM / TTS tasks.  Keys set
+    here: ``llm_task``, ``tts_session``, ``relay_task``.
+
     Returns True to continue message loop, False to break.
     """
+    if pipeline_state is None:
+        pipeline_state = {}
+
+    t_turn_start = time.monotonic()
     tts_session = None  # type: Optional[TTSStreamSession]
     relay_task = None  # type: Optional[asyncio.Task]
 
@@ -134,6 +152,9 @@ async def _handle_ai_reply_streaming(
             tts_session = None
             use_ws_tts = False
 
+        # Expose TTS session to pipeline_state for barge-in
+        pipeline_state["tts_session"] = tts_session
+
         # --- Background: relay TTS audio chunks to client ---
         async def _relay_tts_audio():
             """Read audio chunks from TTS WebSocket and push to client."""
@@ -149,49 +170,71 @@ async def _handle_ai_reply_streaming(
                         "index": audio_index_holder[0],
                     })
                     audio_index_holder[0] += 1
+            except asyncio.CancelledError:
+                return
             except Exception as e:
                 logger.error("TTS audio relay error: %s", e)
 
         if use_ws_tts:
             relay_task = asyncio.create_task(_relay_tts_audio())
+            pipeline_state["relay_task"] = relay_task
 
         # --- REST fallback collectors (used only if WS fails) ---
         rest_tts_tasks = []  # type: list
 
-        # --- LLM streaming → sentence yield → TTS flush ---
-        async for sentence in service.handle_user_message_streaming(session_id, user_text):
-            sentences.append(sentence)
-            await websocket.send_json({
-                "type": "ai_message_chunk",
-                "text": sentence,
-                "index": index,
-                "is_final": False,
-            })
+        # --- Wrap LLM streaming in a task so barge_in can cancel it ---
+        async def _run_llm():
+            """Run the LLM streaming loop; populates *sentences* as a side-effect."""
+            nonlocal index, use_ws_tts, tts_session, relay_task
+            t_first_sentence = None  # type: Optional[float]
+            async for sentence in service.handle_user_message_streaming(session_id, user_text):
+                if t_first_sentence is None:
+                    t_first_sentence = time.monotonic()
+                    logger.info(
+                        "[latency] LLM first sentence: %.0f ms",
+                        _ms_since(t_turn_start),
+                    )
+                sentences.append(sentence)
+                await websocket.send_json({
+                    "type": "ai_message_chunk",
+                    "text": sentence,
+                    "index": index,
+                    "is_final": False,
+                })
 
-            if use_ws_tts and tts_session:
-                try:
-                    await tts_session.send_sentence(sentence)
-                except TTSError as e:
-                    logger.warning("TTS WS send failed at sentence %d, switching to REST: %s", index, e)
-                    use_ws_tts = False
-                    # Close broken WS session
-                    await tts_session.close()
-                    tts_session = None
-                    if relay_task:
-                        relay_task.cancel()
-                        try:
-                            await relay_task
-                        except (asyncio.CancelledError, Exception):
-                            pass
-                        relay_task = None
-                    # Queue this sentence for REST fallback
+                if use_ws_tts and tts_session:
+                    try:
+                        await tts_session.send_sentence(sentence)
+                    except TTSError as e:
+                        logger.warning("TTS WS send failed at sentence %d, switching to REST: %s", index, e)
+                        use_ws_tts = False
+                        await tts_session.close()
+                        tts_session = None
+                        pipeline_state["tts_session"] = None
+                        if relay_task:
+                            relay_task.cancel()
+                            try:
+                                await relay_task
+                            except (asyncio.CancelledError, Exception):
+                                pass
+                            relay_task = None
+                            pipeline_state["relay_task"] = None
+                        tts_svc = TTSService(db)
+                        rest_tts_tasks.append((index, asyncio.create_task(tts_svc.generate_bytes(sentence))))
+                elif not use_ws_tts:
                     tts_svc = TTSService(db)
                     rest_tts_tasks.append((index, asyncio.create_task(tts_svc.generate_bytes(sentence))))
-            elif not use_ws_tts:
-                tts_svc = TTSService(db)
-                rest_tts_tasks.append((index, asyncio.create_task(tts_svc.generate_bytes(sentence))))
 
-            index += 1
+                index += 1
+
+        llm_task = asyncio.create_task(_run_llm())
+        pipeline_state["llm_task"] = llm_task
+
+        try:
+            await llm_task
+        except asyncio.CancelledError:
+            logger.info("LLM task cancelled (barge-in)")
+            return True  # barge-in handled; continue message loop
 
         if sentences:
             # Send final chunk marker (for frontend compatibility)
