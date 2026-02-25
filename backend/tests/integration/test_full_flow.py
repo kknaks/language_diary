@@ -280,7 +280,7 @@ async def test_conversation_with_audio_stt_then_finish(client, seed_user, tmp_pa
                             # Consume init
                             session_data = ws.receive_json()
                             assert session_data["type"] == "session_created"
-                            session_id = session_data["session_id"]
+                            session_data["session_id"]
                             ws.receive_json()  # ai_message
                             ws.receive_json()  # tts_audio
 

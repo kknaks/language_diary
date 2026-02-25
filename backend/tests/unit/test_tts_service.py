@@ -1,6 +1,5 @@
 """Tests for TTS service — mock all external API calls."""
 
-import asyncio
 import base64
 import json
 

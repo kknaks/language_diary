@@ -4,7 +4,6 @@ import pytest
 from unittest.mock import AsyncMock, patch
 
 from app.main import app
-from app.services.conversation_service import ConversationService
 from app.services.stt_service import STTError
 
 

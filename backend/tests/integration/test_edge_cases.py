@@ -3,12 +3,10 @@
 import struct
 import pytest
 from unittest.mock import AsyncMock, patch
-from datetime import datetime
 
 from starlette.testclient import TestClient
 
 from app.main import app
-from app.models.conversation import ConversationSession, ConversationMessage
 
 
 # ---------------------------------------------------------------------------

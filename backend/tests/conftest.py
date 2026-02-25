@@ -1,17 +1,19 @@
 import asyncio
 import os
+from unittest.mock import AsyncMock, patch
 
+import pytest
 import pytest_asyncio
-import sqlalchemy
-from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 from httpx import ASGITransport, AsyncClient
+from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 
-from app.main import app
 from app.database import get_db
-from app.models.base import Base
-from app.models import (  # noqa: ensure models loaded
-    User, Diary, LearningCard, ConversationSession, ConversationMessage,
+from app.main import app
+from app.models import (  # noqa: F401
+    ConversationMessage, ConversationSession, Diary, LearningCard, User,
 )
+from app.models.base import Base
+from app.services.tts_service import TTSError
 
 TEST_DB_PATH = "./test.db"
 TEST_DB_URL = f"sqlite+aiosqlite:///{TEST_DB_PATH}"
@@ -145,12 +147,6 @@ async def seed_conversation(db_session: AsyncSession, seed_user):
     await db_session.commit()
     await db_session.refresh(session)
     return session
-
-
-import pytest
-from unittest.mock import patch, AsyncMock
-
-from app.services.tts_service import TTSError
 
 
 @pytest.fixture(autouse=True)
