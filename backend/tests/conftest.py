@@ -8,15 +8,19 @@ from httpx import ASGITransport, AsyncClient
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 
 from app.database import get_db
+from app.dependencies import get_current_user, get_onboarded_user
 from app.main import app
 from app.models import (  # noqa: F401
     ConversationMessage, ConversationSession, Diary, LearningCard, User,
 )
 from app.models.base import Base
+from app.models.profile import UserProfile
+from app.models.seed import Language
 from app.services.tts_service import TTSError
+from app.utils.jwt import create_access_token
 
 TEST_DB_PATH = "./test.db"
-TEST_DB_URL = f"sqlite+aiosqlite:///{TEST_DB_PATH}"
+TEST_DB_URL = "sqlite+aiosqlite:///%s" % TEST_DB_PATH
 
 engine = create_async_engine(
     TEST_DB_URL,
@@ -24,6 +28,9 @@ engine = create_async_engine(
     connect_args={"timeout": 10},
 )
 TestSession = async_sessionmaker(engine, class_=AsyncSession, expire_on_commit=False)
+
+# Shared user reference for dependency overrides
+_test_user = None  # type: User
 
 
 def _reset_rate_limiter():
@@ -37,14 +44,14 @@ def _reset_rate_limiter():
 
 @pytest_asyncio.fixture(autouse=True)
 async def setup_db():
+    global _test_user
+    _test_user = None
+
     # Reset rate limiter state between tests to prevent 429 across test runs
     if app.middleware_stack is not None:
         _reset_rate_limiter()
 
     # Ensure clean state: dispose stale connections from previous tests
-    # (WebSocket tests run in threads that may hold DB connections briefly)
-    # Forcefully dispose all connections and delete DB file to avoid
-    # "database is locked" errors from Starlette WS test threads.
     await engine.dispose()
     await asyncio.sleep(0.05)
     for suffix in ("", "-wal", "-shm"):
@@ -73,6 +80,42 @@ async def _override_get_db():
 app.dependency_overrides[get_db] = _override_get_db
 
 
+# Auth dependency overrides: return the test user
+# These overrides simplify testing — when seed_user fixture sets _test_user,
+# all endpoints act as that user. When no seed_user is used, auth fails with 401.
+#
+# For tests that use real JWT tokens (like auth tests), they should use
+# set_test_user fixture to set the appropriate user.
+async def _override_get_current_user():
+    if _test_user is None:
+        from app.exceptions import InvalidAccessTokenError
+        raise InvalidAccessTokenError()
+    return _test_user
+
+
+async def _override_get_onboarded_user():
+    if _test_user is None:
+        from app.exceptions import InvalidAccessTokenError
+        raise InvalidAccessTokenError()
+    return _test_user
+
+
+app.dependency_overrides[get_current_user] = _override_get_current_user
+app.dependency_overrides[get_onboarded_user] = _override_get_onboarded_user
+
+
+@pytest_asyncio.fixture
+async def set_test_user(db_session: AsyncSession):
+    """Factory fixture to set any user as the current test user."""
+    global _test_user
+
+    def _set(user):
+        global _test_user
+        _test_user = user
+
+    return _set
+
+
 @pytest_asyncio.fixture
 async def client():
     async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as ac:
@@ -81,13 +124,46 @@ async def client():
 
 @pytest_asyncio.fixture
 async def seed_user(db_session: AsyncSession):
-    """Create MVP user (id=1)"""
+    """Create MVP user (id=1) with profile (onboarding completed)."""
+    global _test_user
     from datetime import datetime
-    user = User(id=1, nickname="MVP User", native_lang="ko", target_lang="en",
-                created_at=datetime.utcnow(), updated_at=datetime.utcnow())
+
+    # Create languages first
+    ko = Language(id=1, code="ko", name_native="한국어", is_active=True)
+    en = Language(id=2, code="en", name_native="English", is_active=True)
+    db_session.add_all([ko, en])
+    await db_session.flush()
+
+    user = User(
+        id=1, nickname="MVP User", native_lang="ko", target_lang="en",
+        created_at=datetime.utcnow(), updated_at=datetime.utcnow(),
+    )
     db_session.add(user)
+    await db_session.flush()
+
+    # Create profile for onboarding
+    profile = UserProfile(
+        user_id=1,
+        native_language_id=1,
+        target_language_id=2,
+        empathy=34,
+        intuition=33,
+        logic=33,
+        app_locale="ko",
+        onboarding_completed=True,
+    )
+    db_session.add(profile)
     await db_session.commit()
+    await db_session.refresh(user)
+
+    _test_user = user
     return user
+
+
+@pytest_asyncio.fixture
+async def auth_token():
+    """Generate a valid JWT token for user_id=1."""
+    return create_access_token(1)
 
 
 @pytest_asyncio.fixture

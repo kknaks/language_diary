@@ -7,6 +7,7 @@ from unittest.mock import AsyncMock, patch
 from starlette.testclient import TestClient
 
 from app.main import app
+from app.utils.jwt import create_access_token
 
 
 # ---------------------------------------------------------------------------
@@ -32,6 +33,12 @@ def _make_streaming_reply(*sentences):
         for s in sentences:
             yield s
     return _gen
+
+
+def _get_ws_url():
+    """Get WS URL with valid auth token."""
+    token = create_access_token(1)
+    return "/ws/conversation?token=%s" % token
 
 
 # ---------------------------------------------------------------------------
@@ -62,38 +69,33 @@ async def test_max_turns_auto_finish(client, seed_user):
             with patch("app.api.v1.conversation.TTSService") as MockTTS:
                 MockTTS.return_value.generate_bytes = AsyncMock(return_value=mock_tts_bytes)
                 with TestClient(app) as tc:
-                    with tc.websocket_connect("/ws/conversation") as ws:
+                    with tc.websocket_connect(_get_ws_url()) as ws:
                         # Consume init messages
                         ws.receive_json()  # session_created
                         ws.receive_json()  # ai_message (greeting)
                         ws.receive_json()  # tts_audio
-                        ws.receive_json()  # ai_done (greeting) (greeting)
+                        ws.receive_json()  # ai_done (greeting)
 
                         # Send 8 messages — get AI streaming replies
                         for i in range(8):
-                            ws.send_json({"type": "message", "text": f"메시지 {i+1}"})
-                            # Receive ai_message_chunk + final marker + tts_audio
+                            ws.send_json({"type": "message", "text": "메시지 %d" % (i + 1)})
+                            # Receive ai_message_chunk + final marker + tts_audio + ai_done
                             data = ws.receive_json()
-                            assert data["type"] == "ai_message_chunk", f"Turn {i+1}: expected ai_message_chunk, got {data['type']}"
+                            assert data["type"] == "ai_message_chunk", \
+                                "Turn %d: expected ai_message_chunk, got %s" % (i + 1, data["type"])
                             final = ws.receive_json()
                             assert final["type"] == "ai_message_chunk"
                             assert final["is_final"] is True
-                            ai_done = ws.receive_json()
-                            assert ai_done["type"] == "ai_done"
                             tts = ws.receive_json()
                             assert tts["type"] == "tts_audio"
+                            ai_done = ws.receive_json()
+                            assert ai_done["type"] == "ai_done"
 
                         # 9th message triggers auto-finish
                         ws.send_json({"type": "message", "text": "메시지 9"})
                         data = ws.receive_json()
                         assert data["type"] == "diary_created"
                         assert data["diary"]["translated_text"] == "Auto-completed diary"
-
-
-# ---------------------------------------------------------------------------
-# Expired / completed session validation (via ConversationService unit tests)
-# These edge cases are now tested in unit tests since WS always creates fresh sessions.
-# ---------------------------------------------------------------------------
 
 
 # ---------------------------------------------------------------------------
@@ -104,7 +106,7 @@ async def test_max_turns_auto_finish(client, seed_user):
 async def test_diary_update_empty_body(client, seed_diary):
     """PUT diary with no fields returns 400."""
     resp = await client.put(
-        f"/api/v1/diary/{seed_diary.id}",
+        "/api/v1/diary/%d" % seed_diary.id,
         json={},
     )
     assert resp.status_code == 400
@@ -172,7 +174,7 @@ async def test_websocket_very_long_message(client, seed_user):
             with patch("app.api.v1.conversation.TTSService") as MockTTS:
                 MockTTS.return_value.generate_bytes = AsyncMock(return_value=mock_tts_bytes)
                 with TestClient(app) as tc:
-                    with tc.websocket_connect("/ws/conversation") as ws:
+                    with tc.websocket_connect(_get_ws_url()) as ws:
                         ws.receive_json()  # session_created
                         ws.receive_json()  # ai_message
                         ws.receive_json()  # tts_audio
@@ -204,7 +206,7 @@ async def test_multiple_conversations_independent(client, seed_user):
 
     # Both should be independently queryable
     for sid in [resp1.json()["session_id"], resp2.json()["session_id"]]:
-        resp = await client.get(f"/api/v1/conversation/{sid}")
+        resp = await client.get("/api/v1/conversation/%s" % sid)
         assert resp.status_code == 200
         assert resp.json()["status"] == "created"
 
@@ -241,7 +243,7 @@ async def test_websocket_binary_without_audio_session(client, seed_user):
             with patch("app.api.v1.conversation.TTSService") as MockTTS:
                 MockTTS.return_value.generate_bytes = AsyncMock(return_value=mock_tts_bytes)
                 with TestClient(app) as tc:
-                    with tc.websocket_connect("/ws/conversation") as ws:
+                    with tc.websocket_connect(_get_ws_url()) as ws:
                         ws.receive_json()  # session_created
                         ws.receive_json()  # ai_message
                         ws.receive_json()  # tts_audio

@@ -1,24 +1,16 @@
+from typing import Optional
+
 from fastapi import APIRouter, Depends
+from pydantic import BaseModel
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.database import get_db
-from app.dependencies import get_current_user
+from app.dependencies import get_current_user, get_onboarded_user
 from app.models.user import User
-from app.schemas.user import ProfileCreateRequest, UserProfileResponse, UserResponse
+from app.schemas.user import ProfileCreateRequest, UserProfileResponse
 from app.services.profile_service import ProfileService
-from app.services.user_service import UserService
 
 router = APIRouter(prefix="/user", tags=["user"])
-
-
-def _service(db: AsyncSession = Depends(get_db)) -> UserService:
-    return UserService(db)
-
-
-@router.get("/me", response_model=UserResponse)
-async def get_current_user_info(service: UserService = Depends(_service)):
-    """MVP: returns hardcoded user (id=1)"""
-    return await service.get_current_user()
 
 
 @router.post("/profile", status_code=201)
@@ -38,3 +30,46 @@ async def get_profile(
 ):
     service = ProfileService()
     return await service.get_profile(db, current_user.id)
+
+
+# --- Profile partial update ---
+
+class ProfileUpdateRequest(BaseModel):
+    nickname: Optional[str] = None
+    app_locale: Optional[str] = None
+    native_language_id: Optional[int] = None
+    target_language_id: Optional[int] = None
+    avatar_id: Optional[int] = None
+    avatar_name: Optional[str] = None
+    voice_id: Optional[int] = None
+    empathy: Optional[int] = None
+    intuition: Optional[int] = None
+    logic: Optional[int] = None
+    cefr_level: Optional[str] = None
+
+
+@router.put("/profile")
+async def update_profile(
+    body: ProfileUpdateRequest,
+    current_user: User = Depends(get_onboarded_user),
+    db: AsyncSession = Depends(get_db),
+):
+    service = ProfileService()
+    return await service.update_profile(db, current_user.id, body)
+
+
+# --- Language level ---
+
+class LanguageLevelUpdateRequest(BaseModel):
+    language_id: int
+    cefr_level: str  # A1~C2
+
+
+@router.put("/language-level")
+async def update_language_level(
+    body: LanguageLevelUpdateRequest,
+    current_user: User = Depends(get_onboarded_user),
+    db: AsyncSession = Depends(get_db),
+):
+    service = ProfileService()
+    return await service.update_language_level(db, current_user.id, body.language_id, body.cefr_level)

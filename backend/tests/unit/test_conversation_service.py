@@ -12,7 +12,7 @@ async def test_create_session(db_session, seed_user):
     mock_ai.get_first_message = AsyncMock(return_value="오늘 하루 어땠어?")
 
     service = ConversationService(db_session, ai_service=mock_ai)
-    result = await service.create_session()
+    result = await service.create_session(user_id=1)
 
     assert result.session_id.startswith("conv_")
     assert result.status == "created"
@@ -147,7 +147,7 @@ async def test_create_session_ws(db_session, seed_user):
     mock_ai = AsyncMock()
     service = ConversationService(db_session, ai_service=mock_ai)
 
-    session_id = await service.create_session_ws()
+    session_id = await service.create_session_ws(user_id=1)
     assert session_id.startswith("conv_")
 
     # Should not call AI

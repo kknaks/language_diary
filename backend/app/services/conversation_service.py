@@ -1,11 +1,12 @@
 """Conversation Service — orchestrates the conversation flow."""
 
 import uuid
-from typing import AsyncGenerator, Dict, List
+from typing import AsyncGenerator, Dict, List, Optional
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.exceptions import (
+    ForbiddenError,
     NotFoundError,
     SessionAlreadyCompletedError,
     SessionExpiredError,
@@ -23,8 +24,6 @@ from app.schemas.conversation import (
 from app.schemas.diary import DiaryDetailResponse, LearningCardResponse
 from app.services.ai_service import AIService, AIServiceError, MAX_TURNS
 
-MVP_USER_ID = 1
-
 
 def _generate_session_id() -> str:
     return f"conv_{uuid.uuid4().hex[:12]}"
@@ -36,10 +35,10 @@ class ConversationService:
         self.repo = ConversationRepository(db)
         self.ai = ai_service or AIService()
 
-    async def create_session(self) -> ConversationCreateResponse:
+    async def create_session(self, user_id: int = 1) -> ConversationCreateResponse:
         """Create a new conversation session and return AI's first question."""
         session_id = _generate_session_id()
-        session = await self.repo.create_session(session_id, MVP_USER_ID)
+        session = await self.repo.create_session(session_id, user_id)
 
         # Generate AI first message
         try:
@@ -60,13 +59,13 @@ class ConversationService:
             created_at=session.created_at,
         )
 
-    async def create_session_ws(self) -> str:
+    async def create_session_ws(self, user_id: int = 1) -> str:
         """Create a new conversation session (DB only, no AI message).
 
         Returns the session_id. Used by WebSocket handler.
         """
         session_id = _generate_session_id()
-        await self.repo.create_session(session_id, MVP_USER_ID)
+        await self.repo.create_session(session_id, user_id)
         await self.db.commit()
         return session_id
 
@@ -84,14 +83,20 @@ class ConversationService:
         await self.db.commit()
         return first_message
 
-    async def get_session(self, session_id: str) -> ConversationDetailResponse:
+    async def get_session(self, session_id: str, user_id: Optional[int] = None) -> ConversationDetailResponse:
         """Get session status and message history."""
         session = await self.repo.get_session(session_id)
         if not session:
             raise NotFoundError(
                 code="SESSION_NOT_FOUND",
                 message="대화 세션을 찾을 수 없습니다.",
-                detail=f"session_id={session_id}",
+                detail="session_id=%s" % session_id,
+            )
+        if user_id is not None and session.user_id != user_id:
+            raise ForbiddenError(
+                code="FORBIDDEN",
+                message="접근이 거부되었습니다.",
+                detail="session_id=%s" % session_id,
             )
 
         # Query messages separately to always get fresh data
@@ -195,7 +200,7 @@ class ConversationService:
             return
 
         # Stream AI reply sentence by sentence
-        full_reply_parts: list[str] = []
+        full_reply_parts = []  # type: List[str]
         try:
             async for sentence in self.ai.get_reply_streaming(history):
                 full_reply_parts.append(sentence)
@@ -208,7 +213,7 @@ class ConversationService:
         await self.repo.add_message(session_id, "ai", full_reply, message_order=current_order + 1)
         await self.db.commit()
 
-    async def finish_conversation(self, session_id: str) -> DiaryDetailResponse:
+    async def finish_conversation(self, session_id: str, user_id: Optional[int] = None) -> DiaryDetailResponse:
         """Finish conversation: generate diary + learning points.
 
         Returns the created diary with learning cards.
@@ -218,7 +223,14 @@ class ConversationService:
             raise NotFoundError(
                 code="SESSION_NOT_FOUND",
                 message="대화 세션을 찾을 수 없습니다.",
-                detail=f"session_id={session_id}",
+                detail="session_id=%s" % session_id,
+            )
+
+        if user_id is not None and session.user_id != user_id:
+            raise ForbiddenError(
+                code="FORBIDDEN",
+                message="접근이 거부되었습니다.",
+                detail="session_id=%s" % session_id,
             )
 
         self._validate_session_active(session)
@@ -240,9 +252,9 @@ class ConversationService:
         except AIServiceError as e:
             raise TranslationFailedError(detail=str(e))
 
-        # Create diary in DB
+        # Create diary in DB — use the session owner's user_id
         diary = Diary(
-            user_id=MVP_USER_ID,
+            user_id=session.user_id,
             original_text=diary_data.get("original_text", ""),
             translated_text=diary_data.get("translated_text", ""),
             status="translated",
@@ -298,6 +310,7 @@ class ConversationService:
 
     async def finish_with_messages(
         self, session_id: str, messages: List[Dict[str, str]],
+        user_id: Optional[int] = None,
     ) -> "DiaryDetailResponse":
         """Save externally-provided messages, then generate diary + learning cards.
 
@@ -309,7 +322,14 @@ class ConversationService:
             raise NotFoundError(
                 code="SESSION_NOT_FOUND",
                 message="대화 세션을 찾을 수 없습니다.",
-                detail=f"session_id={session_id}",
+                detail="session_id=%s" % session_id,
+            )
+
+        if user_id is not None and session.user_id != user_id:
+            raise ForbiddenError(
+                code="FORBIDDEN",
+                message="접근이 거부되었습니다.",
+                detail="session_id=%s" % session_id,
             )
 
         self._validate_session_active(session)

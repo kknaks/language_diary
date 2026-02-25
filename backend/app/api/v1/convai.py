@@ -7,6 +7,8 @@ from pydantic import BaseModel
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.database import get_db
+from app.dependencies import get_onboarded_user
+from app.models.user import User
 from app.services.convai_service import ConvAIService
 from app.services.conversation_service import ConversationService
 
@@ -32,13 +34,16 @@ class ConvAIFinishRequest(BaseModel):
 # --- Endpoints ---
 
 @router.post("/session", response_model=ConvAISessionResponse)
-async def create_convai_session(db: AsyncSession = Depends(get_db)):
+async def create_convai_session(
+    current_user: User = Depends(get_onboarded_user),
+    db: AsyncSession = Depends(get_db),
+):
     """Create a DB session and return a signed ElevenLabs ConvAI WebSocket URL."""
     convai = ConvAIService()
     signed_url = await convai.get_signed_url()
 
     svc = ConversationService(db)
-    session_id = await svc.create_session_ws()
+    session_id = await svc.create_session_ws(user_id=current_user.id)
 
     return ConvAISessionResponse(session_id=session_id, signed_url=signed_url)
 
@@ -47,10 +52,11 @@ async def create_convai_session(db: AsyncSession = Depends(get_db)):
 async def finish_convai_session(
     session_id: str,
     body: ConvAIFinishRequest,
+    current_user: User = Depends(get_onboarded_user),
     db: AsyncSession = Depends(get_db),
 ):
     """Receive conversation messages from the frontend and generate diary + learning cards."""
     svc = ConversationService(db)
     messages = [{"role": m.role, "content": m.content} for m in body.messages]
-    diary = await svc.finish_with_messages(session_id, messages)
+    diary = await svc.finish_with_messages(session_id, messages, user_id=current_user.id)
     return diary

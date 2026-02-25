@@ -7,16 +7,20 @@ import logging
 import time
 from typing import Optional
 
-from fastapi import APIRouter, Depends, WebSocket, WebSocketDisconnect
+from fastapi import APIRouter, Depends, Query, WebSocket, WebSocketDisconnect
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.config import settings
 from app.database import async_session, get_db
+from app.dependencies import get_onboarded_user
 from app.exceptions import AppError
+from app.models.user import User
+from app.repositories.user_repo import UserRepository
 from app.schemas.conversation import ConversationCreateResponse, ConversationDetailResponse
 from app.services.conversation_service import ConversationService
 from app.services.stt_service import STTError, STTSession
 from app.services.tts_service import TTSError, TTSService, TTSStreamSession
+from app.utils.jwt import verify_access_token
 
 logger = logging.getLogger(__name__)
 
@@ -28,11 +32,14 @@ def _ms_since(t0: float) -> float:
     return (time.monotonic() - t0) * 1000.0
 
 
-async def _send_tts_rest(websocket: WebSocket, db, text: str, index: Optional[int] = None) -> None:
+async def _send_tts_rest(
+    websocket: WebSocket, db, text: str, index: Optional[int] = None,
+    voice_id: Optional[str] = None,
+) -> None:
     """Fallback: Generate TTS audio via REST and send base64-encoded data to client."""
     try:
         tts_service = TTSService(db)
-        audio_bytes = await tts_service.generate_bytes(text)
+        audio_bytes = await tts_service.generate_bytes(text, voice_id=voice_id)
         audio_b64 = base64.b64encode(audio_bytes).decode("ascii")
         msg = {
             "type": "tts_audio",
@@ -89,17 +96,24 @@ async def _send_tts_ws(websocket: WebSocket, text: str, index: int = 0) -> None:
 
 
 @router.post("", response_model=ConversationCreateResponse, status_code=201)
-async def create_conversation(db: AsyncSession = Depends(get_db)):
+async def create_conversation(
+    current_user: User = Depends(get_onboarded_user),
+    db: AsyncSession = Depends(get_db),
+):
     """Create a new conversation session. Returns AI's first question."""
     service = ConversationService(db)
-    return await service.create_session()
+    return await service.create_session(user_id=current_user.id)
 
 
 @router.get("/{session_id}", response_model=ConversationDetailResponse)
-async def get_conversation(session_id: str, db: AsyncSession = Depends(get_db)):
+async def get_conversation(
+    session_id: str,
+    current_user: User = Depends(get_onboarded_user),
+    db: AsyncSession = Depends(get_db),
+):
     """Get conversation session status and message history."""
     service = ConversationService(db)
-    return await service.get_session(session_id)
+    return await service.get_session(session_id, user_id=current_user.id)
 
 
 # --- WebSocket endpoint (mounted at app level, not under /api/v1) ---
@@ -111,6 +125,8 @@ async def _handle_ai_reply_streaming(
     session_id: str,
     user_text: str,
     pipeline_state: Optional[dict] = None,
+    user_id: Optional[int] = None,
+    voice_id: Optional[str] = None,
 ):
     """Handle user message with streaming AI reply + TTS WebSocket streaming.
 
@@ -143,7 +159,7 @@ async def _handle_ai_reply_streaming(
         use_ws_tts = True
         try:
             tts_session = TTSStreamSession()
-            await tts_session.connect()
+            await tts_session.connect(voice_id=voice_id)
         except TTSError as e:
             logger.warning("TTS WebSocket connection failed, falling back to REST: %s", e)
             tts_session = None
@@ -217,10 +233,10 @@ async def _handle_ai_reply_streaming(
                             relay_task = None
                             pipeline_state["relay_task"] = None
                         tts_svc = TTSService(db)
-                        rest_tts_tasks.append((index, asyncio.create_task(tts_svc.generate_bytes(sentence))))
+                        rest_tts_tasks.append((index, asyncio.create_task(tts_svc.generate_bytes(sentence, voice_id=voice_id))))
                 elif not use_ws_tts:
                     tts_svc = TTSService(db)
-                    rest_tts_tasks.append((index, asyncio.create_task(tts_svc.generate_bytes(sentence))))
+                    rest_tts_tasks.append((index, asyncio.create_task(tts_svc.generate_bytes(sentence, voice_id=voice_id))))
 
                 index += 1
 
@@ -283,7 +299,7 @@ async def _handle_ai_reply_streaming(
                 await tts_session.close()
             if relay_task:
                 relay_task.cancel()
-            diary_resp = await service.finish_conversation(session_id)
+            diary_resp = await service.finish_conversation(session_id, user_id=user_id)
             await websocket.send_json(
                 {"type": "diary_created", "diary": diary_resp.model_dump(mode="json")}
             )
@@ -310,8 +326,13 @@ async def _handle_ai_reply_streaming(
         return False
 
 
-async def conversation_websocket(websocket: WebSocket):
+async def conversation_websocket(
+    websocket: WebSocket,
+    token: Optional[str] = Query(None),
+):
     """WebSocket handler for real-time conversation with audio streaming.
+
+    Authentication: pass JWT token as query parameter `?token=<jwt>`.
 
     On connect: creates session, sends greeting + TTS, then opens a long-lived
     STT session. A commit listener background task consumes auto-committed
@@ -334,9 +355,38 @@ async def conversation_websocket(websocket: WebSocket):
       { "type": "diary_created", "diary": {...} }  — Diary + learning cards
       { "type": "error", "code": "...", "message": "..." }
     """
+    # Authenticate via token query parameter
+    user_id = None
+    if token:
+        user_id = verify_access_token(token)
+
+    if not user_id:
+        await websocket.close(code=4001, reason="Unauthorized")
+        return
+
     await websocket.accept()
 
+    # Resolve user's voice_id for TTS personalization
+    user_voice_id = None  # type: Optional[str]
+
     async with async_session() as db:
+        # Look up user's voice preference
+        try:
+            from sqlalchemy import select
+            from sqlalchemy.orm import selectinload
+            from app.models.profile import UserProfile
+            from app.models.seed import Voice as VoiceModel
+            profile_result = await db.execute(
+                select(UserProfile)
+                .where(UserProfile.user_id == user_id)
+                .options(selectinload(UserProfile.voice))
+            )
+            user_profile = profile_result.scalar_one_or_none()
+            if user_profile and user_profile.voice:
+                user_voice_id = user_profile.voice.elevenlabs_voice_id
+        except Exception:
+            logger.warning("Failed to resolve user voice_id, using default")
+
         service = ConversationService(db)
         stt_session = None
         # pipeline_state is shared between the message loop and
@@ -369,7 +419,7 @@ async def conversation_websocket(websocket: WebSocket):
 
         try:
             # --- Session creation on connect ---
-            session_id = await service.create_session_ws()
+            session_id = await service.create_session_ws(user_id=user_id)
             await websocket.send_json({
                 "type": "session_created",
                 "session_id": session_id,
@@ -386,7 +436,7 @@ async def conversation_websocket(websocket: WebSocket):
                 await _send_tts_ws(websocket, greeting, index=0)
             except Exception as e:
                 logger.warning("Greeting TTS WS failed, falling back to REST: %s", e)
-                await _send_tts_rest(websocket, db, greeting, index=0)
+                await _send_tts_rest(websocket, db, greeting, index=0, voice_id=user_voice_id)
             # Signal greeting turn done so frontend transitions to listening
             await websocket.send_json({"type": "ai_done"})
 
@@ -427,6 +477,8 @@ async def conversation_websocket(websocket: WebSocket):
                         _handle_ai_reply_streaming(
                             websocket, db, service, session_id, text,
                             pipeline_state=pipeline_state,
+                            user_id=user_id,
+                            voice_id=user_voice_id,
                         )
                     )
                     try:
@@ -497,6 +549,8 @@ async def conversation_websocket(websocket: WebSocket):
                     cont = await _handle_ai_reply_streaming(
                         websocket, db, service, session_id, text,
                         pipeline_state=pipeline_state,
+                        user_id=user_id,
+                        voice_id=user_voice_id,
                     )
                     if not cont:
                         break
@@ -511,6 +565,8 @@ async def conversation_websocket(websocket: WebSocket):
                     cont = await _handle_ai_reply_streaming(
                         websocket, db, service, session_id, "[silence]",
                         pipeline_state=pipeline_state,
+                        user_id=user_id,
+                        voice_id=user_voice_id,
                     )
                     if not cont:
                         break
@@ -536,7 +592,7 @@ async def conversation_websocket(websocket: WebSocket):
                         await stt_session.close()
                         stt_session = None
                     try:
-                        diary_resp = await service.finish_conversation(session_id)
+                        diary_resp = await service.finish_conversation(session_id, user_id=user_id)
                         await websocket.send_json(
                             {"type": "diary_created", "diary": diary_resp.model_dump(mode="json")}
                         )

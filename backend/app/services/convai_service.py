@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import logging
+from typing import Optional
 
 import httpx
 
@@ -14,7 +15,7 @@ ELEVENLABS_CONVAI_BASE = "https://api.elevenlabs.io/v1/convai/conversation"
 
 
 class ConvAIService:
-    async def get_signed_url(self, agent_id: str | None = None) -> str:
+    async def get_signed_url(self, agent_id: Optional[str] = None) -> str:
         """Get a signed WebSocket URL for ElevenLabs Conversational AI.
 
         The URL is valid for ~15 minutes.

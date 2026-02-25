@@ -6,15 +6,16 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.seed import Avatar, Language, Voice
 from app.models.user import User
-from app.utils.jwt import create_access_token
 
 
 @pytest_asyncio.fixture
-async def seed_api_user(db_session: AsyncSession):
+async def seed_api_user(db_session: AsyncSession, set_test_user):
+    """Create a user for seed API tests and set as current test user."""
     user = User(id=200, nickname="SeedUser", native_lang="ko", target_lang="en",
                 created_at=datetime.utcnow(), updated_at=datetime.utcnow())
     db_session.add(user)
     await db_session.commit()
+    set_test_user(user)
     return user
 
 
@@ -53,15 +54,10 @@ async def seed_voices(db_session: AsyncSession, seed_languages):
     return voices
 
 
-def _auth_header(user_id: int):
-    token = create_access_token(user_id)
-    return {"Authorization": f"Bearer {token}"}
-
-
 @pytest.mark.asyncio
 class TestLanguagesEndpoint:
     async def test_list_languages(self, client, seed_api_user, seed_languages):
-        resp = await client.get("/api/v1/languages", headers=_auth_header(seed_api_user.id))
+        resp = await client.get("/api/v1/languages")
         assert resp.status_code == 200
         data = resp.json()
         assert "items" in data
@@ -75,7 +71,7 @@ class TestLanguagesEndpoint:
 @pytest.mark.asyncio
 class TestAvatarsEndpoint:
     async def test_list_avatars(self, client, seed_api_user, seed_avatars):
-        resp = await client.get("/api/v1/avatars", headers=_auth_header(seed_api_user.id))
+        resp = await client.get("/api/v1/avatars")
         assert resp.status_code == 200
         data = resp.json()
         assert len(data["items"]) == 1
@@ -85,7 +81,7 @@ class TestAvatarsEndpoint:
 @pytest.mark.asyncio
 class TestVoicesEndpoint:
     async def test_list_voices(self, client, seed_api_user, seed_voices):
-        resp = await client.get("/api/v1/voices", headers=_auth_header(seed_api_user.id))
+        resp = await client.get("/api/v1/voices")
         assert resp.status_code == 200
         data = resp.json()
         assert len(data["items"]) == 2
@@ -94,7 +90,7 @@ class TestVoicesEndpoint:
             assert "elevenlabs_voice_id" not in item
 
     async def test_filter_by_language(self, client, seed_api_user, seed_voices):
-        resp = await client.get("/api/v1/voices?language_id=2", headers=_auth_header(seed_api_user.id))
+        resp = await client.get("/api/v1/voices?language_id=2")
         assert resp.status_code == 200
         data = resp.json()
         assert len(data["items"]) == 1

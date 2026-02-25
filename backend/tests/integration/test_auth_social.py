@@ -127,7 +127,7 @@ class TestSocialLogin:
 
 @pytest.mark.asyncio
 class TestLogout:
-    async def test_logout_success(self, client, db_session):
+    async def test_logout_success(self, client, db_session, set_test_user):
         """POST /auth/logout — Should revoke refresh token."""
         # Create user
         user = User(
@@ -143,6 +143,7 @@ class TestLogout:
         )
         db_session.add(user)
         await db_session.commit()
+        set_test_user(user)
 
         # Create refresh token
         raw_refresh = "test_refresh_token_for_logout"
@@ -155,10 +156,9 @@ class TestLogout:
         db_session.add(rt)
         await db_session.commit()
 
-        headers = _auth_header(300)
         resp = await client.post("/api/v1/auth/logout", json={
             "refresh_token": raw_refresh,
-        }, headers=headers)
+        })
         assert resp.status_code == 204
 
         # Verify token is deleted
@@ -170,7 +170,7 @@ class TestLogout:
 
 @pytest.mark.asyncio
 class TestDeleteAccount:
-    async def test_delete_account_success(self, client, db_session):
+    async def test_delete_account_success(self, client, db_session, set_test_user):
         """DELETE /auth/account — Should soft delete user."""
         user = User(
             id=400,
@@ -185,9 +185,9 @@ class TestDeleteAccount:
         )
         db_session.add(user)
         await db_session.commit()
+        set_test_user(user)
 
-        headers = _auth_header(400)
-        resp = await client.delete("/api/v1/auth/account", headers=headers)
+        resp = await client.delete("/api/v1/auth/account")
         assert resp.status_code == 204
 
         # Expire cached state and verify user is soft deleted
@@ -203,7 +203,7 @@ class TestDeleteAccount:
 
 @pytest.mark.asyncio
 class TestProfileEndpoints:
-    async def test_create_profile(self, client, db_session, seed_languages):
+    async def test_create_profile(self, client, db_session, seed_languages, set_test_user):
         """POST /user/profile — Should create profile."""
         user = User(
             id=500,
@@ -218,8 +218,8 @@ class TestProfileEndpoints:
         )
         db_session.add(user)
         await db_session.commit()
+        set_test_user(user)
 
-        headers = _auth_header(500)
         resp = await client.post("/api/v1/user/profile", json={
             "native_language_id": 1,
             "target_language_id": 2,
@@ -228,12 +228,12 @@ class TestProfileEndpoints:
             "logic": 30,
             "app_locale": "ko",
             "cefr_level": "B1",
-        }, headers=headers)
+        })
         assert resp.status_code == 201
         data = resp.json()
         assert data["onboarding_completed"] is True
 
-    async def test_create_profile_invalid_personality(self, client, db_session, seed_languages):
+    async def test_create_profile_invalid_personality(self, client, db_session, seed_languages, set_test_user):
         """POST /user/profile — Invalid personality sum returns 400."""
         user = User(
             id=501,
@@ -248,20 +248,20 @@ class TestProfileEndpoints:
         )
         db_session.add(user)
         await db_session.commit()
+        set_test_user(user)
 
-        headers = _auth_header(501)
         resp = await client.post("/api/v1/user/profile", json={
             "native_language_id": 1,
             "target_language_id": 2,
             "empathy": 50,
             "intuition": 30,
             "logic": 30,
-        }, headers=headers)
+        })
         assert resp.status_code == 400
         data = resp.json()
         assert data["error"]["code"] == "INVALID_PERSONALITY_SUM"
 
-    async def test_get_profile(self, client, db_session, seed_languages):
+    async def test_get_profile(self, client, db_session, seed_languages, set_test_user):
         """GET /user/profile — Should return user profile with nested data."""
         user = User(
             id=502,
@@ -276,8 +276,7 @@ class TestProfileEndpoints:
         )
         db_session.add(user)
         await db_session.commit()
-
-        headers = _auth_header(502)
+        set_test_user(user)
 
         # Create profile first
         resp = await client.post("/api/v1/user/profile", json={
@@ -287,11 +286,11 @@ class TestProfileEndpoints:
             "intuition": 33,
             "logic": 33,
             "cefr_level": "A2",
-        }, headers=headers)
+        })
         assert resp.status_code == 201
 
         # Get profile
-        resp = await client.get("/api/v1/user/profile", headers=headers)
+        resp = await client.get("/api/v1/user/profile")
         assert resp.status_code == 200
         data = resp.json()
         assert data["id"] == 502
@@ -303,7 +302,7 @@ class TestProfileEndpoints:
         assert data["language_level"] is not None
         assert data["language_level"]["cefr_level"] == "A2"
 
-    async def test_get_profile_no_profile(self, client, db_session):
+    async def test_get_profile_no_profile(self, client, db_session, set_test_user):
         """GET /user/profile — User without profile should have null profile."""
         user = User(
             id=503,
@@ -318,15 +317,15 @@ class TestProfileEndpoints:
         )
         db_session.add(user)
         await db_session.commit()
+        set_test_user(user)
 
-        headers = _auth_header(503)
-        resp = await client.get("/api/v1/user/profile", headers=headers)
+        resp = await client.get("/api/v1/user/profile")
         assert resp.status_code == 200
         data = resp.json()
         assert data["profile"] is None
         assert data["language_level"] is None
 
-    async def test_create_duplicate_profile(self, client, db_session, seed_languages):
+    async def test_create_duplicate_profile(self, client, db_session, seed_languages, set_test_user):
         """POST /user/profile — Duplicate profile returns 409."""
         user = User(
             id=504,
@@ -341,8 +340,8 @@ class TestProfileEndpoints:
         )
         db_session.add(user)
         await db_session.commit()
+        set_test_user(user)
 
-        headers = _auth_header(504)
         body = {
             "native_language_id": 1,
             "target_language_id": 2,
@@ -352,11 +351,11 @@ class TestProfileEndpoints:
         }
 
         # First creation should succeed
-        resp = await client.post("/api/v1/user/profile", json=body, headers=headers)
+        resp = await client.post("/api/v1/user/profile", json=body)
         assert resp.status_code == 201
 
         # Second creation should fail
-        resp = await client.post("/api/v1/user/profile", json=body, headers=headers)
+        resp = await client.post("/api/v1/user/profile", json=body)
         assert resp.status_code == 409
         data = resp.json()
         assert data["error"]["code"] == "PROFILE_ALREADY_EXISTS"

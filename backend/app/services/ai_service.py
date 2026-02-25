@@ -80,31 +80,52 @@ class AIService:
     def __init__(self, client: AsyncOpenAI = None):
         self.client = client or AsyncOpenAI(api_key=settings.OPENAI_API_KEY)
 
-    async def get_first_message(self) -> str:
+    def _build_system_prompt(self, personality: Optional[Dict[str, int]] = None) -> str:
+        """Build conversation system prompt with optional personality traits."""
+        base = SYSTEM_PROMPT_CONVERSATION
+        if personality:
+            empathy = personality.get("empathy", 34)
+            intuition = personality.get("intuition", 33)
+            logic = personality.get("logic", 33)
+            trait_line = (
+                "\n10. 너의 성격: 공감 %d%%, 직관 %d%%, 논리 %d%%. "
+                "이 비율에 맞게 대화해." % (empathy, intuition, logic)
+            )
+            base = base + trait_line
+        return base
+
+    async def get_first_message(self, personality: Optional[Dict[str, int]] = None) -> str:
         """Generate the AI's opening question to start the conversation."""
+        system_prompt = self._build_system_prompt(personality)
         return await self._chat(
             messages=[
-                {"role": "system", "content": SYSTEM_PROMPT_CONVERSATION},
+                {"role": "system", "content": system_prompt},
                 {"role": "user", "content": "대화를 시작해줘. 첫 질문을 해줘."},
             ],
             max_tokens=150,
             temperature=0.8,
         )
 
-    async def get_reply(self, conversation_history: List[Dict[str, str]]) -> str:
+    async def get_reply(
+        self, conversation_history: List[Dict[str, str]],
+        personality: Optional[Dict[str, int]] = None,
+    ) -> str:
         """Generate AI follow-up question based on conversation history."""
-        messages = [{"role": "system", "content": SYSTEM_PROMPT_CONVERSATION}]
+        system_prompt = self._build_system_prompt(personality)
+        messages = [{"role": "system", "content": system_prompt}]
         messages.extend(conversation_history)
         return await self._chat(messages=messages, max_tokens=200, temperature=0.8)
 
     async def get_reply_streaming(
-        self, conversation_history: List[Dict[str, str]]
+        self, conversation_history: List[Dict[str, str]],
+        personality: Optional[Dict[str, int]] = None,
     ) -> AsyncGenerator[str, None]:
         """Generate AI reply with streaming, yielding complete sentences.
 
         Yields sentences as they are detected (split on .!? and Korean endings).
         """
-        messages = [{"role": "system", "content": SYSTEM_PROMPT_CONVERSATION}]
+        system_prompt = self._build_system_prompt(personality)
+        messages = [{"role": "system", "content": system_prompt}]
         messages.extend(conversation_history)
 
         if _openai_cb and not _openai_cb.allow_request():

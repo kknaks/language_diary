@@ -35,7 +35,7 @@ SAMPLE_GPT4O_RESULT = {
 
 class TestTTSEndpoint:
     @pytest.mark.asyncio
-    async def test_tts_success(self, client, tmp_path):
+    async def test_tts_success(self, client, seed_user, tmp_path):
         with patch("app.services.tts_service.AUDIO_DIR", tmp_path):
             # Reset circuit breakers
             from app.services import tts_service
@@ -59,7 +59,7 @@ class TestTTSEndpoint:
         assert data["cached"] is False
 
     @pytest.mark.asyncio
-    async def test_tts_cached(self, client, tmp_path):
+    async def test_tts_cached(self, client, seed_user, tmp_path):
         with patch("app.services.tts_service.AUDIO_DIR", tmp_path):
             from app.services import tts_service
             tts_service._elevenlabs_cb.reset()
@@ -86,7 +86,7 @@ class TestTTSEndpoint:
                 assert r2.json()["cached"] is True
 
     @pytest.mark.asyncio
-    async def test_tts_empty_text(self, client):
+    async def test_tts_empty_text(self, client, seed_user):
         response = await client.post(
             "/api/v1/speech/tts",
             json={"text": ""},
@@ -94,7 +94,7 @@ class TestTTSEndpoint:
         assert response.status_code == 422
 
     @pytest.mark.asyncio
-    async def test_tts_fallback_on_failure(self, client, tmp_path):
+    async def test_tts_fallback_on_failure(self, client, seed_user, tmp_path):
         from app.services import tts_service
         from app.services.tts_service import TTSError
         tts_service._elevenlabs_cb.reset()
@@ -119,7 +119,7 @@ class TestTTSEndpoint:
         assert response.status_code == 200
 
     @pytest.mark.asyncio
-    async def test_tts_all_fail(self, client, tmp_path):
+    async def test_tts_all_fail(self, client, seed_user, tmp_path):
         from app.services import tts_service
         from app.services.tts_service import TTSError
         tts_service._elevenlabs_cb.reset()
