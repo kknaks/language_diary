@@ -1,35 +1,26 @@
 import { create } from 'zustand';
-import { Conversation, Message, ConnectionStatus, Diary, ServerMessage } from '../types';
-import { normalizeDiary } from '../services/api';
-import { wsClient } from '../services/websocket';
-import { playAudioFromBase64, stopCurrentAudio } from '../utils/audio';
+import { Message, Diary } from '../types';
+import { normalizeDiary, createConvAISession, finishConvAISession } from '../services/api';
+import { ElevenLabsConvAIClient } from '../services/elevenlabsConvAI';
+import { enqueueAudio, clearAudioQueue, setOnQueueEmpty, stopCurrentAudio } from '../utils/audio';
 
-export type VoiceState = 'idle' | 'listening' | 'ai_speaking' | 'processing';
+export type VoiceState = 'idle' | 'listening' | 'ai_speaking';
 
 interface ConversationState {
   // Session
   sessionId: string | null;
-  currentConversation: Conversation | null;
   messages: Message[];
-  turnCount: number;
-  maxTurns: number;
-
-  // WebSocket
-  connectionStatus: ConnectionStatus;
-  isAiTyping: boolean;
-  interimText: string;
 
   // Voice UI
   voiceState: VoiceState;
   volume: number;
+  interimText: string;
 
-  // Streaming AI text
-  pendingAiText: string;
+  // ElevenLabs client (not serialized)
+  elevenlabsClient: ElevenLabsConvAIClient | null;
 
-  // TTS queue for ordered playback
-  ttsQueue: Map<number, string>; // index → base64 audio data
-  nextTtsIndex: number;
-  isPlayingTts: boolean;
+  // Accumulated messages for diary generation
+  accumulatedMessages: Array<{ role: string; content: string }>;
 
   // Diary creation
   isCreatingDiary: boolean;
@@ -41,18 +32,15 @@ interface ConversationState {
 
   // Actions
   startConversation: () => Promise<void>;
-  sendMessage: (text: string) => void;
-  prepareStreaming: () => boolean;
-  bargeIn: () => void;
-  finishConversation: () => void;
+  finishConversation: () => Promise<void>;
   setVoiceState: (state: VoiceState) => void;
   setVolume: (volume: number) => void;
   clearError: () => void;
   reset: () => void;
-}
 
-let unsubStatus: (() => void) | null = null;
-let unsubMessage: (() => void) | null = null;
+  // Internal: send audio chunk to ElevenLabs
+  sendAudioChunk: (base64: string) => void;
+}
 
 function generateId(): string {
   return `msg_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`;
@@ -60,19 +48,12 @@ function generateId(): string {
 
 export const useConversationStore = create<ConversationState>((set, get) => ({
   sessionId: null,
-  currentConversation: null,
   messages: [],
-  turnCount: 0,
-  maxTurns: 10,
-  connectionStatus: 'disconnected',
-  isAiTyping: false,
-  interimText: '',
   voiceState: 'idle',
   volume: 0,
-  pendingAiText: '',
-  ttsQueue: new Map(),
-  nextTtsIndex: 0,
-  isPlayingTts: false,
+  interimText: '',
+  elevenlabsClient: null,
+  accumulatedMessages: [],
   isCreatingDiary: false,
   createdDiary: null,
   isLoading: false,
@@ -82,120 +63,132 @@ export const useConversationStore = create<ConversationState>((set, get) => ({
     const state = get();
     if (state.isLoading) return;
 
-    // Stop any previous audio
     await stopCurrentAudio();
+    clearAudioQueue();
 
     set({
       isLoading: true,
       error: null,
       messages: [],
-      turnCount: 0,
+      accumulatedMessages: [],
       createdDiary: null,
       isCreatingDiary: false,
-      pendingAiText: '',
-      ttsQueue: new Map(),
-      nextTtsIndex: 0,
-      isPlayingTts: false,
-    });
-
-    // Subscribe to WebSocket events
-    unsubStatus?.();
-    unsubMessage?.();
-
-    unsubStatus = wsClient.onStatus((status) => {
-      set({ connectionStatus: status });
-    });
-
-    unsubMessage = wsClient.onMessage((msg: ServerMessage) => {
-      handleServerMessage(msg, set, get);
-    });
-
-    // Connect WebSocket — session will be created server-side
-    wsClient.connect();
-  },
-
-  sendMessage: (text: string) => {
-    const { sessionId, connectionStatus } = get();
-    if (!sessionId || connectionStatus !== 'connected') return;
-
-    const userMessage: Message = {
-      id: generateId(),
-      conversationId: sessionId,
-      role: 'user',
-      content: text,
-      createdAt: new Date().toISOString(),
-    };
-
-    // Stop current TTS playback before starting new turn
-    stopCurrentAudio();
-
-    set((state) => ({
-      messages: [...state.messages, userMessage],
-      turnCount: state.turnCount + 1,
       interimText: '',
-      isAiTyping: true,
-      voiceState: 'processing' as VoiceState,
-      volume: 0,
-      pendingAiText: '',
-      ttsQueue: new Map(),
-      nextTtsIndex: 0,
-      isPlayingTts: false,
-    }));
-
-    wsClient.send({ type: 'message', text });
-  },
-
-  prepareStreaming: () => {
-    const { sessionId, connectionStatus } = get();
-    if (!sessionId || connectionStatus !== 'connected') return false;
-
-    stopCurrentAudio();
-
-    set({
-      interimText: '',
-      isAiTyping: false,
-      voiceState: 'listening' as VoiceState,
-      volume: 0,
-      pendingAiText: '',
-      ttsQueue: new Map(),
-      nextTtsIndex: 0,
-      isPlayingTts: false,
-      error: null,
+      voiceState: 'idle',
     });
 
-    return true;
+    try {
+      // 1. Get signed URL from our backend
+      const { session_id, signed_url } = await createConvAISession();
+      set({ sessionId: session_id });
+
+      // 2. Connect to ElevenLabs ConvAI
+      const client = new ElevenLabsConvAIClient();
+
+      client.connect(signed_url, {
+        onConnected: () => {
+          set({ isLoading: false, voiceState: 'listening' });
+          console.log('[ConvAI] Connected — mic always on');
+        },
+
+        onUserTranscript: (text) => {
+          // Final user transcript
+          const userMessage: Message = {
+            id: generateId(),
+            conversationId: get().sessionId ?? '',
+            role: 'user',
+            content: text,
+            createdAt: new Date().toISOString(),
+          };
+          set((s) => ({
+            messages: [...s.messages, userMessage],
+            accumulatedMessages: [...s.accumulatedMessages, { role: 'user', content: text }],
+            interimText: '',
+          }));
+        },
+
+        onUserTranscriptInterim: (text) => {
+          set({ interimText: text });
+        },
+
+        onAgentResponse: (text) => {
+          // AI agent text
+          const aiMessage: Message = {
+            id: generateId(),
+            conversationId: get().sessionId ?? '',
+            role: 'assistant',
+            content: text,
+            createdAt: new Date().toISOString(),
+          };
+          set((s) => ({
+            messages: [...s.messages, aiMessage],
+            accumulatedMessages: [...s.accumulatedMessages, { role: 'assistant', content: text }],
+          }));
+        },
+
+        onAudio: (base64Audio) => {
+          // TTS audio chunk — enqueue for sequential playback
+          set({ voiceState: 'ai_speaking' });
+          setOnQueueEmpty(() => {
+            // When all audio finishes, go back to listening
+            set({ voiceState: 'listening' });
+          });
+          enqueueAudio(base64Audio);
+        },
+
+        onInterruption: () => {
+          // Barge-in: stop audio, back to listening
+          clearAudioQueue();
+          set({ voiceState: 'listening' });
+        },
+
+        onDisconnected: () => {
+          // Only set error if we didn't intentionally disconnect
+          const current = get();
+          if (!current.isCreatingDiary && !current.createdDiary && current.sessionId) {
+            set({ error: 'ElevenLabs 연결이 끊어졌습니다.' });
+          }
+        },
+
+        onError: (error) => {
+          set({ error, isLoading: false });
+        },
+      });
+
+      set({ elevenlabsClient: client });
+    } catch (err) {
+      const message = err instanceof Error ? err.message : 'Failed to start conversation';
+      set({ error: message, isLoading: false });
+    }
   },
 
-  bargeIn: () => {
-    const { connectionStatus } = get();
-    if (connectionStatus !== 'connected') return;
+  finishConversation: async () => {
+    const { elevenlabsClient, sessionId, accumulatedMessages } = get();
 
-    // 1. Stop current audio playback + clear queue
-    stopCurrentAudio();
+    // Stop audio and disconnect ElevenLabs
+    clearAudioQueue();
+    elevenlabsClient?.disconnect();
 
-    // 2. Reset state for new listening
-    set({
-      interimText: '',
-      isAiTyping: false,
-      pendingAiText: '',
-      ttsQueue: new Map(),
-      nextTtsIndex: 0,
-      isPlayingTts: false,
-      error: null,
-    });
+    set({ isCreatingDiary: true, voiceState: 'idle', elevenlabsClient: null });
 
-    // 3. Send barge_in to backend
-    wsClient.send({ type: 'barge_in' });
-    console.log('[Barge-in] Sent barge_in to backend');
+    if (!sessionId) {
+      set({ isCreatingDiary: false, error: 'No active session' });
+      return;
+    }
+
+    try {
+      // Send accumulated messages to backend for diary generation
+      const diary = await finishConvAISession(sessionId, accumulatedMessages);
+      set({ isCreatingDiary: false, createdDiary: diary });
+    } catch (err) {
+      const message = err instanceof Error ? err.message : 'Failed to create diary';
+      set({ isCreatingDiary: false, error: message });
+    }
   },
 
-  finishConversation: () => {
-    const { connectionStatus } = get();
-    if (connectionStatus !== 'connected') return;
-
-    stopCurrentAudio();
-    set({ isCreatingDiary: true, isAiTyping: false, voiceState: 'processing' });
-    wsClient.send({ type: 'finish' });
+  sendAudioChunk: (base64: string) => {
+    const { elevenlabsClient } = get();
+    elevenlabsClient?.sendAudio(base64);
   },
 
   setVoiceState: (voiceState: VoiceState) => {
@@ -211,27 +204,18 @@ export const useConversationStore = create<ConversationState>((set, get) => ({
   },
 
   reset: () => {
-    unsubStatus?.();
-    unsubMessage?.();
-    unsubStatus = null;
-    unsubMessage = null;
-    wsClient.disconnect();
-    stopCurrentAudio();
+    const { elevenlabsClient } = get();
+    clearAudioQueue();
+    elevenlabsClient?.disconnect();
 
     set({
       sessionId: null,
-      currentConversation: null,
       messages: [],
-      turnCount: 0,
-      connectionStatus: 'disconnected',
-      isAiTyping: false,
-      interimText: '',
       voiceState: 'idle',
       volume: 0,
-      pendingAiText: '',
-      ttsQueue: new Map(),
-      nextTtsIndex: 0,
-      isPlayingTts: false,
+      interimText: '',
+      elevenlabsClient: null,
+      accumulatedMessages: [],
       isCreatingDiary: false,
       createdDiary: null,
       isLoading: false,
@@ -239,230 +223,3 @@ export const useConversationStore = create<ConversationState>((set, get) => ({
     });
   },
 }));
-
-function playNextTts(
-  set: (partial: Partial<ConversationState> | ((s: ConversationState) => Partial<ConversationState>)) => void,
-  get: () => ConversationState,
-) {
-  const state = get();
-  const { ttsQueue, nextTtsIndex, isPlayingTts } = state;
-
-  // Prevent concurrent playback
-  if (isPlayingTts) return;
-
-  const audioData = ttsQueue.get(nextTtsIndex);
-  if (!audioData) {
-    // No audio ready for current index yet; will be triggered when it arrives
-    return;
-  }
-
-  set({ isPlayingTts: true, voiceState: 'ai_speaking' as VoiceState });
-
-  console.log(`[TTS] 재생 시작: index=${nextTtsIndex}`);
-
-  playAudioFromBase64(audioData, () => {
-    console.log(`[TTS] 재생 완료: index=${get().nextTtsIndex}`);
-    // Remove played entry and advance index
-    set((s) => {
-      const newQueue = new Map(s.ttsQueue);
-      newQueue.delete(s.nextTtsIndex);
-      const newIndex = s.nextTtsIndex + 1;
-      return {
-        ttsQueue: newQueue,
-        nextTtsIndex: newIndex,
-        isPlayingTts: false,
-      };
-    });
-    // Check if there's more to play
-    const next = get();
-    if (next.ttsQueue.has(next.nextTtsIndex)) {
-      playNextTts(set, get);
-    } else if (next.ttsQueue.size === 0) {
-      // All TTS done
-      set({ voiceState: 'idle' as VoiceState, volume: 0 });
-    }
-  }).catch((err) => {
-    console.error('[TTS] playAudioFromUrl error:', err);
-    set((s) => {
-      const newQueue = new Map(s.ttsQueue);
-      newQueue.delete(s.nextTtsIndex);
-      const newIndex = s.nextTtsIndex + 1;
-      return {
-        ttsQueue: newQueue,
-        nextTtsIndex: newIndex,
-        isPlayingTts: false,
-        voiceState: 'idle' as VoiceState,
-        volume: 0,
-      };
-    });
-    playNextTts(set, get);
-  });
-}
-
-function handleServerMessage(
-  msg: ServerMessage,
-  set: (partial: Partial<ConversationState> | ((s: ConversationState) => Partial<ConversationState>)) => void,
-  get: () => ConversationState,
-) {
-  switch (msg.type) {
-    case 'session_created':
-      set({ sessionId: msg.session_id, isLoading: false });
-      break;
-
-    case 'stt_interim':
-      set({ interimText: msg.text });
-      break;
-
-    case 'stt_final': {
-      // VAD committed transcript — add user message and wait for AI response
-      const userMessage: Message = {
-        id: generateId(),
-        conversationId: get().sessionId ?? '',
-        role: 'user',
-        content: msg.text,
-        createdAt: new Date().toISOString(),
-      };
-      set((state) => ({
-        messages: [...state.messages, userMessage],
-        turnCount: state.turnCount + 1,
-        interimText: '',
-        isAiTyping: true,
-        voiceState: 'processing' as VoiceState,
-        volume: 0,
-        pendingAiText: '',
-        ttsQueue: new Map(),
-        nextTtsIndex: 0,
-        isPlayingTts: false,
-      }));
-      break;
-    }
-
-    case 'stt_empty':
-      // STT returned empty transcription — reset UI so user can retry
-      set({ interimText: '', isAiTyping: false, voiceState: 'idle' as VoiceState, volume: 0 });
-      break;
-
-    case 'ai_message': {
-      const aiMessage: Message = {
-        id: generateId(),
-        conversationId: get().sessionId ?? '',
-        role: 'assistant',
-        content: msg.text,
-        createdAt: new Date().toISOString(),
-      };
-      set((state) => ({
-        messages: [...state.messages, aiMessage],
-        turnCount: state.turnCount + 1,
-        isAiTyping: false,
-        voiceState: 'ai_speaking' as VoiceState,
-      }));
-      break;
-    }
-
-    case 'ai_message_chunk': {
-      if (msg.is_final) {
-        // All chunks received — finalize the pending message
-        const finalText = get().pendingAiText;
-        if (finalText) {
-          const aiMessage: Message = {
-            id: generateId(),
-            conversationId: get().sessionId ?? '',
-            role: 'assistant',
-            content: finalText,
-            createdAt: new Date().toISOString(),
-          };
-          set((state) => ({
-            messages: [...state.messages, aiMessage],
-            turnCount: state.turnCount + 1,
-            isAiTyping: false,
-            pendingAiText: '',
-          }));
-        }
-      } else {
-        // Accumulate text
-        set((state) => ({
-          pendingAiText: state.pendingAiText + msg.text,
-          isAiTyping: true,
-        }));
-      }
-      break;
-    }
-
-    case 'ai_done': {
-      // AI response complete — finalize any remaining pending text
-      const remainingText = get().pendingAiText;
-      if (remainingText) {
-        const finalAiMessage: Message = {
-          id: generateId(),
-          conversationId: get().sessionId ?? '',
-          role: 'assistant',
-          content: remainingText,
-          createdAt: new Date().toISOString(),
-        };
-        set((state) => ({
-          messages: [...state.messages, finalAiMessage],
-          isAiTyping: false,
-          pendingAiText: '',
-        }));
-      } else {
-        set({ isAiTyping: false });
-      }
-      // If no TTS is queued or playing (e.g. TTS failed), reset voiceState to idle
-      const afterDone = get();
-      if (!afterDone.isPlayingTts && afterDone.ttsQueue.size === 0) {
-        set({ voiceState: 'idle' as VoiceState, volume: 0 });
-      }
-      break;
-    }
-
-    case 'diary_created':
-      set({ isCreatingDiary: false, createdDiary: normalizeDiary(msg.diary), voiceState: 'idle' as VoiceState, volume: 0 });
-      break;
-
-    case 'tts_audio': {
-      // All TTS (greeting + streaming) go through the ordered queue
-      const index = msg.index ?? 0;
-      console.log(`[TTS] 수신: index=${index}, size=${msg.audio_data.length}`);
-
-      set((state) => {
-        const newQueue = new Map(state.ttsQueue);
-        // Enforce max queue size (10) to prevent memory bloat
-        if (newQueue.size >= 10) {
-          console.warn('[TTS] Queue full, dropping oldest unplayed entry');
-          const minKey = Math.min(...newQueue.keys());
-          newQueue.delete(minKey);
-        }
-        newQueue.set(index, msg.audio_data);
-        return { ttsQueue: newQueue };
-      });
-
-      // Try to play if not already playing
-      if (!get().isPlayingTts) {
-        playNextTts(set, get);
-      }
-      break;
-    }
-
-    case 'barge_in_ack':
-      // Backend confirmed barge-in — pipeline is reset, ready for new input
-      console.log('[Barge-in] Received barge_in_ack');
-      stopCurrentAudio();
-      set({
-        voiceState: 'listening' as VoiceState,
-        isAiTyping: false,
-        pendingAiText: '',
-        ttsQueue: new Map(),
-        nextTtsIndex: 0,
-        isPlayingTts: false,
-        interimText: '',
-      });
-      break;
-
-    case 'error':
-      if (msg.code === 'TTS_FAILED') {
-        console.error('[TTS] Backend TTS failed:', msg.message);
-      }
-      set({ isAiTyping: false, isCreatingDiary: false, error: msg.message });
-      break;
-  }
-}

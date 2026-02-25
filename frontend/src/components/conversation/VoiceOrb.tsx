@@ -12,7 +12,6 @@ const STATE_COLORS: Record<VoiceState, string> = {
   idle: colors.textTertiary,
   listening: colors.primary,
   ai_speaking: '#8B5CF6',
-  processing: colors.warning,
 };
 
 const ORB_SIZE = 150;

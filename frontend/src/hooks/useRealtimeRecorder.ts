@@ -1,24 +1,19 @@
 import { useCallback, useRef } from 'react';
 import { useAudioRecorder } from '@siteed/expo-audio-studio';
-import { toByteArray } from 'base64-js';
-import { wsClient } from '../services/websocket';
 
 /**
  * Real-time microphone streaming hook.
- * Captures PCM audio chunks and sends them as binary WebSocket frames.
+ * Captures PCM audio chunks and delivers them via onAudioChunk callback.
  *
- * Flow: startStreaming → audio_start + PCM chunks → stopStreaming → audio_end
+ * Flow: startStreaming(onAudioChunk) → PCM chunks via callback → stopStreaming
  */
 export function useRealtimeRecorder() {
   const recorder = useAudioRecorder();
   const streamingRef = useRef(false);
 
-  const startStreaming = useCallback(async () => {
+  const startStreaming = useCallback(async (onAudioChunk: (base64: string) => void) => {
     if (streamingRef.current) return;
     streamingRef.current = true;
-
-    // Notify backend to open STT session
-    wsClient.send({ type: 'audio_start' });
 
     await recorder.startRecording({
       sampleRate: 16000,
@@ -28,8 +23,7 @@ export function useRealtimeRecorder() {
       output: { primary: { enabled: false } }, // no file output needed
       onAudioStream: async (event) => {
         if (typeof event.data !== 'string') return;
-        const bytes = toByteArray(event.data);
-        wsClient.sendBinary(bytes.buffer as ArrayBuffer);
+        onAudioChunk(event.data);
       },
     });
   }, [recorder]);
@@ -43,9 +37,6 @@ export function useRealtimeRecorder() {
     } catch {
       // ignore stop errors (e.g. already stopped)
     }
-
-    // Notify backend recording ended
-    wsClient.send({ type: 'audio_end' });
   }, [recorder]);
 
   return {

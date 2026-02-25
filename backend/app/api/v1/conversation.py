@@ -73,8 +73,7 @@ async def _send_tts_ws(websocket: WebSocket, text: str, index: int = 0) -> None:
                 "type": "tts_audio",
                 "audio_data": audio_b64,
                 "format": "mp3",
-                "index": index,
-                "chunk_index": chunk_index,
+                "index": chunk_index,
             })
             chunk_index += 1
 

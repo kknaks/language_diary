@@ -288,6 +288,39 @@ class ConversationService:
             learning_cards=[LearningCardResponse.model_validate(c) for c in cards],
         )
 
+    async def finish_with_messages(
+        self, session_id: str, messages: List[Dict[str, str]],
+    ) -> "DiaryDetailResponse":
+        """Save externally-provided messages, then generate diary + learning cards.
+
+        Used by the ConvAI flow where STT/LLM/TTS happen on ElevenLabs side
+        and the frontend sends the accumulated transcript at the end.
+        """
+        session = await self.repo.get_session(session_id)
+        if not session:
+            raise NotFoundError(
+                code="SESSION_NOT_FOUND",
+                message="대화 세션을 찾을 수 없습니다.",
+                detail=f"session_id={session_id}",
+            )
+
+        self._validate_session_active(session)
+
+        # Store messages in DB
+        for i, msg in enumerate(messages):
+            role = "ai" if msg["role"] == "assistant" else "user"
+            await self.repo.add_message(session_id, role, msg["content"], message_order=i + 1)
+
+        # Update turn count
+        user_turns = sum(1 for m in messages if m["role"] == "user")
+        for _ in range(user_turns):
+            await self.repo.increment_turn(session)
+
+        await self.db.commit()
+
+        # Reuse finish_conversation logic
+        return await self.finish_conversation(session_id)
+
     def _validate_session_active(self, session: ConversationSession) -> None:
         """Ensure session is in an active state."""
         if session.status in ("completed", "summarizing"):

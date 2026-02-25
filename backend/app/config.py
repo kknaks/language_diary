@@ -17,6 +17,9 @@ class Settings(BaseSettings):
     # ElevenLabs (STT/TTS)
     ELEVENLABS_API_KEY: str = ""
 
+    # ElevenLabs Conversational AI Agent
+    ELEVENLABS_AGENT_ID: str = ""
+
     # Azure Speech (optional — kept for potential rollback, not used by GPT-4o pronunciation)
     AZURE_SPEECH_KEY: str = ""
     AZURE_SPEECH_REGION: str = "koreacentral"

@@ -134,6 +134,29 @@ export async function getConversationMessages(conversationId: string): Promise<M
   return rawMessages.map((m: unknown) => adaptMessage(m, conversationId));
 }
 
+// ===== ConvAI API =====
+
+export async function createConvAISession(): Promise<{ session_id: string; signed_url: string }> {
+  const res = await debugFetch(`${API_BASE_URL}/api/v1/convai/session`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+  });
+  return await handleResponse(res) as { session_id: string; signed_url: string };
+}
+
+export async function finishConvAISession(
+  sessionId: string,
+  messages: Array<{ role: string; content: string }>,
+): Promise<Diary> {
+  const res = await debugFetch(`${API_BASE_URL}/api/v1/convai/session/${sessionId}/finish`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ messages }),
+  });
+  const json = await handleResponse(res);
+  return normalizeDiary(json);
+}
+
 // ===== Speech API =====
 
 export async function requestTts(text: string): Promise<TtsResponse> {

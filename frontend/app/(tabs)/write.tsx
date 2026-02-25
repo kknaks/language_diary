@@ -1,5 +1,5 @@
 import React, { useCallback, useEffect, useRef } from 'react';
-import { View, Text, StyleSheet, TouchableOpacity } from 'react-native';
+import { View, Text, StyleSheet, TouchableOpacity, ScrollView } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { useRouter } from 'expo-router';
@@ -8,12 +8,9 @@ import { ExpoAudioStreamModule } from '@siteed/expo-audio-studio';
 import { colors, fontSize, spacing } from '../../src/constants/theme';
 import { Button } from '../../src/components/common';
 import {
-  TurnIndicator,
-  ConnectionStatus,
   DiaryCreatingOverlay,
   VoiceOrb,
   VoiceStatus,
-  MicButton,
 } from '../../src/components/conversation';
 import { useConversationStore } from '../../src/stores/useConversationStore';
 import { useRealtimeRecorder } from '../../src/hooks/useRealtimeRecorder';
@@ -22,9 +19,7 @@ export default function WriteScreen() {
   const router = useRouter();
   const {
     sessionId,
-    turnCount,
-    maxTurns,
-    connectionStatus,
+    messages,
     interimText,
     isCreatingDiary,
     createdDiary,
@@ -33,10 +28,8 @@ export default function WriteScreen() {
     voiceState,
     volume,
     startConversation,
-    prepareStreaming,
-    bargeIn,
     finishConversation,
-    setVoiceState,
+    sendAudioChunk,
     setVolume,
     clearError,
     reset,
@@ -47,17 +40,34 @@ export default function WriteScreen() {
 
   const { isStreaming, startStreaming, stopStreaming } = useRealtimeRecorder();
 
+  // Keep refs for cleanup/callbacks to avoid effect dependency issues
+  const stopStreamingRef = useRef(stopStreaming);
+  stopStreamingRef.current = stopStreaming;
+  const sendAudioChunkRef = useRef(sendAudioChunk);
+  sendAudioChunkRef.current = sendAudioChunk;
+  const startStreamingRef = useRef(startStreaming);
+  startStreamingRef.current = startStreaming;
+
   // Request mic permission on mount
   useEffect(() => {
     ExpoAudioStreamModule.requestPermissionsAsync();
   }, []);
 
-  // Auto-stop streaming when VAD triggers stt_final (voiceState transitions away from 'listening')
+  // Auto-start mic streaming when connected (voiceState becomes 'listening')
+  const micStartedRef = useRef(false);
   useEffect(() => {
-    if (voiceState !== 'listening' && isStreaming) {
-      stopStreaming();
+    if (voiceState === 'listening' && !micStartedRef.current) {
+      micStartedRef.current = true;
+      startStreamingRef.current((base64) => {
+        sendAudioChunkRef.current(base64);
+      }).catch((err) => {
+        console.error('[Mic] Failed to start streaming:', err);
+        micStartedRef.current = false;
+      });
+    } else if (voiceState !== 'listening') {
+      micStartedRef.current = false;
     }
-  }, [voiceState, isStreaming, stopStreaming]);
+  }, [voiceState]);
 
   // Fake volume simulation
   useEffect(() => {
@@ -80,46 +90,18 @@ export default function WriteScreen() {
     };
   }, [voiceState, setVolume]);
 
-  // Note: ai_speaking → idle transition is handled by playNextTts() in the store
-  // when all TTS chunks finish playing.
-
-  // Cleanup on unmount
+  // Cleanup on unmount only
   useEffect(() => {
     return () => {
-      reset();
+      stopStreamingRef.current();
+      useConversationStore.getState().reset();
     };
-  }, [reset]);
+  }, []);
 
-  const handleMicPress = useCallback(async () => {
-    if (voiceState === 'listening') {
-      // Manual stop — wait for stt_final from backend (VAD may have already committed)
-      setVoiceState('processing');
-      await stopStreaming();
-    } else if (voiceState === 'ai_speaking') {
-      // Barge-in: interrupt AI and start new input
-      bargeIn();
-      try {
-        await startStreaming();
-      } catch (err) {
-        console.error('[Mic] Failed to start streaming after barge-in:', err);
-        setVoiceState('idle');
-      }
-    } else if (voiceState === 'idle') {
-      // Start real-time streaming
-      const ok = prepareStreaming();
-      if (!ok) return;
-      try {
-        await startStreaming();
-      } catch (err) {
-        console.error('[Mic] Failed to start streaming:', err);
-        setVoiceState('idle');
-      }
-    }
-  }, [voiceState, setVoiceState, prepareStreaming, bargeIn, startStreaming, stopStreaming]);
-
-  const handleFinish = useCallback(() => {
+  const handleFinish = useCallback(async () => {
+    await stopStreaming();
     finishConversation();
-  }, [finishConversation]);
+  }, [finishConversation, stopStreaming]);
 
   const handleStartNew = useCallback(() => {
     reset();
@@ -193,14 +175,10 @@ export default function WriteScreen() {
   }
 
   // --- Active conversation: Voice Orb UI ---
-  const canFinish = turnCount >= 2 && connectionStatus === 'connected' && !isCreatingDiary;
-  const micDisabled = connectionStatus !== 'connected' || isCreatingDiary || voiceState === 'processing';
+  const canFinish = messages.length >= 2 && !isCreatingDiary;
 
   return (
     <SafeAreaView style={styles.container} edges={['top']}>
-      {/* Connection status banner */}
-      <ConnectionStatus status={connectionStatus} />
-
       {/* Error banner (dismissible) */}
       {error && (
         <TouchableOpacity style={styles.errorBanner} onPress={clearError} activeOpacity={0.8}>
@@ -213,13 +191,36 @@ export default function WriteScreen() {
       {/* Header */}
       <View style={styles.header}>
         <Text style={styles.headerTitle}>AI 대화</Text>
-        <TurnIndicator current={turnCount} max={maxTurns} />
+        <Text style={styles.headerStatus}>
+          {voiceState === 'listening' ? '듣는 중...' : voiceState === 'ai_speaking' ? 'AI 응답 중...' : ''}
+        </Text>
       </View>
+
+      {/* Message bubbles */}
+      <ScrollView style={styles.messageArea} contentContainerStyle={styles.messageContent}>
+        {messages.map((msg) => (
+          <View
+            key={msg.id}
+            style={[styles.bubble, msg.role === 'user' ? styles.userBubble : styles.aiBubble]}
+          >
+            <Text style={[styles.bubbleText, msg.role === 'user' ? styles.userBubbleText : styles.aiBubbleText]}>
+              {msg.content}
+            </Text>
+          </View>
+        ))}
+        {interimText ? (
+          <View style={[styles.bubble, styles.userBubble, styles.interimBubble]}>
+            <Text style={[styles.bubbleText, styles.userBubbleText, styles.interimText]}>
+              {interimText}
+            </Text>
+          </View>
+        ) : null}
+      </ScrollView>
 
       {/* Voice Orb area */}
       <View style={styles.orbArea}>
         <VoiceOrb volume={volume} state={voiceState} />
-        <VoiceStatus state={voiceState} interimText={interimText} />
+        <VoiceStatus state={voiceState} interimText="" />
       </View>
 
       {/* Bottom controls */}
@@ -229,16 +230,11 @@ export default function WriteScreen() {
             title="대화 완료"
             onPress={handleFinish}
             variant="outline"
-            size="sm"
+            size="lg"
             disabled={!canFinish}
             icon={<Ionicons name="checkmark-done" size={16} color={canFinish ? colors.primary : colors.textTertiary} />}
           />
         )}
-        <MicButton
-          isRecording={voiceState === 'listening'}
-          disabled={micDisabled}
-          onPress={handleMicPress}
-        />
       </View>
 
       {/* Diary creation overlay */}
@@ -320,12 +316,57 @@ const styles = StyleSheet.create({
     fontWeight: '700',
     color: colors.text,
   },
+  headerStatus: {
+    fontSize: fontSize.sm,
+    color: colors.textSecondary,
+  },
+  // Messages
+  messageArea: {
+    flex: 1,
+    paddingHorizontal: spacing.md,
+  },
+  messageContent: {
+    paddingVertical: spacing.md,
+    gap: spacing.sm,
+  },
+  bubble: {
+    maxWidth: '80%',
+    paddingHorizontal: spacing.md,
+    paddingVertical: spacing.sm,
+    borderRadius: 16,
+  },
+  userBubble: {
+    alignSelf: 'flex-end',
+    backgroundColor: colors.primary,
+  },
+  aiBubble: {
+    alignSelf: 'flex-start',
+    backgroundColor: colors.surface,
+    borderWidth: 1,
+    borderColor: colors.border,
+  },
+  interimBubble: {
+    opacity: 0.6,
+  },
+  bubbleText: {
+    fontSize: fontSize.md,
+    lineHeight: fontSize.md * 1.5,
+  },
+  userBubbleText: {
+    color: '#fff',
+  },
+  aiBubbleText: {
+    color: colors.text,
+  },
+  interimText: {
+    fontStyle: 'italic',
+  },
   // Voice Orb
   orbArea: {
-    flex: 1,
     alignItems: 'center',
     justifyContent: 'center',
-    gap: spacing.md,
+    paddingVertical: spacing.md,
+    gap: spacing.sm,
   },
   // Bottom controls
   controls: {
@@ -333,7 +374,7 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
     gap: spacing.lg,
-    paddingVertical: spacing.lg,
+    paddingVertical: spacing.md,
     paddingBottom: spacing.xl,
     backgroundColor: colors.background,
   },
