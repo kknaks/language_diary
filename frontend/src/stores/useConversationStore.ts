@@ -20,6 +20,9 @@ interface ConversationState {
   // WebSocket client (not serialized)
   wsClient: WebSocketClient | null;
 
+  // Barge-in stale message filtering
+  bargePending: boolean;
+
   // Diary creation
   isCreatingDiary: boolean;
   createdDiary: Diary | null;
@@ -32,9 +35,8 @@ interface ConversationState {
   startConversation: () => Promise<void>;
   finishConversation: () => void;
   sendAudioChunk: (base64: string) => void;
-  sendAudioStart: () => void;
-  sendAudioEnd: () => void;
   sendBargeIn: () => void;
+  sendNudge: () => void;
   setVoiceState: (state: VoiceState) => void;
   setVolume: (volume: number) => void;
   clearError: () => void;
@@ -52,6 +54,7 @@ export const useConversationStore = create<ConversationState>((set, get) => ({
   volume: 0,
   interimText: '',
   wsClient: null,
+  bargePending: false,
   isCreatingDiary: false,
   createdDiary: null,
   isLoading: false,
@@ -82,8 +85,7 @@ export const useConversationStore = create<ConversationState>((set, get) => ({
       // 2. Connect to backend WebSocket
       const ws = new WebSocketClient();
 
-      // Track streaming AI message index for chunk assembly
-      let currentAiChunkIndex: number | null = null;
+      // Track streaming AI message for chunk assembly into single bubble
       let currentAiMessageId: string | null = null;
       let currentAiText = '';
 
@@ -133,11 +135,10 @@ export const useConversationStore = create<ConversationState>((set, get) => ({
           }
 
           case 'ai_message_chunk': {
-            const { text, index, is_final } = message;
+            const { text, is_final } = message;
 
-            if (currentAiChunkIndex !== index) {
-              // New AI response — create a new message
-              currentAiChunkIndex = index;
+            if (!currentAiMessageId) {
+              // First chunk of a new AI turn — create message
               currentAiText = text;
               currentAiMessageId = generateId();
 
@@ -151,9 +152,9 @@ export const useConversationStore = create<ConversationState>((set, get) => ({
               set((s) => ({
                 messages: [...s.messages, aiMsg],
               }));
-            } else {
-              // Append to existing message
-              currentAiText += text;
+            } else if (text) {
+              // Subsequent chunk — append to existing message
+              currentAiText += ' ' + text;
               const msgId = currentAiMessageId;
               set((s) => ({
                 messages: s.messages.map((m) =>
@@ -163,7 +164,6 @@ export const useConversationStore = create<ConversationState>((set, get) => ({
             }
 
             if (is_final) {
-              currentAiChunkIndex = null;
               currentAiMessageId = null;
               currentAiText = '';
             }
@@ -171,15 +171,23 @@ export const useConversationStore = create<ConversationState>((set, get) => ({
           }
 
           case 'tts_audio': {
+            // Ignore stale TTS arriving after barge-in
+            if (get().bargePending) {
+              console.log('[WS] Ignoring stale tts_audio (barge pending)');
+              break;
+            }
             // MP3 base64 audio — enqueue for sequential playback
-            // Do NOT set onQueueEmpty here — chunks may arrive with gaps,
-            // causing premature 'listening' transition. Wait for ai_done instead.
             set({ voiceState: 'ai_speaking' });
             enqueueMp3Audio(message.audio_data);
             break;
           }
 
           case 'ai_done': {
+            // Ignore stale ai_done arriving after barge-in
+            if (get().bargePending) {
+              console.log('[WS] Ignoring stale ai_done (barge pending)');
+              break;
+            }
             // AI turn fully complete — transition back to listening
             // after all queued audio finishes playing.
             // If queue is already empty (no TTS), transition immediately.
@@ -199,6 +207,7 @@ export const useConversationStore = create<ConversationState>((set, get) => ({
 
           case 'barge_in_ack': {
             console.log('[WS] Barge-in acknowledged');
+            set({ bargePending: false });
             break;
           }
 
@@ -209,6 +218,11 @@ export const useConversationStore = create<ConversationState>((set, get) => ({
 
           case 'error': {
             console.error('[WS] Error:', message.code, message.message);
+            // STT errors are transient — don't show to user, conversation continues
+            if (message.code === 'STT_FAILED') {
+              console.log('[WS] STT error ignored (transient)');
+              break;
+            }
             set({ error: message.message, isLoading: false });
             break;
           }
@@ -264,27 +278,20 @@ export const useConversationStore = create<ConversationState>((set, get) => ({
     }
   },
 
-  sendAudioStart: () => {
-    const { wsClient } = get();
-    if (!wsClient) return;
-    console.log('[WS] Sending audio_start');
-    wsClient.send({ type: 'audio_start' });
-  },
-
-  sendAudioEnd: () => {
-    const { wsClient } = get();
-    if (!wsClient) return;
-    console.log('[WS] Sending audio_end');
-    wsClient.send({ type: 'audio_end' });
-  },
-
   sendBargeIn: () => {
     const { wsClient } = get();
     if (!wsClient) return;
     console.log('[WS] Sending barge_in');
     clearAudioQueue();
     wsClient.send({ type: 'barge_in' });
-    set({ voiceState: 'listening' });
+    set({ voiceState: 'listening', bargePending: true });
+  },
+
+  sendNudge: () => {
+    const { wsClient } = get();
+    if (!wsClient) return;
+    console.log('[WS] Sending nudge (silence timeout)');
+    wsClient.send({ type: 'nudge' });
   },
 
   setVoiceState: (voiceState: VoiceState) => {
@@ -316,6 +323,7 @@ export const useConversationStore = create<ConversationState>((set, get) => ({
       volume: 0,
       interimText: '',
       wsClient: null,
+      bargePending: false,
       isCreatingDiary: false,
       createdDiary: null,
       isLoading: false,

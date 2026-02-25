@@ -20,9 +20,6 @@ from app.services.tts_service import TTSError, TTSService, TTSStreamSession
 
 logger = logging.getLogger(__name__)
 
-# STT silence timeout: if no final transcript after this many seconds, send stt_empty
-STT_SILENCE_TIMEOUT_SECS = 15.0
-
 router = APIRouter(prefix="/conversation", tags=["conversation"])
 
 
@@ -65,6 +62,7 @@ async def _send_tts_ws(websocket: WebSocket, text: str, index: int = 0) -> None:
         await tts_session.connect()
 
         await tts_session.send_sentence(text)
+        await tts_session.send_eos()
 
         chunk_index = 0
         async for audio_chunk in tts_session.receive_audio_chunks():
@@ -243,19 +241,18 @@ async def _handle_ai_reply_streaming(
                 "index": index,
                 "is_final": True,
             })
-            # Signal LLM done
-            await websocket.send_json({"type": "ai_done"})
 
             if use_ws_tts and tts_session:
-                # Close TTS stream (sends EOS) and wait for relay to finish
-                await tts_session.close()
-                tts_session = None
+                # Send EOS so ElevenLabs returns isFinal and relay finishes cleanly
+                await tts_session.send_eos()
                 if relay_task:
                     try:
                         await asyncio.wait_for(relay_task, timeout=30.0)
                     except (asyncio.TimeoutError, asyncio.CancelledError):
                         logger.warning("TTS relay task timed out or cancelled")
                     relay_task = None
+                await tts_session.close()
+                tts_session = None
             else:
                 # REST fallback: send all TTS results in order
                 for tts_idx, task in rest_tts_tasks:
@@ -275,6 +272,9 @@ async def _handle_ai_reply_streaming(
                             "code": "TTS_FAILED",
                             "message": str(e),
                         })
+
+            # Signal turn done AFTER all TTS audio has been sent
+            await websocket.send_json({"type": "ai_done"})
 
             return True  # continue loop
         else:
@@ -313,20 +313,21 @@ async def _handle_ai_reply_streaming(
 async def conversation_websocket(websocket: WebSocket):
     """WebSocket handler for real-time conversation with audio streaming.
 
-    On connect: creates session, sends greeting + TTS, then enters message loop.
+    On connect: creates session, sends greeting + TTS, then opens a long-lived
+    STT session. A commit listener background task consumes auto-committed
+    transcripts from ElevenLabs VAD and drives the AI pipeline.
 
     Client → Server:
       { "type": "message", "text": "..." }       — Text message
-      { "type": "audio_start" }                   — Begin audio streaming
       (binary frames)                             — Audio chunks (PCM 16kHz 16-bit mono)
-      { "type": "audio_end" }                     — End audio streaming
       { "type": "barge_in" }                      — Cancel current AI reply + TTS
+      { "type": "nudge" }                         — Silence timeout, AI re-prompts
       { "type": "finish" }                        — Finish conversation
 
     Server → Client:
       { "type": "session_created", "session_id": "..." } — Session ready
       { "type": "stt_interim", "text": "..." }    — Real-time interim transcription
-      { "type": "stt_final", "text": "..." }      — Final transcription
+      { "type": "stt_final", "text": "..." }      — Final transcription (ElevenLabs auto-commit)
       { "type": "ai_message", "text": "..." }     — AI follow-up question (single)
       { "type": "ai_message_chunk", "text": "...", "index": N, "is_final": bool }
       { "type": "tts_audio", "audio_data": "<base64>", "format": "mp3", "index": N }
@@ -342,6 +343,7 @@ async def conversation_websocket(websocket: WebSocket):
         # _handle_ai_reply_streaming so that barge_in can cancel running tasks.
         pipeline_state: dict = {}
         ai_pipeline_task: Optional[asyncio.Task] = None
+        commit_listener_task: Optional[asyncio.Task] = None
 
         async def _cancel_pipeline() -> None:
             """Cancel in-flight LLM / TTS / relay tasks (barge-in)."""
@@ -388,6 +390,60 @@ async def conversation_websocket(websocket: WebSocket):
             # Signal greeting turn done so frontend transitions to listening
             await websocket.send_json({"type": "ai_done"})
 
+            # --- Open long-lived STT session ---
+            try:
+                stt_session = STTSession(
+                    settings.ELEVENLABS_API_KEY,
+                    client_ws=websocket,
+                )
+                await stt_session.connect()
+                logger.info("Long-lived STT session created after greeting")
+            except STTError as e:
+                logger.error("STT connection failed: %s", e)
+                await websocket.send_json({
+                    "type": "error",
+                    "code": "STT_FAILED",
+                    "message": str(e),
+                })
+                stt_session = None
+
+            # --- Commit listener: drives AI pipeline from STT auto-commits ---
+            async def _commit_listener():
+                """Consume committed transcripts and trigger AI pipeline."""
+                nonlocal ai_pipeline_task
+                if not stt_session:
+                    return
+                async for text in stt_session.iter_commits():
+                    # Wait for any in-flight pipeline to finish before starting new one
+                    if ai_pipeline_task and not ai_pipeline_task.done():
+                        logger.info("Commit received while pipeline running, waiting...")
+                        try:
+                            await ai_pipeline_task
+                        except (asyncio.CancelledError, Exception):
+                            pass
+
+                    logger.info("Commit listener: triggering AI pipeline for '%s'", text[:80])
+                    ai_pipeline_task = asyncio.create_task(
+                        _handle_ai_reply_streaming(
+                            websocket, db, service, session_id, text,
+                            pipeline_state=pipeline_state,
+                        )
+                    )
+                    try:
+                        cont = await ai_pipeline_task
+                        if not cont:
+                            # Auto-finish (max turns) — break out
+                            break
+                    except asyncio.CancelledError:
+                        logger.info("AI pipeline cancelled in commit listener")
+                    except Exception:
+                        logger.exception("AI pipeline error in commit listener")
+                    finally:
+                        ai_pipeline_task = None
+
+            if stt_session:
+                commit_listener_task = asyncio.create_task(_commit_listener())
+
             # --- Message loop ---
             while True:
                 raw = await websocket.receive()
@@ -400,7 +456,10 @@ async def conversation_websocket(websocket: WebSocket):
 
                 # --- Binary frame: audio chunk ---
                 if bytes_data:
-                    if stt_session:
+                    # Skip sending audio to STT while AI pipeline is running
+                    # to prevent TTS echo (speaker → mic → STT) from
+                    # contaminating speech recognition.
+                    if stt_session and not (ai_pipeline_task and not ai_pipeline_task.done()):
                         try:
                             await stt_session.send_audio(bytes_data)
                         except STTError as e:
@@ -426,79 +485,8 @@ async def conversation_websocket(websocket: WebSocket):
 
                 msg_type = data.get("type")
 
-                # ── audio_start ──────────────────────────────────
-                if msg_type == "audio_start":
-                    if stt_session:
-                        await stt_session.close()
-                    try:
-                        stt_session = STTSession(
-                            settings.ELEVENLABS_API_KEY,
-                            client_ws=websocket,
-                        )
-                        await stt_session.connect()
-                    except STTError as e:
-                        logger.error("STT connection failed: %s", e)
-                        await websocket.send_json({
-                            "type": "error",
-                            "code": "STT_FAILED",
-                            "message": str(e),
-                        })
-                        stt_session = None
-
-                # ── audio_end ────────────────────────────────────
-                elif msg_type == "audio_end":
-                    if not stt_session:
-                        await websocket.send_json({
-                            "type": "error",
-                            "code": "VALIDATION_ERROR",
-                            "message": "활성 STT 세션이 없습니다.",
-                        })
-                        continue
-
-                    # Frontend VAD detected silence and sent audio_end.
-                    # Use commit_and_wait_final() for explicit commit —
-                    # more reliable than waiting for server-side VAD.
-                    try:
-                        final_text = await stt_session.commit_and_wait_final()
-                    except STTError as e:
-                        logger.error("STT commit_and_wait_final failed: %s", e)
-                        await websocket.send_json({
-                            "type": "error",
-                            "code": "STT_FAILED",
-                            "message": str(e),
-                        })
-                        await stt_session.close()
-                        stt_session = None
-                        continue
-                    finally:
-                        if stt_session:
-                            await stt_session.close()
-                            stt_session = None
-
-                    # Send stt_final (may duplicate _listen() relay, but
-                    # ensures the client always gets the final text)
-                    await websocket.send_json({
-                        "type": "stt_final",
-                        "text": final_text,
-                    })
-
-                    # STT → AI pipeline: feed transcribed text to conversation
-                    if final_text.strip():
-                        cont = await _handle_ai_reply_streaming(
-                            websocket, db, service, session_id, final_text,
-                            pipeline_state=pipeline_state,
-                        )
-                        if not cont:
-                            break
-                    else:
-                        # Empty transcription — notify client to reset UI
-                        await websocket.send_json({
-                            "type": "stt_empty",
-                            "message": "음성이 인식되지 않았습니다. 다시 시도해주세요.",
-                        })
-
                 # ── text message ─────────────────────────────────
-                elif msg_type == "message":
+                if msg_type == "message":
                     text = data.get("text", "").strip()
                     if not text:
                         await websocket.send_json(
@@ -513,6 +501,20 @@ async def conversation_websocket(websocket: WebSocket):
                     if not cont:
                         break
 
+                # ── nudge (silence timeout) ────────────────────
+                elif msg_type == "nudge":
+                    # Ignore nudge if AI pipeline is currently running
+                    if ai_pipeline_task and not ai_pipeline_task.done():
+                        logger.info("Nudge ignored — AI pipeline in progress")
+                        continue
+                    logger.info("Nudge received (user silent for 10s)")
+                    cont = await _handle_ai_reply_streaming(
+                        websocket, db, service, session_id, "[silence]",
+                        pipeline_state=pipeline_state,
+                    )
+                    if not cont:
+                        break
+
                 # ── barge_in ─────────────────────────────────────
                 elif msg_type == "barge_in":
                     logger.info("Barge-in received, cancelling pipeline")
@@ -521,8 +523,18 @@ async def conversation_websocket(websocket: WebSocket):
 
                 # ── finish ───────────────────────────────────────
                 elif msg_type == "finish":
-                    # Cancel any in-flight pipeline before finishing
+                    # Cancel commit listener + pipeline before finishing
+                    if commit_listener_task and not commit_listener_task.done():
+                        commit_listener_task.cancel()
+                        try:
+                            await commit_listener_task
+                        except (asyncio.CancelledError, Exception):
+                            pass
+                        commit_listener_task = None
                     await _cancel_pipeline()
+                    if stt_session:
+                        await stt_session.close()
+                        stt_session = None
                     try:
                         diary_resp = await service.finish_conversation(session_id)
                         await websocket.send_json(
@@ -551,6 +563,12 @@ async def conversation_websocket(websocket: WebSocket):
             except Exception:
                 pass
         finally:
+            if commit_listener_task and not commit_listener_task.done():
+                commit_listener_task.cancel()
+                try:
+                    await commit_listener_task
+                except (asyncio.CancelledError, Exception):
+                    pass
             await _cancel_pipeline()
             if stt_session:
                 await stt_session.close()

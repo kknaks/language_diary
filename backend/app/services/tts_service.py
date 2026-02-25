@@ -299,6 +299,20 @@ class TTSStreamSession:
         except Exception as e:
             raise TTSError(f"TTS 문장 전송 실패: {e}")
 
+    async def send_eos(self) -> None:
+        """Send EOS (empty text) to signal end of input stream.
+
+        This triggers ElevenLabs to send the isFinal message so that
+        receive_audio_chunks() can terminate cleanly.
+        """
+        if not self._connected or not self._ws:
+            return
+        try:
+            await self._ws.send(json.dumps({"text": ""}))
+            logger.debug("TTS EOS sent")
+        except Exception as e:
+            logger.warning("TTS EOS send failed: %s", e)
+
     async def receive_audio_chunks(self) -> AsyncIterator[bytes]:
         """Async generator that yields audio chunks as they arrive.
 

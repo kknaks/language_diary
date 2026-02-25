@@ -4,7 +4,7 @@ import asyncio
 import base64
 import json
 import logging
-from typing import Optional
+from typing import AsyncIterator, Optional
 
 import websockets
 
@@ -39,20 +39,24 @@ def validate_pcm_audio(audio_bytes: bytes) -> bool:
 
 
 class STTSession:
-    """Manages a single ElevenLabs STT WebSocket streaming session.
+    """Manages a long-lived ElevenLabs STT WebSocket streaming session.
 
-    Connects to ElevenLabs realtime STT, streams audio, and returns
-    transcription results via callbacks (interim) and awaitable (final).
+    Uses commit_strategy=vad so ElevenLabs auto-commits after detecting
+    silence. The session stays open for the entire conversation — each
+    auto-commit produces a committed_transcript that is yielded via
+    iter_commits().
 
     Usage:
         session = STTSession(api_key, client_ws=websocket)
         await session.connect()
 
-        # Stream audio chunks:
+        # Stream audio chunks continuously:
         await session.send_audio(audio_bytes)
 
-        # End audio and get final transcription:
-        final_text = await session.commit_and_wait_final()
+        # Consume committed transcripts:
+        async for text in session.iter_commits():
+            # handle each utterance
+            ...
 
         await session.close()
     """
@@ -62,8 +66,7 @@ class STTSession:
         self.client_ws = client_ws
         self._ws = None
         self._listener_task: Optional[asyncio.Task] = None
-        self._final_text = ""
-        self._final_event = asyncio.Event()
+        self._commit_queue: asyncio.Queue[str] = asyncio.Queue()
         self._error: Optional[str] = None
         self._connected = False
         self._total_chunks_sent = 0
@@ -72,32 +75,23 @@ class STTSession:
         self,
         language: str = DEFAULT_LANGUAGE,
         sample_rate: int = DEFAULT_SAMPLE_RATE,
-        commit_strategy: str = "vad",
         vad_silence_threshold_secs: float = 1.5,
-        vad_threshold: float = 0.4,
+        vad_threshold: float = 0.5,
     ):
         """Connect to ElevenLabs STT WebSocket and start listening.
 
-        Args:
-            language: Language code for transcription.
-            sample_rate: Audio sample rate in Hz.
-            commit_strategy: 'vad' for automatic silence-based commit,
-                             'manual' for explicit commit control.
-            vad_silence_threshold_secs: Seconds of silence before VAD commits.
-            vad_threshold: VAD sensitivity (0.0-1.0).
+        Uses VAD commit strategy — ElevenLabs detects silence and
+        auto-commits. No manual commit needed.
         """
         url = (
             f"{ELEVENLABS_STT_URL}"
             f"?model_id={ELEVENLABS_STT_MODEL}"
             f"&language_code={language}"
             f"&sample_rate={sample_rate}"
-            f"&commit_strategy={commit_strategy}"
+            f"&commit_strategy=vad"
+            f"&vad_silence_threshold_secs={vad_silence_threshold_secs}"
+            f"&vad_threshold={vad_threshold}"
         )
-        if commit_strategy == "vad":
-            url += (
-                f"&vad_silence_threshold_secs={vad_silence_threshold_secs}"
-                f"&vad_threshold={vad_threshold}"
-            )
         headers = {"xi-api-key": self.api_key}
 
         try:
@@ -122,17 +116,10 @@ class STTSession:
 
         self._connected = True
         self._listener_task = asyncio.create_task(self._listen())
-        logger.info("ElevenLabs STT session started")
+        logger.info("ElevenLabs STT session started (vad commit, silence=%.1fs)", vad_silence_threshold_secs)
 
     async def send_audio(self, audio_bytes: bytes):
-        """Send a real-time audio chunk to ElevenLabs for transcription.
-
-        In real-time streaming mode, chunks arrive from the microphone at
-        natural pace (~100ms intervals), so no splitting or pacing is needed.
-
-        Args:
-            audio_bytes: Raw PCM audio data (16kHz, 16-bit, mono).
-        """
+        """Send a real-time audio chunk to ElevenLabs for transcription."""
         if not self._connected or not self._ws:
             raise STTError("STT 세션이 연결되지 않았습니다.")
 
@@ -150,63 +137,18 @@ class STTSession:
         except Exception as e:
             raise STTError(f"오디오 전송 실패: {e}")
 
-    async def wait_for_final(self, timeout: float = 10.0) -> str:
-        """Wait for VAD to automatically commit and return the final text.
+    async def iter_commits(self) -> AsyncIterator[str]:
+        """Yield committed transcripts from the queue.
 
-        In VAD mode, ElevenLabs detects silence and sends committed_transcript
-        automatically. This method simply waits for that event without sending
-        a manual commit signal.
-
-        Returns:
-            The committed transcription text.
+        Blocks until a new committed_transcript arrives. Use this as
+        an async generator in a background task to drive the AI pipeline.
         """
-        if not self._connected or not self._ws:
-            raise STTError("STT 세션이 연결되지 않았습니다.")
-
-        try:
-            await asyncio.wait_for(self._final_event.wait(), timeout=timeout)
-        except asyncio.TimeoutError:
-            raise STTError("STT 최종 결과 대기 시간 초과")
-
-        if self._error:
-            raise STTError(self._error)
-
-        return self._final_text
-
-    async def commit_and_wait_final(self, timeout: float = 10.0) -> str:
-        """Send commit signal and wait for the final transcription.
-
-        Returns:
-            The committed transcription text.
-        """
-        if not self._connected or not self._ws:
-            raise STTError("STT 세션이 연결되지 않았습니다.")
-
-        self._final_event.clear()
-        self._final_text = ""
-        self._error = None
-
-        # Brief delay to let ElevenLabs process streamed audio before commit
-        await asyncio.sleep(0.3)
-
-        try:
-            await self._ws.send(json.dumps({
-                "message_type": "input_audio_chunk",
-                "audio_base_64": "",
-                "commit": True,
-            }))
-        except Exception as e:
-            raise STTError(f"커밋 전송 실패: {e}")
-
-        try:
-            await asyncio.wait_for(self._final_event.wait(), timeout=timeout)
-        except asyncio.TimeoutError:
-            raise STTError("STT 최종 결과 대기 시간 초과")
-
-        if self._error:
-            raise STTError(self._error)
-
-        return self._final_text
+        while self._connected:
+            try:
+                text = await self._commit_queue.get()
+                yield text
+            except asyncio.CancelledError:
+                return
 
     async def close(self):
         """Close the STT session and clean up resources."""
@@ -224,7 +166,7 @@ class STTSession:
             except Exception:
                 pass
             self._ws = None
-        logger.info("ElevenLabs STT session closed")
+        logger.info("ElevenLabs STT session closed (chunks_sent=%d)", self._total_chunks_sent)
 
     async def _listen(self):
         """Background task: read ElevenLabs responses and dispatch events."""
@@ -249,17 +191,29 @@ class STTSession:
                             pass
 
                 elif msg_type == "committed_transcript":
-                    self._final_text = data.get("text", "")
-                    self._final_event.set()
-                    # Relay final transcript to client
+                    text = data.get("text", "")
+                    logger.info(
+                        "STT committed_transcript: '%s' (chunks_sent=%d)",
+                        text[:80] if text else "(empty)",
+                        self._total_chunks_sent,
+                    )
+                    # Skip empty commits — don't queue or notify client
+                    if not text.strip():
+                        continue
+                    # Send stt_final directly to client
                     if self.client_ws:
                         try:
                             await self.client_ws.send_json({
                                 "type": "stt_final",
-                                "text": self._final_text,
+                                "text": text,
                             })
                         except Exception:
                             pass
+                    # Queue for backend AI pipeline
+                    await self._commit_queue.put(text)
+
+                elif msg_type == "input_error":
+                    logger.warning("STT input_error: %s", data.get("error", "unknown"))
 
                 elif msg_type in (
                     "auth_error",
@@ -269,17 +223,14 @@ class STTSession:
                     "transcriber_error",
                 ):
                     error_msg = data.get("message", f"STT 오류: {msg_type}")
+                    logger.error("STT error: %s — %s", msg_type, error_msg)
                     self._error = error_msg
-                    self._final_event.set()
 
         except asyncio.CancelledError:
             return
         except websockets.exceptions.ConnectionClosed:
-            if not self._final_event.is_set():
-                self._error = "ElevenLabs STT 연결이 끊어졌습니다."
-                self._final_event.set()
+            logger.warning("ElevenLabs STT connection closed unexpectedly")
+            self._connected = False
         except Exception as e:
             logger.exception("STT listener error")
-            if not self._final_event.is_set():
-                self._error = f"STT 리스너 오류: {e}"
-                self._final_event.set()
+            self._connected = False

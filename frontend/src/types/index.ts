@@ -95,9 +95,8 @@ export interface ConversationSession {
 // ===== WebSocket 메시지 (클라이언트 → 서버) =====
 export type ClientMessage =
   | { type: 'message'; text: string }
-  | { type: 'audio_start' }
-  | { type: 'audio_end' }
   | { type: 'barge_in' }
+  | { type: 'nudge' }
   | { type: 'finish' };
 
 // ===== TTS 응답 =====

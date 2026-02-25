@@ -32,9 +32,8 @@ export default function WriteScreen() {
     startConversation,
     finishConversation,
     sendAudioChunk,
-    sendAudioStart,
-    sendAudioEnd,
     sendBargeIn,
+    sendNudge,
     setVolume,
     clearError,
     reset,
@@ -53,22 +52,49 @@ export default function WriteScreen() {
   stopStreamingRef.current = stopStreaming;
   const sendAudioChunkRef = useRef(sendAudioChunk);
   sendAudioChunkRef.current = sendAudioChunk;
-  const sendAudioStartRef = useRef(sendAudioStart);
-  sendAudioStartRef.current = sendAudioStart;
-  const sendAudioEndRef = useRef(sendAudioEnd);
-  sendAudioEndRef.current = sendAudioEnd;
   const sendBargeInRef = useRef(sendBargeIn);
   sendBargeInRef.current = sendBargeIn;
+  const sendNudgeRef = useRef(sendNudge);
+  sendNudgeRef.current = sendNudge;
+  const finishConversationRef = useRef(finishConversation);
+  finishConversationRef.current = finishConversation;
   const startStreamingRef = useRef(startStreaming);
   startStreamingRef.current = startStreaming;
   const forceRestartRef = useRef(forceRestart);
   forceRestartRef.current = forceRestart;
 
-  // Track whether we're currently sending audio (between audio_start and audio_end)
-  const isSendingAudioRef = useRef(false);
-  // Cooldown after audio_end — prevent rapid re-triggers from noise
-  const lastAudioEndTimeRef = useRef(0);
-  const AUDIO_COOLDOWN_MS = 800; // minimum ms between audio_end and next audio_start
+  // Silence timeout: nudge after 10s, auto-finish after 2 nudges
+  const SILENCE_TIMEOUT_MS = 10000;
+  const MAX_NUDGES = 2;
+  const silenceTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const nudgeCountRef = useRef(0);
+
+  const clearSilenceTimer = useCallback(() => {
+    if (silenceTimerRef.current) {
+      clearTimeout(silenceTimerRef.current);
+      silenceTimerRef.current = null;
+    }
+  }, []);
+
+  const startSilenceTimer = useCallback(() => {
+    clearSilenceTimer();
+    silenceTimerRef.current = setTimeout(() => {
+      if (voiceStateRef.current !== 'listening') return;
+      nudgeCountRef.current++;
+      console.log(`[Silence] Timeout #${nudgeCountRef.current}/${MAX_NUDGES}`);
+      if (nudgeCountRef.current >= MAX_NUDGES) {
+        console.log('[Silence] Max nudges reached, finishing conversation');
+        finishConversationRef.current();
+      } else {
+        sendNudgeRef.current();
+      }
+    }, SILENCE_TIMEOUT_MS);
+  }, [clearSilenceTimer]);
+
+  // Minimum speech duration before triggering barge-in — filters out noise spikes
+  const MIN_SPEECH_DURATION_MS = 300;
+  const speechStartTimeRef = useRef(0);
+  const deferredBargeTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   // Track voiceState in a ref for VAD callbacks
   const voiceStateRef = useRef(voiceState);
   voiceStateRef.current = voiceState;
@@ -77,32 +103,32 @@ export default function WriteScreen() {
   const vadCallbacksRef = useRef<VADCallbacks>({
     onSpeechStart: () => {
       const currentVoiceState = voiceStateRef.current;
-      const now = Date.now();
-      const sinceLast = now - lastAudioEndTimeRef.current;
 
       if (currentVoiceState === 'ai_speaking') {
-        // Barge-in: user starts talking while AI is speaking
-        console.log('[VAD] Barge-in detected');
-        sendBargeInRef.current();
-        sendAudioStartRef.current();
-        isSendingAudioRef.current = true;
-      } else if (currentVoiceState === 'listening' && !isSendingAudioRef.current) {
-        // Cooldown guard: prevent immediate re-trigger after audio_end
-        if (sinceLast < AUDIO_COOLDOWN_MS) {
-          console.log(`[VAD] Speech start suppressed (cooldown ${sinceLast}ms < ${AUDIO_COOLDOWN_MS}ms)`);
-          return;
-        }
-        console.log('[VAD] Speech start');
-        sendAudioStartRef.current();
-        isSendingAudioRef.current = true;
+        // Barge-in: defer until MIN_SPEECH_DURATION to filter noise
+        speechStartTimeRef.current = Date.now();
+        deferredBargeTimerRef.current = setTimeout(() => {
+          console.log('[VAD] Barge-in confirmed');
+          sendBargeInRef.current();
+        }, MIN_SPEECH_DURATION_MS);
+      } else if (currentVoiceState === 'listening') {
+        // User spoke — reset silence nudge counter and timer
+        nudgeCountRef.current = 0;
+        clearSilenceTimer();
       }
     },
     onSpeechEnd: () => {
-      if (isSendingAudioRef.current) {
-        console.log('[VAD] Speech end');
-        sendAudioEndRef.current();
-        isSendingAudioRef.current = false;
-        lastAudioEndTimeRef.current = Date.now();
+      const currentVoiceState = voiceStateRef.current;
+
+      // Cancel deferred barge-in if speech was too short
+      if (deferredBargeTimerRef.current) {
+        clearTimeout(deferredBargeTimerRef.current);
+        deferredBargeTimerRef.current = null;
+      }
+
+      if (currentVoiceState === 'listening') {
+        // Speech ended while listening — start silence timer
+        startSilenceTimer();
       }
     },
     onEnergy: (energy: number) => {
@@ -136,15 +162,22 @@ export default function WriteScreen() {
     } else if (voiceState === 'listening' && prevState === 'ai_speaking') {
       // AI finished speaking → force restart mic (iOS likely killed it)
       console.log('[Write] AI done speaking, force restarting mic');
-      isSendingAudioRef.current = false; // Reset audio sending state
       forceRestartRef.current().catch((err) => {
         console.error('[Mic] Force restart failed:', err);
       });
+      // Start silence timer — nudge if user doesn't respond within 10s
+      startSilenceTimer();
+    } else if (voiceState === 'listening' && prevState === 'idle') {
+      // Initial listening state (after greeting) — start silence timer
+      startSilenceTimer();
+    } else if (voiceState === 'ai_speaking') {
+      // AI is speaking — clear silence timer
+      clearSilenceTimer();
     } else if (voiceState === 'idle') {
       micStartedRef.current = false;
-      isSendingAudioRef.current = false;
+      clearSilenceTimer();
     }
-  }, [voiceState]);
+  }, [voiceState, startSilenceTimer, clearSilenceTimer]);
 
   // Volume animation — only fake for ai_speaking, listening uses real mic energy from VAD
   useEffect(() => {
@@ -167,10 +200,11 @@ export default function WriteScreen() {
   // Cleanup on unmount only
   useEffect(() => {
     return () => {
+      clearSilenceTimer();
       stopStreamingRef.current();
       useConversationStore.getState().reset();
     };
-  }, []);
+  }, [clearSilenceTimer]);
 
   const handleFinish = useCallback(async () => {
     await stopStreaming();

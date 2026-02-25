@@ -46,6 +46,10 @@ _uploads_dir = Path("audio_uploads")
 _uploads_dir.mkdir(parents=True, exist_ok=True)
 app.mount("/uploads", StaticFiles(directory=str(_uploads_dir)), name="uploads")
 
+_static_dir = Path("static")
+_static_dir.mkdir(parents=True, exist_ok=True)
+app.mount("/static", StaticFiles(directory=str(_static_dir)), name="static")
+
 # --- Middleware (order matters: last added = outermost) ---
 
 # CORS — configurable via ALLOWED_ORIGINS env var
