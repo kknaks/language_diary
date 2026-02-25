@@ -20,13 +20,11 @@ export default function RootLayout() {
     if (isLoading) return;
 
     if (!isAuthenticated) {
-      // S2에서 /login 라우트 생성 예정 — 현재는 기존 탭으로 진입
-      // router.replace('/login');
-      debugLog('info', 'Auth: not authenticated — staying on tabs (login route pending S2)');
+      router.replace('/login');
+      debugLog('info', 'Auth: not authenticated — redirecting to login');
     } else if (!isOnboarded) {
-      // S2에서 /onboarding/step1-language 라우트 생성 예정
-      // router.replace('/onboarding/step1-language');
-      debugLog('info', 'Auth: not onboarded — staying on tabs (onboarding route pending S2)');
+      router.replace('/onboarding/step1-language');
+      debugLog('info', 'Auth: not onboarded — redirecting to onboarding');
     } else {
       debugLog('info', 'Auth: authenticated & onboarded');
     }
@@ -53,6 +51,8 @@ export default function RootLayout() {
           headerStyle: { backgroundColor: colors.background },
         }}
       >
+        <Stack.Screen name="login" options={{ headerShown: false }} />
+        <Stack.Screen name="onboarding" options={{ headerShown: false }} />
         <Stack.Screen name="(tabs)" options={{ headerShown: false }} />
         <Stack.Screen
           name="diary/[id]"

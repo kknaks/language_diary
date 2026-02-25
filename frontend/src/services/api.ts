@@ -1,6 +1,7 @@
 import { Diary, LearningCard, Message, PaginatedResponse, ConversationSession, TtsResponse, PronunciationResult } from '../types';
-import { AuthTokens } from '../types/auth';
+import { AuthTokens, SocialLoginResponse } from '../types/auth';
 import { LanguageListResponse, AvatarListResponse, VoiceListResponse } from '../types/seed';
+import { ProfileCreateRequest, UserProfileResponse } from '../types/profile';
 import { env } from '../config/env';
 import { debugFetch } from '../components/common/DebugBanner';
 import { tokenManager } from '../utils/tokenManager';
@@ -306,6 +307,32 @@ export async function completeDiary(id: string | number): Promise<void> {
 // ===== Auth API =====
 
 export const authApi = {
+  async socialLogin(provider: 'google' | 'apple', idToken: string): Promise<SocialLoginResponse> {
+    const res = await fetch(`${API_BASE_URL}/api/v1/auth/social`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ provider, id_token: idToken }),
+    });
+    if (!res.ok) {
+      const err = await res.json().catch(() => ({}));
+      throw new Error(err?.error?.message || '소셜 로그인에 실패했습니다.');
+    }
+    return res.json();
+  },
+
+  async logout(refreshToken: string): Promise<void> {
+    await fetchWithAuth(`${API_BASE_URL}/api/v1/auth/logout`, {
+      method: 'POST',
+      body: JSON.stringify({ refresh_token: refreshToken }),
+    });
+  },
+
+  async deleteAccount(): Promise<void> {
+    await fetchWithAuth(`${API_BASE_URL}/api/v1/auth/account`, {
+      method: 'DELETE',
+    });
+  },
+
   async refreshToken(refreshToken: string): Promise<AuthTokens> {
     const res = await fetch(`${API_BASE_URL}/api/v1/auth/refresh`, {
       method: 'POST',
@@ -314,7 +341,6 @@ export const authApi = {
     });
     return (await handleResponse(res)) as AuthTokens;
   },
-  // socialLogin은 S2에서 추가
 };
 
 // ===== Seed Data API =====
@@ -334,5 +360,27 @@ export const seedApi = {
     const params = languageId ? `?language_id=${languageId}` : '';
     const res = await fetchWithAuth(`${API_BASE_URL}/api/v1/seed/voices${params}`);
     return (await handleResponse(res)) as VoiceListResponse;
+  },
+};
+
+// ===== Profile API =====
+
+export const profileApi = {
+  async createProfile(data: ProfileCreateRequest): Promise<{ message: string; onboarding_completed: boolean }> {
+    const res = await fetchWithAuth(`${API_BASE_URL}/api/v1/user/profile`, {
+      method: 'POST',
+      body: JSON.stringify(data),
+    });
+    if (!res.ok) {
+      const err = await res.json().catch(() => ({}));
+      throw new Error(err?.error?.message || '프로필 생성에 실패했습니다.');
+    }
+    return res.json();
+  },
+
+  async getProfile(): Promise<UserProfileResponse> {
+    const res = await fetchWithAuth(`${API_BASE_URL}/api/v1/user/profile`);
+    if (!res.ok) throw new Error('프로필 조회 실패');
+    return res.json();
   },
 };

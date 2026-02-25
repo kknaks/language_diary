@@ -40,5 +40,7 @@ export default ({ config }: ConfigContext): ExpoConfig => ({
     'expo-router',
     'expo-audio',
     'expo-secure-store',
+    'expo-web-browser',
+    'expo-apple-authentication',
   ],
 });
