@@ -1,8 +1,102 @@
 import { Diary, LearningCard, Message, PaginatedResponse, ConversationSession, TtsResponse, PronunciationResult } from '../types';
+import { AuthTokens } from '../types/auth';
+import { LanguageListResponse, AvatarListResponse, VoiceListResponse } from '../types/seed';
 import { env } from '../config/env';
 import { debugFetch } from '../components/common/DebugBanner';
+import { tokenManager } from '../utils/tokenManager';
 
 const API_BASE_URL = env.API_BASE_URL;
+
+// ===== Token refresh queue =====
+
+let isRefreshing = false;
+let refreshQueue: Array<{
+  resolve: (token: string) => void;
+  reject: (error: Error) => void;
+}> = [];
+
+function processRefreshQueue(error: Error | null, token: string | null) {
+  refreshQueue.forEach(({ resolve, reject }) => {
+    if (error) {
+      reject(error);
+    } else {
+      resolve(token!);
+    }
+  });
+  refreshQueue = [];
+}
+
+async function refreshAccessToken(): Promise<string> {
+  const refreshToken = await tokenManager.getRefreshToken();
+  if (!refreshToken) {
+    throw new Error('No refresh token available');
+  }
+
+  const res = await fetch(`${API_BASE_URL}/api/v1/auth/refresh`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ refresh_token: refreshToken }),
+  });
+
+  if (!res.ok) {
+    throw new Error(`Refresh failed: ${res.status}`);
+  }
+
+  const tokens: AuthTokens = await res.json();
+  await tokenManager.saveTokens(tokens.access_token, tokens.refresh_token);
+  return tokens.access_token;
+}
+
+async function handleTokenRefresh(): Promise<string> {
+  if (isRefreshing) {
+    // Already refreshing — queue this request
+    return new Promise<string>((resolve, reject) => {
+      refreshQueue.push({ resolve, reject });
+    });
+  }
+
+  isRefreshing = true;
+  try {
+    const newToken = await refreshAccessToken();
+    processRefreshQueue(null, newToken);
+    return newToken;
+  } catch (error) {
+    processRefreshQueue(error as Error, null);
+    // Clear auth state — lazy import to avoid circular dependency
+    const { useAuthStore } = await import('../stores/useAuthStore');
+    await useAuthStore.getState().clearAuth();
+    throw error;
+  } finally {
+    isRefreshing = false;
+  }
+}
+
+// ===== Authenticated fetch wrapper =====
+
+async function fetchWithAuth(url: string, options: RequestInit = {}): Promise<Response> {
+  const token = await tokenManager.getAccessToken();
+  const headers: Record<string, string> = {
+    'Content-Type': 'application/json',
+    ...(options.headers as Record<string, string> ?? {}),
+    ...(token ? { Authorization: `Bearer ${token}` } : {}),
+  };
+
+  let response = await debugFetch(url, { ...options, headers });
+
+  if (response.status === 401) {
+    try {
+      const newToken = await handleTokenRefresh();
+      // Retry original request with new token
+      headers.Authorization = `Bearer ${newToken}`;
+      response = await debugFetch(url, { ...options, headers });
+    } catch {
+      // Refresh failed — return original 401 response
+      return response;
+    }
+  }
+
+  return response;
+}
 
 // ===== Error handling =====
 
@@ -208,3 +302,37 @@ export async function completeDiary(id: string | number): Promise<void> {
   const res = await debugFetch(`${API_BASE_URL}/api/v1/diary/${id}/complete`, { method: 'POST' });
   await handleResponse(res);
 }
+
+// ===== Auth API =====
+
+export const authApi = {
+  async refreshToken(refreshToken: string): Promise<AuthTokens> {
+    const res = await fetch(`${API_BASE_URL}/api/v1/auth/refresh`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ refresh_token: refreshToken }),
+    });
+    return (await handleResponse(res)) as AuthTokens;
+  },
+  // socialLogin은 S2에서 추가
+};
+
+// ===== Seed Data API =====
+
+export const seedApi = {
+  async getLanguages(): Promise<LanguageListResponse> {
+    const res = await fetchWithAuth(`${API_BASE_URL}/api/v1/seed/languages`);
+    return (await handleResponse(res)) as LanguageListResponse;
+  },
+
+  async getAvatars(): Promise<AvatarListResponse> {
+    const res = await fetchWithAuth(`${API_BASE_URL}/api/v1/seed/avatars`);
+    return (await handleResponse(res)) as AvatarListResponse;
+  },
+
+  async getVoices(languageId?: number): Promise<VoiceListResponse> {
+    const params = languageId ? `?language_id=${languageId}` : '';
+    const res = await fetchWithAuth(`${API_BASE_URL}/api/v1/seed/voices${params}`);
+    return (await handleResponse(res)) as VoiceListResponse;
+  },
+};
