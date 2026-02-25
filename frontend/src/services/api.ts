@@ -160,7 +160,7 @@ export async function finishConvAISession(
 // ===== Custom Pipeline Conversation API =====
 
 export async function createConversationSession(): Promise<{ session_id: string }> {
-  const res = await debugFetch(`${API_BASE_URL}/api/v1/conversations`, {
+  const res = await debugFetch(`${API_BASE_URL}/api/v1/conversation`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
   });
