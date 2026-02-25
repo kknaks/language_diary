@@ -16,7 +16,7 @@ class ConversationRepository:
         session = ConversationSession(
             id=session_id,
             user_id=user_id,
-            status="active",
+            status="created",
             turn_count=0,
         )
         self.db.add(session)

@@ -125,6 +125,10 @@ class ConversationService:
 
         self._validate_session_active(session)
 
+        # Transition created → active on first user message
+        if session.status == "created":
+            await self.repo.update_session_status(session, "active")
+
         # Determine message order
         current_order = len(session.messages) + 1
 
@@ -171,6 +175,10 @@ class ConversationService:
             )
 
         self._validate_session_active(session)
+
+        # Transition created → active on first user message
+        if session.status == "created":
+            await self.repo.update_session_status(session, "active")
 
         current_order = len(session.messages) + 1
 
@@ -306,6 +314,10 @@ class ConversationService:
 
         self._validate_session_active(session)
 
+        # Transition created → active if needed
+        if session.status == "created":
+            await self.repo.update_session_status(session, "active")
+
         # Store messages in DB
         for i, msg in enumerate(messages):
             role = "ai" if msg["role"] == "assistant" else "user"
@@ -322,7 +334,7 @@ class ConversationService:
         return await self.finish_conversation(session_id)
 
     def _validate_session_active(self, session: ConversationSession) -> None:
-        """Ensure session is in an active state."""
+        """Ensure session is in an active state (created or active)."""
         if session.status in ("completed", "summarizing"):
             raise SessionAlreadyCompletedError(detail=f"session_id={session.id}")
         if session.status == "expired":

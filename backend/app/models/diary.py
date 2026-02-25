@@ -1,7 +1,7 @@
 from datetime import datetime
 from typing import Optional
 
-from sqlalchemy import DateTime, ForeignKey, String, Text, func
+from sqlalchemy import DateTime, ForeignKey, Index, String, Text, desc, func, text
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.models.base import Base
@@ -9,6 +9,10 @@ from app.models.base import Base
 
 class Diary(Base):
     __tablename__ = "diaries"
+    __table_args__ = (
+        Index("idx_diaries_user_created", "user_id", desc("created_at")),
+        Index("idx_diaries_deleted_at", "deleted_at", postgresql_where=text("deleted_at IS NULL")),
+    )
 
     id: Mapped[int] = mapped_column(primary_key=True)
     user_id: Mapped[int] = mapped_column(ForeignKey("users.id"), nullable=False)

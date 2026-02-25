@@ -2,7 +2,7 @@ from datetime import datetime
 from typing import Optional
 from decimal import Decimal
 
-from sqlalchemy import DateTime, ForeignKey, Integer, Numeric, String, Text, func
+from sqlalchemy import DateTime, ForeignKey, Index, Integer, Numeric, String, Text, func
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.models.base import Base
@@ -10,6 +10,9 @@ from app.models.base import Base
 
 class LearningCard(Base):
     __tablename__ = "learning_cards"
+    __table_args__ = (
+        Index("idx_learning_cards_diary_id", "diary_id"),
+    )
 
     id: Mapped[int] = mapped_column(primary_key=True)
     diary_id: Mapped[int] = mapped_column(ForeignKey("diaries.id", ondelete="CASCADE"), nullable=False)
@@ -30,6 +33,10 @@ class LearningCard(Base):
 
 class PronunciationResult(Base):
     __tablename__ = "pronunciation_results"
+    __table_args__ = (
+        Index("idx_pronunciation_results_card_id", "card_id"),
+        Index("idx_pronunciation_results_user_id", "user_id"),
+    )
 
     id: Mapped[int] = mapped_column(primary_key=True)
     card_id: Mapped[int] = mapped_column(ForeignKey("learning_cards.id", ondelete="CASCADE"), nullable=False)

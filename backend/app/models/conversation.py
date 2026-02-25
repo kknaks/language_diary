@@ -1,7 +1,7 @@
 from datetime import datetime
 from typing import Optional
 
-from sqlalchemy import DateTime, ForeignKey, Integer, String, Text, func
+from sqlalchemy import DateTime, ForeignKey, Index, Integer, String, Text, desc, func
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.models.base import Base
@@ -9,6 +9,9 @@ from app.models.base import Base
 
 class ConversationSession(Base):
     __tablename__ = "conversation_sessions"
+    __table_args__ = (
+        Index("idx_conversation_sessions_user", "user_id", desc("created_at")),
+    )
 
     id: Mapped[str] = mapped_column(String(50), primary_key=True)
     user_id: Mapped[int] = mapped_column(ForeignKey("users.id"), nullable=False)
@@ -28,6 +31,9 @@ class ConversationSession(Base):
 
 class ConversationMessage(Base):
     __tablename__ = "conversation_messages"
+    __table_args__ = (
+        Index("idx_conversation_messages_session", "session_id", "message_order"),
+    )
 
     id: Mapped[int] = mapped_column(primary_key=True)
     session_id: Mapped[str] = mapped_column(ForeignKey("conversation_sessions.id", ondelete="CASCADE"), nullable=False)
