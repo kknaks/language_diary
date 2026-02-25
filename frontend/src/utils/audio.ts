@@ -27,7 +27,11 @@ let currentPlayer: AudioPlayer | null = null;
 let finishCleanup: (() => void) | null = null;
 
 // Audio queue for sequential playback
-let audioQueue: string[] = [];
+interface QueueItem {
+  data: string;  // base64 audio data
+  ext: string;   // file extension: 'wav' | 'mp3'
+}
+let audioQueue: QueueItem[] = [];
 let isQueuePlaying = false;
 let onQueueEmpty: (() => void) | null = null;
 
@@ -155,8 +159,20 @@ export async function stopCurrentAudio(): Promise<void> {
  */
 export function enqueueAudio(pcmBase64: string): void {
   const wavBase64 = pcmToWav(pcmBase64);
-  console.log(`[Audio Queue] Enqueued chunk, queue size: ${audioQueue.length + 1}`);
-  audioQueue.push(wavBase64);
+  console.log(`[Audio Queue] Enqueued PCM→WAV chunk, queue size: ${audioQueue.length + 1}`);
+  audioQueue.push({ data: wavBase64, ext: 'wav' });
+  if (!isQueuePlaying) {
+    processQueue();
+  }
+}
+
+/**
+ * Enqueue a base64 MP3 audio chunk for sequential playback.
+ * No conversion needed — plays MP3 directly.
+ */
+export function enqueueMp3Audio(mp3Base64: string): void {
+  console.log(`[Audio Queue] Enqueued MP3 chunk, queue size: ${audioQueue.length + 1}`);
+  audioQueue.push({ data: mp3Base64, ext: 'mp3' });
   if (!isQueuePlaying) {
     processQueue();
   }
@@ -184,10 +200,10 @@ function processQueue(): void {
   if (isQueuePlaying || audioQueue.length === 0) return;
 
   isQueuePlaying = true;
-  const wavData = audioQueue.shift()!;
-  console.log(`[Audio Queue] Playing next, remaining: ${audioQueue.length}`);
+  const item = audioQueue.shift()!;
+  console.log(`[Audio Queue] Playing next (${item.ext}), remaining: ${audioQueue.length}`);
 
-  playAudioFromBase64(wavData, () => {
+  playAudioFromBase64(item.data, () => {
     isQueuePlaying = false;
     if (audioQueue.length > 0) {
       processQueue();
@@ -195,7 +211,7 @@ function processQueue(): void {
       console.log('[Audio Queue] Queue empty');
       onQueueEmpty?.();
     }
-  }, 'wav').catch((err) => {
+  }, item.ext).catch((err) => {
     console.error('[Audio Queue] Play error:', err);
     isQueuePlaying = false;
     if (audioQueue.length > 0) {

@@ -1,8 +1,9 @@
 import { create } from 'zustand';
-import { Message, Diary } from '../types';
-import { normalizeDiary, createConvAISession, finishConvAISession } from '../services/api';
-import { ElevenLabsConvAIClient } from '../services/elevenlabsConvAI';
-import { enqueueAudio, clearAudioQueue, setOnQueueEmpty, stopCurrentAudio } from '../utils/audio';
+import { Message, Diary, ServerMessage } from '../types';
+import { normalizeDiary, createConversationSession } from '../services/api';
+import { WebSocketClient } from '../services/websocket';
+import { enqueueMp3Audio, clearAudioQueue, setOnQueueEmpty, stopCurrentAudio } from '../utils/audio';
+import { toByteArray } from 'base64-js';
 
 export type VoiceState = 'idle' | 'listening' | 'ai_speaking';
 
@@ -16,11 +17,8 @@ interface ConversationState {
   volume: number;
   interimText: string;
 
-  // ElevenLabs client (not serialized)
-  elevenlabsClient: ElevenLabsConvAIClient | null;
-
-  // Accumulated messages for diary generation
-  accumulatedMessages: Array<{ role: string; content: string }>;
+  // WebSocket client (not serialized)
+  wsClient: WebSocketClient | null;
 
   // Diary creation
   isCreatingDiary: boolean;
@@ -32,14 +30,15 @@ interface ConversationState {
 
   // Actions
   startConversation: () => Promise<void>;
-  finishConversation: () => Promise<void>;
+  finishConversation: () => void;
+  sendAudioChunk: (base64: string) => void;
+  sendAudioStart: () => void;
+  sendAudioEnd: () => void;
+  sendBargeIn: () => void;
   setVoiceState: (state: VoiceState) => void;
   setVolume: (volume: number) => void;
   clearError: () => void;
   reset: () => void;
-
-  // Internal: send audio chunk to ElevenLabs
-  sendAudioChunk: (base64: string) => void;
 }
 
 function generateId(): string {
@@ -52,8 +51,7 @@ export const useConversationStore = create<ConversationState>((set, get) => ({
   voiceState: 'idle',
   volume: 0,
   interimText: '',
-  elevenlabsClient: null,
-  accumulatedMessages: [],
+  wsClient: null,
   isCreatingDiary: false,
   createdDiary: null,
   isLoading: false,
@@ -70,7 +68,6 @@ export const useConversationStore = create<ConversationState>((set, get) => ({
       isLoading: true,
       error: null,
       messages: [],
-      accumulatedMessages: [],
       createdDiary: null,
       isCreatingDiary: false,
       interimText: '',
@@ -78,122 +75,214 @@ export const useConversationStore = create<ConversationState>((set, get) => ({
     });
 
     try {
-      // 1. Get signed URL from our backend
-      const { session_id, signed_url } = await createConvAISession();
+      // 1. Create conversation session via REST API
+      const { session_id } = await createConversationSession();
       set({ sessionId: session_id });
 
-      // 2. Connect to ElevenLabs ConvAI
-      const client = new ElevenLabsConvAIClient();
+      // 2. Connect to backend WebSocket
+      const ws = new WebSocketClient();
 
-      client.connect(signed_url, {
-        onConnected: () => {
-          set({ isLoading: false, voiceState: 'listening' });
-          console.log('[ConvAI] Connected — mic always on');
-        },
+      // Track streaming AI message index for chunk assembly
+      let currentAiChunkIndex: number | null = null;
+      let currentAiMessageId: string | null = null;
+      let currentAiText = '';
 
-        onUserTranscript: (text) => {
-          // Final user transcript
-          const userMessage: Message = {
-            id: generateId(),
-            conversationId: get().sessionId ?? '',
-            role: 'user',
-            content: text,
-            createdAt: new Date().toISOString(),
-          };
-          set((s) => ({
-            messages: [...s.messages, userMessage],
-            accumulatedMessages: [...s.accumulatedMessages, { role: 'user', content: text }],
-            interimText: '',
-          }));
-        },
+      const unsubMessage = ws.onMessage((message: ServerMessage) => {
+        console.log('[WS] Received:', message.type);
 
-        onUserTranscriptInterim: (text) => {
-          set({ interimText: text });
-        },
-
-        onAgentResponse: (text) => {
-          // AI agent text
-          const aiMessage: Message = {
-            id: generateId(),
-            conversationId: get().sessionId ?? '',
-            role: 'assistant',
-            content: text,
-            createdAt: new Date().toISOString(),
-          };
-          set((s) => ({
-            messages: [...s.messages, aiMessage],
-            accumulatedMessages: [...s.accumulatedMessages, { role: 'assistant', content: text }],
-          }));
-        },
-
-        onAudio: (base64Audio) => {
-          // TTS audio chunk — enqueue for sequential playback
-          set({ voiceState: 'ai_speaking' });
-          setOnQueueEmpty(() => {
-            // When all audio finishes, go back to listening
-            set({ voiceState: 'listening' });
-          });
-          enqueueAudio(base64Audio);
-        },
-
-        onInterruption: () => {
-          // Barge-in: stop audio, back to listening
-          clearAudioQueue();
-          set({ voiceState: 'listening' });
-        },
-
-        onDisconnected: () => {
-          // Only set error if we didn't intentionally disconnect
-          const current = get();
-          if (!current.isCreatingDiary && !current.createdDiary && current.sessionId) {
-            set({ error: 'ElevenLabs 연결이 끊어졌습니다.' });
+        switch (message.type) {
+          case 'session_created': {
+            set({ sessionId: message.session_id, isLoading: false, voiceState: 'listening' });
+            console.log('[WS] Session created:', message.session_id);
+            break;
           }
-        },
 
-        onError: (error) => {
-          set({ error, isLoading: false });
-        },
+          case 'ai_message': {
+            // Greeting message from AI
+            const aiMsg: Message = {
+              id: generateId(),
+              conversationId: get().sessionId ?? '',
+              role: 'assistant',
+              content: message.text,
+              createdAt: new Date().toISOString(),
+            };
+            set((s) => ({
+              messages: [...s.messages, aiMsg],
+            }));
+            break;
+          }
+
+          case 'stt_interim': {
+            set({ interimText: message.text });
+            break;
+          }
+
+          case 'stt_final': {
+            const userMsg: Message = {
+              id: generateId(),
+              conversationId: get().sessionId ?? '',
+              role: 'user',
+              content: message.text,
+              createdAt: new Date().toISOString(),
+            };
+            set((s) => ({
+              messages: [...s.messages, userMsg],
+              interimText: '',
+            }));
+            break;
+          }
+
+          case 'ai_message_chunk': {
+            const { text, index, is_final } = message;
+
+            if (currentAiChunkIndex !== index) {
+              // New AI response — create a new message
+              currentAiChunkIndex = index;
+              currentAiText = text;
+              currentAiMessageId = generateId();
+
+              const aiMsg: Message = {
+                id: currentAiMessageId,
+                conversationId: get().sessionId ?? '',
+                role: 'assistant',
+                content: text,
+                createdAt: new Date().toISOString(),
+              };
+              set((s) => ({
+                messages: [...s.messages, aiMsg],
+              }));
+            } else {
+              // Append to existing message
+              currentAiText += text;
+              const msgId = currentAiMessageId;
+              set((s) => ({
+                messages: s.messages.map((m) =>
+                  m.id === msgId ? { ...m, content: currentAiText } : m,
+                ),
+              }));
+            }
+
+            if (is_final) {
+              currentAiChunkIndex = null;
+              currentAiMessageId = null;
+              currentAiText = '';
+            }
+            break;
+          }
+
+          case 'tts_audio': {
+            // MP3 base64 audio — enqueue for playback
+            set({ voiceState: 'ai_speaking' });
+            setOnQueueEmpty(() => {
+              // When all audio finishes, go back to listening
+              set({ voiceState: 'listening' });
+            });
+            enqueueMp3Audio(message.audio_data);
+            break;
+          }
+
+          case 'ai_done': {
+            // AI turn complete — if no audio is queued, go back to listening
+            // (audio queue onEmpty callback handles the transition when audio is playing)
+            break;
+          }
+
+          case 'diary_created': {
+            const diary = normalizeDiary(message.diary);
+            set({ isCreatingDiary: false, createdDiary: diary, voiceState: 'idle' });
+            // Clean up WS
+            ws.disconnect();
+            break;
+          }
+
+          case 'barge_in_ack': {
+            console.log('[WS] Barge-in acknowledged');
+            break;
+          }
+
+          case 'stt_empty': {
+            console.log('[WS] STT empty:', message.message);
+            break;
+          }
+
+          case 'error': {
+            console.error('[WS] Error:', message.code, message.message);
+            set({ error: message.message, isLoading: false });
+            break;
+          }
+
+          default: {
+            console.log('[WS] Unknown message type:', (message as { type: string }).type);
+            break;
+          }
+        }
       });
 
-      set({ elevenlabsClient: client });
+      const unsubStatus = ws.onStatus((status) => {
+        console.log('[WS] Status:', status);
+        if (status === 'disconnected') {
+          const current = get();
+          if (!current.isCreatingDiary && !current.createdDiary && current.sessionId) {
+            set({ error: '서버 연결이 끊어졌습니다.' });
+          }
+        }
+      });
+
+      // Store cleanup functions on the client for later
+      (ws as unknown as { _cleanupFns: Array<() => void> })._cleanupFns = [unsubMessage, unsubStatus];
+
+      ws.connect();
+      set({ wsClient: ws });
     } catch (err) {
       const message = err instanceof Error ? err.message : 'Failed to start conversation';
       set({ error: message, isLoading: false });
     }
   },
 
-  finishConversation: async () => {
-    const { elevenlabsClient, sessionId, accumulatedMessages } = get();
+  finishConversation: () => {
+    const { wsClient } = get();
+    if (!wsClient) return;
 
-    // Stop audio and disconnect ElevenLabs
+    // Send finish signal — backend will create diary and send diary_created
     clearAudioQueue();
-    elevenlabsClient?.disconnect();
-
-    set({ isCreatingDiary: true, voiceState: 'idle', elevenlabsClient: null });
-
-    if (!sessionId) {
-      set({ isCreatingDiary: false, error: 'No active session' });
-      return;
-    }
-
-    try {
-      // Send accumulated messages to backend for diary generation
-      const diary = await finishConvAISession(sessionId, accumulatedMessages);
-      set({ isCreatingDiary: false, createdDiary: diary });
-    } catch (err) {
-      const message = err instanceof Error ? err.message : 'Failed to create diary';
-      set({ isCreatingDiary: false, error: message });
-    }
+    wsClient.send({ type: 'finish' });
+    set({ isCreatingDiary: true, voiceState: 'idle' });
   },
 
   sendAudioChunk: (base64: string) => {
-    const { elevenlabsClient, voiceState } = get();
-    if (!elevenlabsClient) return;
-    const energy = elevenlabsClient.sendAudio(base64);
-    // Update volume from real mic energy (only when listening)
-    if (voiceState === 'listening') {
-      set({ volume: energy });
+    const { wsClient } = get();
+    if (!wsClient) return;
+
+    // Convert base64 PCM to binary ArrayBuffer and send
+    try {
+      const bytes = toByteArray(base64);
+      wsClient.sendBinary(bytes.buffer as ArrayBuffer);
+    } catch (err) {
+      console.warn('[WS] Failed to send audio chunk:', err);
     }
+  },
+
+  sendAudioStart: () => {
+    const { wsClient } = get();
+    if (!wsClient) return;
+    console.log('[WS] Sending audio_start');
+    wsClient.send({ type: 'audio_start' });
+  },
+
+  sendAudioEnd: () => {
+    const { wsClient } = get();
+    if (!wsClient) return;
+    console.log('[WS] Sending audio_end');
+    wsClient.send({ type: 'audio_end' });
+  },
+
+  sendBargeIn: () => {
+    const { wsClient } = get();
+    if (!wsClient) return;
+    console.log('[WS] Sending barge_in');
+    clearAudioQueue();
+    wsClient.send({ type: 'barge_in' });
+    set({ voiceState: 'listening' });
   },
 
   setVoiceState: (voiceState: VoiceState) => {
@@ -209,9 +298,14 @@ export const useConversationStore = create<ConversationState>((set, get) => ({
   },
 
   reset: () => {
-    const { elevenlabsClient } = get();
+    const { wsClient } = get();
     clearAudioQueue();
-    elevenlabsClient?.disconnect();
+    if (wsClient) {
+      // Clean up listeners
+      const cleanupFns = (wsClient as unknown as { _cleanupFns?: Array<() => void> })._cleanupFns;
+      cleanupFns?.forEach((fn) => fn());
+      wsClient.disconnect();
+    }
 
     set({
       sessionId: null,
@@ -219,8 +313,7 @@ export const useConversationStore = create<ConversationState>((set, get) => ({
       voiceState: 'idle',
       volume: 0,
       interimText: '',
-      elevenlabsClient: null,
-      accumulatedMessages: [],
+      wsClient: null,
       isCreatingDiary: false,
       createdDiary: null,
       isLoading: false,

@@ -134,7 +134,7 @@ export async function getConversationMessages(conversationId: string): Promise<M
   return rawMessages.map((m: unknown) => adaptMessage(m, conversationId));
 }
 
-// ===== ConvAI API =====
+// ===== ConvAI API (deprecated — kept for rollback) =====
 
 export async function createConvAISession(): Promise<{ session_id: string; signed_url: string }> {
   const res = await debugFetch(`${API_BASE_URL}/api/v1/convai/session`, {
@@ -155,6 +155,16 @@ export async function finishConvAISession(
   });
   const json = await handleResponse(res);
   return normalizeDiary(json);
+}
+
+// ===== Custom Pipeline Conversation API =====
+
+export async function createConversationSession(): Promise<{ session_id: string }> {
+  const res = await debugFetch(`${API_BASE_URL}/api/v1/conversations`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+  });
+  return await handleResponse(res) as { session_id: string };
 }
 
 // ===== Speech API =====

@@ -15,6 +15,7 @@ import {
 import { useConversationStore } from '../../src/stores/useConversationStore';
 import { useAvatarStore } from '../../src/stores/useAvatarStore';
 import { useRealtimeRecorder } from '../../src/hooks/useRealtimeRecorder';
+import type { VADCallbacks } from '../../src/hooks/useRealtimeRecorder';
 
 export default function WriteScreen() {
   const router = useRouter();
@@ -31,6 +32,9 @@ export default function WriteScreen() {
     startConversation,
     finishConversation,
     sendAudioChunk,
+    sendAudioStart,
+    sendAudioEnd,
+    sendBargeIn,
     setVolume,
     clearError,
     reset,
@@ -49,10 +53,55 @@ export default function WriteScreen() {
   stopStreamingRef.current = stopStreaming;
   const sendAudioChunkRef = useRef(sendAudioChunk);
   sendAudioChunkRef.current = sendAudioChunk;
+  const sendAudioStartRef = useRef(sendAudioStart);
+  sendAudioStartRef.current = sendAudioStart;
+  const sendAudioEndRef = useRef(sendAudioEnd);
+  sendAudioEndRef.current = sendAudioEnd;
+  const sendBargeInRef = useRef(sendBargeIn);
+  sendBargeInRef.current = sendBargeIn;
   const startStreamingRef = useRef(startStreaming);
   startStreamingRef.current = startStreaming;
   const forceRestartRef = useRef(forceRestart);
   forceRestartRef.current = forceRestart;
+
+  // Track whether we're currently sending audio (between audio_start and audio_end)
+  const isSendingAudioRef = useRef(false);
+  // Track voiceState in a ref for VAD callbacks
+  const voiceStateRef = useRef(voiceState);
+  voiceStateRef.current = voiceState;
+
+  // VAD callbacks — stable refs to avoid re-creating
+  const vadCallbacksRef = useRef<VADCallbacks>({
+    onSpeechStart: () => {
+      const currentVoiceState = voiceStateRef.current;
+      if (currentVoiceState === 'ai_speaking') {
+        // Barge-in: user starts talking while AI is speaking
+        console.log('[VAD] Barge-in detected');
+        sendBargeInRef.current();
+        // Then start a new audio segment
+        sendAudioStartRef.current();
+        isSendingAudioRef.current = true;
+      } else if (currentVoiceState === 'listening') {
+        // Normal: user starts talking
+        console.log('[VAD] Speech start');
+        sendAudioStartRef.current();
+        isSendingAudioRef.current = true;
+      }
+    },
+    onSpeechEnd: () => {
+      if (isSendingAudioRef.current) {
+        console.log('[VAD] Speech end');
+        sendAudioEndRef.current();
+        isSendingAudioRef.current = false;
+      }
+    },
+    onEnergy: (energy: number) => {
+      const currentVoiceState = voiceStateRef.current;
+      if (currentVoiceState === 'listening') {
+        useConversationStore.getState().setVolume(energy);
+      }
+    },
+  });
 
   // Auto-start mic streaming when connected
   const micStartedRef = useRef(false);
@@ -62,27 +111,32 @@ export default function WriteScreen() {
     prevVoiceStateRef.current = voiceState;
 
     if ((voiceState === 'listening' || voiceState === 'ai_speaking') && !micStartedRef.current) {
-      // First time: start mic
+      // First time: start mic with VAD
       micStartedRef.current = true;
-      console.log('[Write] Starting mic stream, voiceState:', voiceState);
-      startStreamingRef.current((base64) => {
-        sendAudioChunkRef.current(base64);
-      }).catch((err) => {
+      console.log('[Write] Starting mic stream with VAD, voiceState:', voiceState);
+      startStreamingRef.current(
+        (base64) => {
+          sendAudioChunkRef.current(base64);
+        },
+        vadCallbacksRef.current,
+      ).catch((err) => {
         console.error('[Mic] Failed to start streaming:', err);
         micStartedRef.current = false;
       });
     } else if (voiceState === 'listening' && prevState === 'ai_speaking') {
       // AI finished speaking → force restart mic (iOS likely killed it)
       console.log('[Write] AI done speaking, force restarting mic');
+      isSendingAudioRef.current = false; // Reset audio sending state
       forceRestartRef.current().catch((err) => {
         console.error('[Mic] Force restart failed:', err);
       });
     } else if (voiceState === 'idle') {
       micStartedRef.current = false;
+      isSendingAudioRef.current = false;
     }
   }, [voiceState]);
 
-  // Volume animation — only fake for ai_speaking, listening uses real mic energy from store
+  // Volume animation — only fake for ai_speaking, listening uses real mic energy from VAD
   useEffect(() => {
     if (voiceState === 'ai_speaking') {
       volumeIntervalRef.current = setInterval(() => {
@@ -91,7 +145,7 @@ export default function WriteScreen() {
     } else if (voiceState === 'idle') {
       setVolume(0);
     }
-    // listening: volume is set by sendAudioChunk in store (real energy)
+    // listening: volume is set by VAD onEnergy callback
     return () => {
       if (volumeIntervalRef.current) {
         clearInterval(volumeIntervalRef.current);
