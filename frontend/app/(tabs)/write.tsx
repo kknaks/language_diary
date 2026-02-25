@@ -66,6 +66,9 @@ export default function WriteScreen() {
 
   // Track whether we're currently sending audio (between audio_start and audio_end)
   const isSendingAudioRef = useRef(false);
+  // Cooldown after audio_end — prevent rapid re-triggers from noise
+  const lastAudioEndTimeRef = useRef(0);
+  const AUDIO_COOLDOWN_MS = 800; // minimum ms between audio_end and next audio_start
   // Track voiceState in a ref for VAD callbacks
   const voiceStateRef = useRef(voiceState);
   voiceStateRef.current = voiceState;
@@ -74,15 +77,21 @@ export default function WriteScreen() {
   const vadCallbacksRef = useRef<VADCallbacks>({
     onSpeechStart: () => {
       const currentVoiceState = voiceStateRef.current;
+      const now = Date.now();
+      const sinceLast = now - lastAudioEndTimeRef.current;
+
       if (currentVoiceState === 'ai_speaking') {
         // Barge-in: user starts talking while AI is speaking
         console.log('[VAD] Barge-in detected');
         sendBargeInRef.current();
-        // Then start a new audio segment
         sendAudioStartRef.current();
         isSendingAudioRef.current = true;
-      } else if (currentVoiceState === 'listening') {
-        // Normal: user starts talking
+      } else if (currentVoiceState === 'listening' && !isSendingAudioRef.current) {
+        // Cooldown guard: prevent immediate re-trigger after audio_end
+        if (sinceLast < AUDIO_COOLDOWN_MS) {
+          console.log(`[VAD] Speech start suppressed (cooldown ${sinceLast}ms < ${AUDIO_COOLDOWN_MS}ms)`);
+          return;
+        }
         console.log('[VAD] Speech start');
         sendAudioStartRef.current();
         isSendingAudioRef.current = true;
@@ -93,6 +102,7 @@ export default function WriteScreen() {
         console.log('[VAD] Speech end');
         sendAudioEndRef.current();
         isSendingAudioRef.current = false;
+        lastAudioEndTimeRef.current = Date.now();
       }
     },
     onEnergy: (energy: number) => {

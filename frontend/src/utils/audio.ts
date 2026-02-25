@@ -186,6 +186,20 @@ export function setOnQueueEmpty(callback: (() => void) | null): void {
 }
 
 /**
+ * Register a callback that fires when the queue fully drains.
+ * If the queue is already idle, fires immediately.
+ * Use this instead of setOnQueueEmpty to avoid premature transitions
+ * when chunks arrive with gaps between them.
+ */
+export function onQueueDrain(callback: () => void): void {
+  if (!isQueuePlaying && audioQueue.length === 0) {
+    callback();
+  } else {
+    onQueueEmpty = callback;
+  }
+}
+
+/**
  * Clear the audio queue and stop current playback.
  */
 export function clearAudioQueue(): void {

@@ -2,7 +2,7 @@ import { create } from 'zustand';
 import { Message, Diary, ServerMessage } from '../types';
 import { normalizeDiary, createConversationSession } from '../services/api';
 import { WebSocketClient } from '../services/websocket';
-import { enqueueMp3Audio, clearAudioQueue, setOnQueueEmpty, stopCurrentAudio } from '../utils/audio';
+import { enqueueMp3Audio, clearAudioQueue, onQueueDrain, stopCurrentAudio } from '../utils/audio';
 import { toByteArray } from 'base64-js';
 
 export type VoiceState = 'idle' | 'listening' | 'ai_speaking';
@@ -171,19 +171,21 @@ export const useConversationStore = create<ConversationState>((set, get) => ({
           }
 
           case 'tts_audio': {
-            // MP3 base64 audio — enqueue for playback
+            // MP3 base64 audio — enqueue for sequential playback
+            // Do NOT set onQueueEmpty here — chunks may arrive with gaps,
+            // causing premature 'listening' transition. Wait for ai_done instead.
             set({ voiceState: 'ai_speaking' });
-            setOnQueueEmpty(() => {
-              // When all audio finishes, go back to listening
-              set({ voiceState: 'listening' });
-            });
             enqueueMp3Audio(message.audio_data);
             break;
           }
 
           case 'ai_done': {
-            // AI turn complete — if no audio is queued, go back to listening
-            // (audio queue onEmpty callback handles the transition when audio is playing)
+            // AI turn fully complete — transition back to listening
+            // after all queued audio finishes playing.
+            // If queue is already empty (no TTS), transition immediately.
+            onQueueDrain(() => {
+              set({ voiceState: 'listening' });
+            });
             break;
           }
 
