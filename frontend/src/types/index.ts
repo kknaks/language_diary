@@ -1,3 +1,12 @@
+// ===== 아바타 =====
+export interface Avatar {
+  id: string;
+  name: string;
+  thumbnailUrl: string;
+  modelUrl: string;        // 나중에 Live2D .moc3 URL
+  primaryColor: string;    // placeholder 렌더링 색상
+}
+
 // ===== 사용자 =====
 export interface User {
   id: string;

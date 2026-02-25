@@ -11,10 +11,10 @@ import { useRouter } from 'expo-router';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { useDiaryStore } from '../../src/stores/useDiaryStore';
-import { Loading, ErrorState, EmptyState } from '../../src/components/common';
+import { Loading, ErrorState, EmptyState, ScreenHeader } from '../../src/components/common';
 import { DateHeader, DiaryListItem } from '../../src/components/history';
 import { Diary } from '../../src/types';
-import { colors, fontSize, spacing } from '../../src/constants/theme';
+import { colors, spacing } from '../../src/constants/theme';
 
 interface DiarySection {
   title: string;
@@ -110,12 +110,10 @@ export default function HistoryScreen() {
   return (
     <SafeAreaView style={styles.container} edges={['top']}>
       {/* Header */}
-      <View style={styles.header}>
-        <Text style={styles.headerTitle}>히스토리</Text>
-        <Text style={styles.headerSubtitle}>
-          {diaries.length > 0 ? `총 ${diaries.length}개의 일기` : ''}
-        </Text>
-      </View>
+      <ScreenHeader
+        title="히스토리"
+        subtitle={diaries.length > 0 ? `총 ${diaries.length}개의 일기` : undefined}
+      />
 
       {diaries.length === 0 ? (
         <EmptyState
@@ -166,21 +164,6 @@ const styles = StyleSheet.create({
   container: {
     flex: 1,
     backgroundColor: colors.background,
-  },
-  header: {
-    paddingHorizontal: spacing.lg,
-    paddingTop: spacing.md,
-    paddingBottom: spacing.sm,
-  },
-  headerTitle: {
-    fontSize: fontSize.xxl,
-    fontWeight: '700',
-    color: colors.text,
-  },
-  headerSubtitle: {
-    fontSize: fontSize.sm,
-    color: colors.textSecondary,
-    marginTop: 2,
   },
   listContent: {
     paddingBottom: spacing.xxl,

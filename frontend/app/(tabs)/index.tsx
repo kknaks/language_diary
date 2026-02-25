@@ -1,19 +1,26 @@
 import React, { useEffect, useCallback } from 'react';
 import { View, Text, StyleSheet, FlatList, RefreshControl } from 'react-native';
+import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { useRouter } from 'expo-router';
 import { useDiaryStore } from '../../src/stores/useDiaryStore';
-import { Button, Loading, ErrorState, EmptyState } from '../../src/components/common';
+import { useAvatarStore } from '../../src/stores/useAvatarStore';
+import { Button, Loading, ErrorState, EmptyState, ScreenHeader } from '../../src/components/common';
 import DiaryCard from '../../src/components/diary/DiaryCard';
-import { colors, fontSize, spacing, shadows, borderRadius } from '../../src/constants/theme';
+import { Live2DAvatar } from '../../src/components/conversation';
+import { colors, fontSize, spacing, borderRadius } from '../../src/constants/theme';
 
 export default function HomeScreen() {
   const router = useRouter();
   const { diaries, isLoading, error, fetchDiaries } = useDiaryStore();
+  const { avatars, selectedAvatarId, fetchAvatars } = useAvatarStore();
   const [refreshing, setRefreshing] = React.useState(false);
+
+  const selectedAvatar = avatars.find((a) => a.id === selectedAvatarId);
 
   useEffect(() => {
     fetchDiaries();
+    fetchAvatars();
   }, []);
 
   const onRefresh = useCallback(async () => {
@@ -30,31 +37,24 @@ export default function HomeScreen() {
   if (error && diaries.length === 0) return <ErrorState message={error} onRetry={fetchDiaries} />;
 
   return (
-    <View style={styles.container}>
+    <SafeAreaView style={styles.container} edges={['top']}>
       {/* Header */}
-      <View style={styles.header} role="heading">
-        <View>
-          <Text style={styles.greeting}>안녕하세요</Text>
-          <Text style={styles.headerSubtitle}>오늘도 영어 일기를 써볼까요?</Text>
+      <ScreenHeader title="안녕하세요" subtitle="오늘도 영어 일기를 써볼까요?" />
+
+      {/* Avatar + CTA */}
+      <View style={styles.avatarContainer}>
+        <View style={styles.avatarPreview}>
+          <Live2DAvatar voiceState="idle" volume={0} color={selectedAvatar?.primaryColor} />
         </View>
       </View>
-
-      {/* CTA Button */}
       <View style={styles.ctaContainer}>
-        <View style={styles.ctaCard}>
-          <View style={styles.ctaContent}>
-            <Ionicons name="chatbubbles" size={32} color={colors.primary} />
-            <View style={styles.ctaText}>
-              <Text style={styles.ctaTitle}>AI와 대화하기</Text>
-              <Text style={styles.ctaDescription}>오늘 있었던 일을 이야기해보세요</Text>
-            </View>
-          </View>
-          <Button
-            title="시작하기"
-            onPress={handleWrite}
-            icon={<Ionicons name="arrow-forward" size={18} color="#fff" />}
-          />
-        </View>
+        <Button
+          title="대화 시작하기"
+          onPress={handleWrite}
+          size="lg"
+          icon={<Ionicons name="mic" size={20} color="#fff" />}
+          style={styles.ctaButton}
+        />
       </View>
 
       {/* Recent Diaries */}
@@ -88,38 +88,29 @@ export default function HomeScreen() {
           showsVerticalScrollIndicator={false}
         />
       )}
-    </View>
+    </SafeAreaView>
   );
 }
 
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: colors.background },
-  header: {
+  avatarContainer: {
+    alignItems: 'center',
     paddingHorizontal: spacing.lg,
-    paddingTop: spacing.lg,
-    paddingBottom: spacing.md,
   },
-  greeting: { fontSize: fontSize.xxl, fontWeight: '700', color: colors.text },
-  headerSubtitle: {
-    fontSize: fontSize.sm,
-    color: colors.textSecondary,
-    marginTop: 4,
-  },
-  ctaContainer: { paddingHorizontal: spacing.lg, marginBottom: spacing.md },
-  ctaCard: {
-    backgroundColor: colors.surface,
+  avatarPreview: {
+    width: 200,
+    height: 200,
     borderRadius: borderRadius.lg,
-    padding: spacing.lg,
-    gap: spacing.md,
-    ...shadows.lg,
+    overflow: 'hidden',
   },
-  ctaContent: { flexDirection: 'row', alignItems: 'center', gap: spacing.md },
-  ctaText: { flex: 1 },
-  ctaTitle: { fontSize: fontSize.lg, fontWeight: '700', color: colors.text },
-  ctaDescription: {
-    fontSize: fontSize.sm,
-    color: colors.textSecondary,
-    marginTop: 2,
+  ctaContainer: {
+    paddingHorizontal: spacing.lg,
+    marginBottom: spacing.md,
+    alignItems: 'center',
+  },
+  ctaButton: {
+    minWidth: 200,
   },
   sectionHeader: {
     flexDirection: 'row',

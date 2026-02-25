@@ -7,3 +7,4 @@ export { default as DiaryCreatingOverlay } from './DiaryCreatingOverlay';
 export { default as VoiceOrb } from './VoiceOrb';
 export { default as VoiceStatus } from './VoiceStatus';
 export { default as MicButton } from './MicButton';
+export { default as Live2DAvatar } from './Live2DAvatar';

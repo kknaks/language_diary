@@ -5,13 +5,15 @@ import { Ionicons } from '@expo/vector-icons';
 import { useRouter } from 'expo-router';
 
 import { colors, fontSize, spacing } from '../../src/constants/theme';
-import { Button } from '../../src/components/common';
+import { Button, ScreenHeader } from '../../src/components/common';
 import {
   DiaryCreatingOverlay,
+  Live2DAvatar,
   VoiceOrb,
   VoiceStatus,
 } from '../../src/components/conversation';
 import { useConversationStore } from '../../src/stores/useConversationStore';
+import { useAvatarStore } from '../../src/stores/useAvatarStore';
 import { useRealtimeRecorder } from '../../src/hooks/useRealtimeRecorder';
 
 export default function WriteScreen() {
@@ -33,6 +35,9 @@ export default function WriteScreen() {
     clearError,
     reset,
   } = useConversationStore();
+
+  const { avatars, selectedAvatarId } = useAvatarStore();
+  const selectedAvatar = avatars.find((a) => a.id === selectedAvatarId);
 
   const isActive = !!sessionId && !createdDiary;
   const volumeIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
@@ -116,6 +121,7 @@ export default function WriteScreen() {
   if (!sessionId && !isLoading) {
     return (
       <SafeAreaView style={styles.container} edges={['top']}>
+        <ScreenHeader title="일기 쓰기" />
         <View style={styles.idleContainer}>
           <Ionicons name="mic-outline" size={72} color={colors.primaryLight} />
           <Text style={styles.idleTitle}>AI와 대화하기</Text>
@@ -139,6 +145,7 @@ export default function WriteScreen() {
   if (isLoading && !sessionId) {
     return (
       <SafeAreaView style={styles.container} edges={['top']}>
+        <ScreenHeader title="일기 쓰기" />
         <View style={styles.idleContainer}>
           <Text style={styles.idleSubtitle}>대화를 준비하고 있어요...</Text>
         </View>
@@ -150,6 +157,7 @@ export default function WriteScreen() {
   if (createdDiary) {
     return (
       <SafeAreaView style={styles.container} edges={['top']}>
+        <ScreenHeader title="일기 쓰기" />
         <View style={styles.idleContainer}>
           <Ionicons name="checkmark-circle" size={72} color={colors.success} />
           <Text style={styles.idleTitle}>일기가 완성되었어요!</Text>
@@ -193,15 +201,18 @@ export default function WriteScreen() {
         </TouchableOpacity>
       )}
 
-      {/* Header */}
-      <View style={styles.header}>
-        <Text style={styles.headerTitle}>AI 대화</Text>
-        <Text style={styles.headerStatus}>
-          {voiceState === 'listening' ? '듣는 중...' : voiceState === 'ai_speaking' ? 'AI 응답 중...' : ''}
-        </Text>
+      {/* Header with mini VoiceOrb */}
+      <ScreenHeader
+        title="일기 쓰기"
+        right={<VoiceOrb volume={volume} state={voiceState} size="mini" />}
+      />
+
+      {/* Live2D Avatar area */}
+      <View style={styles.avatarArea}>
+        <Live2DAvatar voiceState={voiceState} volume={volume} color={selectedAvatar?.primaryColor} />
       </View>
 
-      {/* Message bubbles */}
+      {/* Message bubbles (dev) */}
       <ScrollView style={styles.messageArea} contentContainerStyle={styles.messageContent}>
         {messages.map((msg) => (
           <View
@@ -222,10 +233,9 @@ export default function WriteScreen() {
         ) : null}
       </ScrollView>
 
-      {/* Voice Orb area */}
-      <View style={styles.orbArea}>
-        <VoiceOrb volume={volume} state={voiceState} />
-        <VoiceStatus state={voiceState} interimText="" />
+      {/* Voice status */}
+      <View style={styles.statusArea}>
+        <VoiceStatus state={voiceState} interimText={interimText || ''} />
       </View>
 
       {/* Bottom controls */}
@@ -305,34 +315,18 @@ const styles = StyleSheet.create({
     paddingHorizontal: spacing.md,
     marginTop: spacing.sm,
   },
-  // Header
-  header: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    paddingHorizontal: spacing.md,
-    paddingVertical: spacing.sm,
-    borderBottomWidth: 1,
-    borderBottomColor: colors.border,
-    backgroundColor: colors.surface,
-  },
-  headerTitle: {
-    fontSize: fontSize.lg,
-    fontWeight: '700',
-    color: colors.text,
-  },
-  headerStatus: {
-    fontSize: fontSize.sm,
-    color: colors.textSecondary,
-  },
-  // Messages
-  messageArea: {
+  // Live2D Avatar
+  avatarArea: {
     flex: 1,
+  },
+  // Messages (dev)
+  messageArea: {
+    maxHeight: 160,
     paddingHorizontal: spacing.md,
   },
   messageContent: {
-    paddingVertical: spacing.md,
-    gap: spacing.sm,
+    paddingVertical: spacing.sm,
+    gap: spacing.xs,
   },
   bubble: {
     maxWidth: '80%',
@@ -366,12 +360,10 @@ const styles = StyleSheet.create({
   interimText: {
     fontStyle: 'italic',
   },
-  // Voice Orb
-  orbArea: {
+  // Voice status
+  statusArea: {
     alignItems: 'center',
-    justifyContent: 'center',
-    paddingVertical: spacing.md,
-    gap: spacing.sm,
+    paddingVertical: spacing.sm,
   },
   // Bottom controls
   controls: {

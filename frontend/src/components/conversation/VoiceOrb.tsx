@@ -1,11 +1,14 @@
 import React, { useEffect, useMemo, useRef } from 'react';
-import { View, Animated, StyleSheet } from 'react-native';
+import { View, Animated } from 'react-native';
 import { colors } from '../../constants/theme';
 import type { VoiceState } from '../../stores/useConversationStore';
+
+type OrbSize = 'normal' | 'mini';
 
 interface VoiceOrbProps {
   volume: number; // 0~1
   state: VoiceState;
+  size?: OrbSize;
 }
 
 const STATE_COLORS: Record<VoiceState, string> = {
@@ -14,9 +17,13 @@ const STATE_COLORS: Record<VoiceState, string> = {
   ai_speaking: '#8B5CF6',
 };
 
-const ORB_SIZE = 120;
+const ORB_SIZES: Record<OrbSize, number> = {
+  normal: 120,
+  mini: 40,
+};
 
-export default function VoiceOrb({ volume, state }: VoiceOrbProps) {
+export default function VoiceOrb({ volume, state, size = 'normal' }: VoiceOrbProps) {
+  const ORB_SIZE = ORB_SIZES[size];
   const scaleAnim = useRef(new Animated.Value(1)).current;
   const pulseAnim = useRef(new Animated.Value(1)).current;
   const glowOpacity = useRef(new Animated.Value(0.15)).current;
@@ -89,74 +96,52 @@ export default function VoiceOrb({ volume, state }: VoiceOrbProps) {
   const glowScaleActive = useMemo(() => Animated.multiply(scaleAnim, 1.4), [scaleAnim]);
   const glowScale = state === 'idle' ? glowScaleIdle : glowScaleActive;
 
+  const containerSize = size === 'mini' ? ORB_SIZE * 2 : ORB_SIZE * 2.8;
+
   return (
-    <View style={styles.container}>
+    <View style={{ width: containerSize, height: containerSize, alignItems: 'center', justifyContent: 'center' }}>
       {/* Outer glow */}
       <Animated.View
-        style={[
-          styles.outerGlow,
-          {
-            backgroundColor: orbColor,
-            opacity: glowOpacity,
-            transform: [{ scale: glowScale }],
-          },
-        ]}
+        style={{
+          position: 'absolute',
+          width: ORB_SIZE,
+          height: ORB_SIZE,
+          borderRadius: ORB_SIZE / 2,
+          backgroundColor: orbColor,
+          opacity: glowOpacity,
+          transform: [{ scale: glowScale }],
+        }}
       />
       {/* Inner glow */}
       <Animated.View
-        style={[
-          styles.innerGlow,
-          {
-            backgroundColor: orbColor,
-            opacity: Animated.multiply(glowOpacity, 1.5),
-            transform: [{ scale: state === 'idle'
-              ? Animated.multiply(pulseAnim, 1.15)
-              : Animated.multiply(scaleAnim, 1.15)
-            }],
-          },
-        ]}
+        style={{
+          position: 'absolute',
+          width: ORB_SIZE,
+          height: ORB_SIZE,
+          borderRadius: ORB_SIZE / 2,
+          backgroundColor: orbColor,
+          opacity: Animated.multiply(glowOpacity, 1.5),
+          transform: [{ scale: state === 'idle'
+            ? Animated.multiply(pulseAnim, 1.15)
+            : Animated.multiply(scaleAnim, 1.15)
+          }],
+        }}
       />
       {/* Main orb */}
       <Animated.View
-        style={[
-          styles.orb,
-          {
-            backgroundColor: orbColor,
-            transform: [{ scale: combinedScale }],
-          },
-        ]}
+        style={{
+          width: ORB_SIZE,
+          height: ORB_SIZE,
+          borderRadius: ORB_SIZE / 2,
+          backgroundColor: orbColor,
+          transform: [{ scale: combinedScale }],
+          shadowColor: '#000',
+          shadowOffset: { width: 0, height: size === 'mini' ? 2 : 4 },
+          shadowOpacity: 0.25,
+          shadowRadius: size === 'mini' ? 6 : 16,
+          elevation: size === 'mini' ? 4 : 10,
+        }}
       />
     </View>
   );
 }
-
-const styles = StyleSheet.create({
-  container: {
-    width: ORB_SIZE * 2.8,
-    height: ORB_SIZE * 2.8,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  outerGlow: {
-    position: 'absolute',
-    width: ORB_SIZE,
-    height: ORB_SIZE,
-    borderRadius: ORB_SIZE / 2,
-  },
-  innerGlow: {
-    position: 'absolute',
-    width: ORB_SIZE,
-    height: ORB_SIZE,
-    borderRadius: ORB_SIZE / 2,
-  },
-  orb: {
-    width: ORB_SIZE,
-    height: ORB_SIZE,
-    borderRadius: ORB_SIZE / 2,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.25,
-    shadowRadius: 16,
-    elevation: 10,
-  },
-});

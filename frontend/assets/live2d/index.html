@@ -1,0 +1,168 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no" />
+<title>Live2D Placeholder</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  html, body { width: 100%; height: 100%; overflow: hidden; background: transparent; }
+  canvas { display: block; width: 100%; height: 100%; }
+</style>
+</head>
+<body>
+<canvas id="c"></canvas>
+<script>
+(function () {
+  const canvas = document.getElementById('c');
+  const ctx = canvas.getContext('2d');
+
+  let voiceState = 'idle';   // idle | listening | ai_speaking
+  let volume = 0;            // 0~1
+  let frame = 0;
+
+  const STATE_COLORS = {
+    idle: '#9CA3AF',
+    listening: '#6C63FF',
+    ai_speaking: '#8B5CF6',
+  };
+
+  function applyColor(hex) {
+    STATE_COLORS.idle = hex;
+    // listening/ai_speaking: brighten/darken variant
+    STATE_COLORS.listening = hex;
+    STATE_COLORS.ai_speaking = hex + 'DD';
+  }
+
+  function handleMsg(e) {
+    try {
+      const msg = JSON.parse(e.data);
+      if (msg.type === 'voiceState') voiceState = msg.data;
+      if (msg.type === 'volume') volume = msg.data;
+      if (msg.type === 'color') applyColor(msg.data);
+    } catch (_) {}
+  }
+
+  // Listen for messages from React Native
+  window.addEventListener('message', handleMsg);
+  // Also handle document-level message for Android WebView
+  document.addEventListener('message', handleMsg);
+
+  function resize() {
+    const dpr = window.devicePixelRatio || 1;
+    canvas.width = canvas.clientWidth * dpr;
+    canvas.height = canvas.clientHeight * dpr;
+    ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+  }
+  window.addEventListener('resize', resize);
+  resize();
+
+  function draw() {
+    frame++;
+    const w = canvas.clientWidth;
+    const h = canvas.clientHeight;
+    ctx.clearRect(0, 0, w, h);
+
+    const cx = w / 2;
+    const cy = h * 0.42;
+    const baseRadius = Math.min(w, h) * 0.18;
+    const color = STATE_COLORS[voiceState] || STATE_COLORS.idle;
+
+    // Breathing / volume scale
+    let scale = 1;
+    if (voiceState === 'idle') {
+      scale = 1 + 0.03 * Math.sin(frame * 0.03);
+    } else {
+      scale = 1 + volume * 0.25;
+    }
+
+    const r = baseRadius * scale;
+
+    // Outer glow
+    const grad = ctx.createRadialGradient(cx, cy, r * 0.5, cx, cy, r * 1.8);
+    grad.addColorStop(0, color + '30');
+    grad.addColorStop(1, color + '00');
+    ctx.beginPath();
+    ctx.arc(cx, cy, r * 1.8, 0, Math.PI * 2);
+    ctx.fillStyle = grad;
+    ctx.fill();
+
+    // Main circle (head)
+    ctx.beginPath();
+    ctx.arc(cx, cy, r, 0, Math.PI * 2);
+    ctx.fillStyle = color;
+    ctx.fill();
+
+    // Eyes
+    const eyeY = cy - r * 0.1;
+    const eyeSpacing = r * 0.35;
+    const eyeR = r * 0.1;
+    const blinkPhase = Math.sin(frame * 0.05);
+    const eyeScaleY = blinkPhase > 0.95 ? 0.1 : 1; // blink
+
+    ctx.fillStyle = '#fff';
+    ctx.save();
+    ctx.translate(cx - eyeSpacing, eyeY);
+    ctx.scale(1, eyeScaleY);
+    ctx.beginPath();
+    ctx.arc(0, 0, eyeR, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.restore();
+
+    ctx.save();
+    ctx.translate(cx + eyeSpacing, eyeY);
+    ctx.scale(1, eyeScaleY);
+    ctx.beginPath();
+    ctx.arc(0, 0, eyeR, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.restore();
+
+    // Mouth — reacts to state
+    const mouthY = cy + r * 0.3;
+    ctx.strokeStyle = '#fff';
+    ctx.lineWidth = 2;
+    ctx.lineCap = 'round';
+    if (voiceState === 'ai_speaking') {
+      // Open mouth (animated)
+      const openness = 4 + volume * 10;
+      ctx.beginPath();
+      ctx.ellipse(cx, mouthY, r * 0.2, openness, 0, 0, Math.PI * 2);
+      ctx.fillStyle = '#ffffff80';
+      ctx.fill();
+    } else if (voiceState === 'listening') {
+      // Small open mouth
+      const openness = 2 + volume * 6;
+      ctx.beginPath();
+      ctx.ellipse(cx, mouthY, r * 0.12, openness, 0, 0, Math.PI * 2);
+      ctx.fillStyle = '#ffffff60';
+      ctx.fill();
+    } else {
+      // Smile
+      ctx.beginPath();
+      ctx.arc(cx, mouthY - 4, r * 0.18, 0.1 * Math.PI, 0.9 * Math.PI);
+      ctx.stroke();
+    }
+
+    // Body (simple rounded shape below head)
+    const bodyTop = cy + r * 0.85;
+    const bodyW = r * 1.2;
+    const bodyH = r * 1.0;
+    ctx.beginPath();
+    ctx.ellipse(cx, bodyTop + bodyH * 0.5, bodyW, bodyH, 0, 0, Math.PI * 2);
+    ctx.fillStyle = color + 'CC';
+    ctx.fill();
+
+    // State label (debug)
+    ctx.fillStyle = '#9CA3AF';
+    ctx.font = '12px system-ui, sans-serif';
+    ctx.textAlign = 'center';
+    ctx.fillText(voiceState, cx, h - 16);
+
+    requestAnimationFrame(draw);
+  }
+
+  requestAnimationFrame(draw);
+})();
+</script>
+</body>
+</html>
