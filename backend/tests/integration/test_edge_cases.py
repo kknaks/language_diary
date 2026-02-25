@@ -66,7 +66,8 @@ async def test_max_turns_auto_finish(client, seed_user):
                         # Consume init messages
                         ws.receive_json()  # session_created
                         ws.receive_json()  # ai_message (greeting)
-                        ws.receive_json()  # tts_audio (greeting)
+                        ws.receive_json()  # tts_audio
+                        ws.receive_json()  # ai_done (greeting) (greeting)
 
                         # Send 8 messages — get AI streaming replies
                         for i in range(8):
@@ -175,6 +176,7 @@ async def test_websocket_very_long_message(client, seed_user):
                         ws.receive_json()  # session_created
                         ws.receive_json()  # ai_message
                         ws.receive_json()  # tts_audio
+                        ws.receive_json()  # ai_done (greeting)
 
                         long_text = "나" * 5000
                         ws.send_json({"type": "message", "text": long_text})
@@ -243,6 +245,7 @@ async def test_websocket_binary_without_audio_session(client, seed_user):
                         ws.receive_json()  # session_created
                         ws.receive_json()  # ai_message
                         ws.receive_json()  # tts_audio
+                        ws.receive_json()  # ai_done (greeting)
 
                         # Binary without audio session → silently ignored
                         ws.send_bytes(b"\x00\x01\x02\x03")

@@ -385,6 +385,8 @@ async def conversation_websocket(websocket: WebSocket):
             except Exception as e:
                 logger.warning("Greeting TTS WS failed, falling back to REST: %s", e)
                 await _send_tts_rest(websocket, db, greeting, index=0)
+            # Signal greeting turn done so frontend transitions to listening
+            await websocket.send_json({"type": "ai_done"})
 
             # --- Message loop ---
             while True:

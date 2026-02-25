@@ -139,6 +139,7 @@ async def test_full_conversation_to_learning_flow(client, seed_user, tmp_path):
                         assert data["text"] == "오늘 하루 어땠어?"
 
                         ws.receive_json()  # tts_audio for greeting
+                        ws.receive_json()  # ai_done (greeting)
 
                         # ── Step 2: Send messages ──
                         ws.send_json({"type": "message", "text": "회사에서 회의했어"})
@@ -284,6 +285,7 @@ async def test_conversation_with_audio_stt_then_finish(client, seed_user, tmp_pa
                             session_data["session_id"]
                             ws.receive_json()  # ai_message
                             ws.receive_json()  # tts_audio
+                            ws.receive_json()  # ai_done (greeting)
 
                             # Audio streaming flow
                             ws.send_json({"type": "audio_start"})
@@ -338,6 +340,7 @@ async def test_diary_edit_after_creation(client, seed_user):
                         ws.receive_json()  # session_created
                         ws.receive_json()  # ai_message
                         ws.receive_json()  # tts_audio
+                        ws.receive_json()  # ai_done (greeting)
 
                         ws.send_json({"type": "finish"})
                         data = ws.receive_json()
@@ -381,6 +384,7 @@ async def test_diary_complete_and_delete_flow(client, seed_user):
                         ws.receive_json()  # session_created
                         ws.receive_json()  # ai_message
                         ws.receive_json()  # tts_audio
+                        ws.receive_json()  # ai_done (greeting)
 
                         ws.send_json({"type": "finish"})
                         data = ws.receive_json()

@@ -71,6 +71,9 @@ async def test_websocket_session_created_on_connect(client, seed_user):
                         assert "audio_data" in data
                         assert data["format"] == "mp3"
                         assert data["index"] == 0
+                        # 4. ai_done (greeting turn complete)
+                        data = ws.receive_json()
+                        assert data["type"] == "ai_done"
 
 
 @pytest.mark.asyncio
@@ -91,6 +94,7 @@ async def test_websocket_send_message_streaming(client, seed_user):
                         ws.receive_json()  # session_created
                         ws.receive_json()  # ai_message
                         ws.receive_json()  # tts_audio
+                        ws.receive_json()  # ai_done (greeting)
 
                         # Send user message
                         ws.send_json({"type": "message", "text": "오늘 회사에서 회의했어"})
@@ -160,6 +164,7 @@ async def test_websocket_finish_conversation(client, seed_user):
                         ws.receive_json()  # session_created
                         ws.receive_json()  # ai_message
                         ws.receive_json()  # tts_audio
+                        ws.receive_json()  # ai_done (greeting)
 
                         ws.send_json({"type": "finish"})
                         data = ws.receive_json()
@@ -187,6 +192,7 @@ async def test_websocket_invalid_json(client, seed_user):
                         ws.receive_json()  # session_created
                         ws.receive_json()  # ai_message
                         ws.receive_json()  # tts_audio
+                        ws.receive_json()  # ai_done (greeting)
 
                         ws.send_text("not json")
                         data = ws.receive_json()
@@ -210,6 +216,7 @@ async def test_websocket_empty_message(client, seed_user):
                         ws.receive_json()  # session_created
                         ws.receive_json()  # ai_message
                         ws.receive_json()  # tts_audio
+                        ws.receive_json()  # ai_done (greeting)
 
                         ws.send_json({"type": "message", "text": ""})
                         data = ws.receive_json()
@@ -233,6 +240,7 @@ async def test_websocket_unknown_type(client, seed_user):
                         ws.receive_json()  # session_created
                         ws.receive_json()  # ai_message
                         ws.receive_json()  # tts_audio
+                        ws.receive_json()  # ai_done (greeting)
 
                         ws.send_json({"type": "unknown_type"})
                         data = ws.receive_json()
@@ -276,6 +284,7 @@ async def test_websocket_audio_full_flow(client, seed_user):
                             ws.receive_json()  # session_created
                             ws.receive_json()  # ai_message
                             ws.receive_json()  # tts_audio
+                            ws.receive_json()  # ai_done (greeting)
 
                             # Start audio streaming
                             ws.send_json({"type": "audio_start"})
@@ -344,6 +353,7 @@ async def test_websocket_audio_stt_connect_error(client, seed_user):
                             ws.receive_json()  # session_created
                             ws.receive_json()  # ai_message
                             ws.receive_json()  # tts_audio
+                            ws.receive_json()  # ai_done (greeting)
 
                             ws.send_json({"type": "audio_start"})
 
@@ -381,6 +391,7 @@ async def test_websocket_audio_stt_commit_error(client, seed_user):
                             ws.receive_json()  # session_created
                             ws.receive_json()  # ai_message
                             ws.receive_json()  # tts_audio
+                            ws.receive_json()  # ai_done (greeting)
 
                             ws.send_json({"type": "audio_start"})
                             ws.send_json({"type": "audio_end"})
@@ -412,6 +423,7 @@ async def test_websocket_audio_end_without_start(client, seed_user):
                         ws.receive_json()  # session_created
                         ws.receive_json()  # ai_message
                         ws.receive_json()  # tts_audio
+                        ws.receive_json()  # ai_done (greeting)
 
                         ws.send_json({"type": "audio_end"})
                         data = ws.receive_json()
@@ -441,6 +453,7 @@ async def test_websocket_audio_empty_final_text(client, seed_user):
                             ws.receive_json()  # session_created
                             ws.receive_json()  # ai_message
                             ws.receive_json()  # tts_audio
+                            ws.receive_json()  # ai_done (greeting)
 
                             ws.send_json({"type": "audio_start"})
                             ws.send_json({"type": "audio_end"})
@@ -487,6 +500,7 @@ async def test_websocket_audio_then_finish(client, seed_user):
                             ws.receive_json()  # session_created
                             ws.receive_json()  # ai_message
                             ws.receive_json()  # tts_audio
+                            ws.receive_json()  # ai_done (greeting)
 
                             # Audio flow
                             ws.send_json({"type": "audio_start"})
