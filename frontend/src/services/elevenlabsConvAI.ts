@@ -7,6 +7,30 @@
  *            interruption, ping/pong, conversation_initiation_metadata
  */
 
+import { toByteArray } from 'base64-js';
+
+/**
+ * Calculate RMS energy from PCM 16-bit audio.
+ * Returns normalized value 0.0 ~ 1.0.
+ */
+function calcEnergy(base64PCM: string): number {
+  const bytes = toByteArray(base64PCM);
+  if (bytes.length < 4) return 0;
+
+  const view = new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength);
+  const numSamples = Math.floor(bytes.length / 2);
+  let sumSquared = 0;
+
+  for (let i = 0; i < numSamples; i += 4) {
+    const sample = view.getInt16(i * 2, true);
+    sumSquared += sample * sample;
+  }
+
+  const rms = Math.sqrt(sumSquared / (numSamples / 4));
+  // Normalize: 0~32768 → 0~1, clamp
+  return Math.min(1, rms / 5000);
+}
+
 export interface ConvAIEventHandlers {
   /** Final user transcription from ElevenLabs STT */
   onUserTranscript?: (text: string) => void;
@@ -66,10 +90,16 @@ export class ElevenLabsConvAIClient {
     };
   }
 
-  sendAudio(base64PCM: string): void {
-    if (!this.ws || this.ws.readyState !== WebSocket.OPEN) return;
-    if (!base64PCM || base64PCM.length === 0) return;
+  sendAudio(base64PCM: string): number {
+    if (!this.ws || this.ws.readyState !== WebSocket.OPEN) return 0;
+    if (!base64PCM || base64PCM.length === 0) return 0;
+
+    const energy = calcEnergy(base64PCM);
+
+    // Always send — let ElevenLabs server VAD handle silence detection
     this.ws.send(JSON.stringify({ user_audio_chunk: base64PCM }));
+
+    return energy; // 0~1, caller can use for orb animation
   }
 
   disconnect(): void {
@@ -89,16 +119,20 @@ export class ElevenLabsConvAIClient {
     console.log('[ElevenLabs ConvAI] Received:', type);
 
     switch (type) {
-      case 'conversation_initiation_metadata':
-        // Session is ready — now we signal connected
-        console.log('[ElevenLabs ConvAI] Session initialized');
+      case 'conversation_initiation_metadata': {
+        // Log the audio format info
+        const meta = data.conversation_initiation_metadata_event as Record<string, unknown> | undefined;
+        console.log('[ElevenLabs ConvAI] Session initialized, meta:', JSON.stringify(meta));
         this.handlers.onConnected?.();
         break;
+      }
 
       case 'audio': {
-        const audioObj = data.audio as Record<string, string> | undefined;
-        const chunk = audioObj?.chunk;
+        // ElevenLabs sends: { type: "audio", audio_event: { audio_base_64: "..." } }
+        const audioEvt = data.audio_event as Record<string, string> | undefined;
+        const chunk = audioEvt?.audio_base_64;
         if (chunk) {
+          console.log(`[ElevenLabs ConvAI] Audio chunk: ${chunk.length} chars`);
           this.handlers.onAudio?.(chunk);
         }
         break;

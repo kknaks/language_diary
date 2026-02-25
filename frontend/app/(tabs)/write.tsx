@@ -3,7 +3,6 @@ import { View, Text, StyleSheet, TouchableOpacity, ScrollView } from 'react-nati
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { useRouter } from 'expo-router';
-import { ExpoAudioStreamModule } from '@siteed/expo-audio-studio';
 
 import { colors, fontSize, spacing } from '../../src/constants/theme';
 import { Button } from '../../src/components/common';
@@ -36,9 +35,9 @@ export default function WriteScreen() {
   } = useConversationStore();
 
   const isActive = !!sessionId && !createdDiary;
-  const fakeVolumeRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const volumeIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
-  const { isStreaming, startStreaming, stopStreaming } = useRealtimeRecorder();
+  const { isStreaming, startStreaming, stopStreaming, forceRestart } = useRealtimeRecorder();
 
   // Keep refs for cleanup/callbacks to avoid effect dependency issues
   const stopStreamingRef = useRef(stopStreaming);
@@ -47,45 +46,51 @@ export default function WriteScreen() {
   sendAudioChunkRef.current = sendAudioChunk;
   const startStreamingRef = useRef(startStreaming);
   startStreamingRef.current = startStreaming;
+  const forceRestartRef = useRef(forceRestart);
+  forceRestartRef.current = forceRestart;
 
-  // Request mic permission on mount
-  useEffect(() => {
-    ExpoAudioStreamModule.requestPermissionsAsync();
-  }, []);
-
-  // Auto-start mic streaming when connected (voiceState becomes 'listening')
+  // Auto-start mic streaming when connected
   const micStartedRef = useRef(false);
+  const prevVoiceStateRef = useRef(voiceState);
   useEffect(() => {
-    if (voiceState === 'listening' && !micStartedRef.current) {
+    const prevState = prevVoiceStateRef.current;
+    prevVoiceStateRef.current = voiceState;
+
+    if ((voiceState === 'listening' || voiceState === 'ai_speaking') && !micStartedRef.current) {
+      // First time: start mic
       micStartedRef.current = true;
+      console.log('[Write] Starting mic stream, voiceState:', voiceState);
       startStreamingRef.current((base64) => {
         sendAudioChunkRef.current(base64);
       }).catch((err) => {
         console.error('[Mic] Failed to start streaming:', err);
         micStartedRef.current = false;
       });
-    } else if (voiceState !== 'listening') {
+    } else if (voiceState === 'listening' && prevState === 'ai_speaking') {
+      // AI finished speaking → force restart mic (iOS likely killed it)
+      console.log('[Write] AI done speaking, force restarting mic');
+      forceRestartRef.current().catch((err) => {
+        console.error('[Mic] Force restart failed:', err);
+      });
+    } else if (voiceState === 'idle') {
       micStartedRef.current = false;
     }
   }, [voiceState]);
 
-  // Fake volume simulation
+  // Volume animation — only fake for ai_speaking, listening uses real mic energy from store
   useEffect(() => {
-    if (voiceState === 'listening' || voiceState === 'ai_speaking') {
-      fakeVolumeRef.current = setInterval(() => {
-        setVolume(0.2 + Math.random() * 0.6);
+    if (voiceState === 'ai_speaking') {
+      volumeIntervalRef.current = setInterval(() => {
+        setVolume(0.3 + Math.random() * 0.5);
       }, 100);
-    } else {
+    } else if (voiceState === 'idle') {
       setVolume(0);
-      if (fakeVolumeRef.current) {
-        clearInterval(fakeVolumeRef.current);
-        fakeVolumeRef.current = null;
-      }
     }
+    // listening: volume is set by sendAudioChunk in store (real energy)
     return () => {
-      if (fakeVolumeRef.current) {
-        clearInterval(fakeVolumeRef.current);
-        fakeVolumeRef.current = null;
+      if (volumeIntervalRef.current) {
+        clearInterval(volumeIntervalRef.current);
+        volumeIntervalRef.current = null;
       }
     };
   }, [voiceState, setVolume]);

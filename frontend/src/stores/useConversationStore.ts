@@ -187,8 +187,13 @@ export const useConversationStore = create<ConversationState>((set, get) => ({
   },
 
   sendAudioChunk: (base64: string) => {
-    const { elevenlabsClient } = get();
-    elevenlabsClient?.sendAudio(base64);
+    const { elevenlabsClient, voiceState } = get();
+    if (!elevenlabsClient) return;
+    const energy = elevenlabsClient.sendAudio(base64);
+    // Update volume from real mic energy (only when listening)
+    if (voiceState === 'listening') {
+      set({ volume: energy });
+    }
   },
 
   setVoiceState: (voiceState: VoiceState) => {

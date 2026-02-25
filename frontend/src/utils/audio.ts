@@ -1,6 +1,27 @@
-import { createAudioPlayer, AudioPlayer } from 'expo-audio';
+import { createAudioPlayer, AudioPlayer, setAudioModeAsync } from 'expo-audio';
 import { File, Paths } from 'expo-file-system';
 import { toByteArray, fromByteArray } from 'base64-js';
+
+let audioModeConfigured = false;
+
+/**
+ * Configure iOS audio session for simultaneous recording + playback.
+ * Must be called before any audio playback while recording.
+ */
+export async function ensureAudioMode(): Promise<void> {
+  if (audioModeConfigured) return;
+  try {
+    await setAudioModeAsync({
+      allowsRecording: true,
+      playsInSilentMode: true,
+      interruptionMode: 'mixWithOthers',
+    });
+    audioModeConfigured = true;
+    console.log('[Audio] Audio mode set: playAndRecord + mixWithOthers');
+  } catch (err) {
+    console.error('[Audio] Failed to set audio mode:', err);
+  }
+}
 
 let currentPlayer: AudioPlayer | null = null;
 let finishCleanup: (() => void) | null = null;
@@ -32,8 +53,8 @@ export function pcmToWav(pcmBase64: string, sampleRate: number = 16000): string 
 
   // fmt chunk
   writeString(view, 12, 'fmt ');
-  view.setUint32(16, 16, true); // chunk size
-  view.setUint16(20, 1, true); // PCM format
+  view.setUint32(16, 16, true);
+  view.setUint16(20, 1, true);
   view.setUint16(22, numChannels, true);
   view.setUint32(24, sampleRate, true);
   view.setUint32(28, byteRate, true);
@@ -66,24 +87,24 @@ export async function playAudioFromBase64(
   onFinish?: () => void,
   ext: string = 'mp3',
 ): Promise<() => void> {
-  // Stop previous playback
-  await stopCurrentAudio();
+  // Ensure audio session allows simultaneous record + playback
+  await ensureAudioMode();
 
   const filename = `tts_${Date.now()}.${ext}`;
   const file = new File(Paths.cache, filename);
 
   try {
-    // Decode base64 → bytes, create file, then write
     const bytes = toByteArray(base64Data);
+    console.log(`[Audio] Playing ${ext} file: ${bytes.length} bytes`);
     file.create();
     file.write(bytes);
 
     const player = createAudioPlayer(file.uri);
     currentPlayer = player;
 
-    // Listen for playback end
     const subscription = player.addListener('playbackStatusUpdate', (status) => {
       if (status.didJustFinish) {
+        console.log('[Audio] Playback finished');
         cleanup();
         onFinish?.();
       }
@@ -94,20 +115,17 @@ export async function playAudioFromBase64(
       player.release();
       if (currentPlayer === player) currentPlayer = null;
       finishCleanup = null;
-      // Clean up temp file
       try { file.delete(); } catch { /* ignore */ }
     };
 
     finishCleanup = cleanup;
-
     player.play();
 
     return () => {
       cleanup();
     };
   } catch (err) {
-    console.error('[TTS Audio] playback failed:', err);
-    // Clean up temp file on error
+    console.error('[Audio] Playback failed:', err);
     try { file.delete(); } catch { /* ignore */ }
     onFinish?.();
     return () => {};
@@ -137,8 +155,11 @@ export async function stopCurrentAudio(): Promise<void> {
  */
 export function enqueueAudio(pcmBase64: string): void {
   const wavBase64 = pcmToWav(pcmBase64);
+  console.log(`[Audio Queue] Enqueued chunk, queue size: ${audioQueue.length + 1}`);
   audioQueue.push(wavBase64);
-  processQueue();
+  if (!isQueuePlaying) {
+    processQueue();
+  }
 }
 
 /**
@@ -152,6 +173,7 @@ export function setOnQueueEmpty(callback: (() => void) | null): void {
  * Clear the audio queue and stop current playback.
  */
 export function clearAudioQueue(): void {
+  console.log(`[Audio Queue] Clearing queue (${audioQueue.length} items)`);
   audioQueue = [];
   isQueuePlaying = false;
   onQueueEmpty = null;
@@ -163,15 +185,18 @@ function processQueue(): void {
 
   isQueuePlaying = true;
   const wavData = audioQueue.shift()!;
+  console.log(`[Audio Queue] Playing next, remaining: ${audioQueue.length}`);
 
   playAudioFromBase64(wavData, () => {
     isQueuePlaying = false;
     if (audioQueue.length > 0) {
       processQueue();
     } else {
+      console.log('[Audio Queue] Queue empty');
       onQueueEmpty?.();
     }
-  }, 'wav').catch(() => {
+  }, 'wav').catch((err) => {
+    console.error('[Audio Queue] Play error:', err);
     isQueuePlaying = false;
     if (audioQueue.length > 0) {
       processQueue();
