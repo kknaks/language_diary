@@ -347,18 +347,18 @@ export const authApi = {
 
 export const seedApi = {
   async getLanguages(): Promise<LanguageListResponse> {
-    const res = await fetchWithAuth(`${API_BASE_URL}/api/v1/seed/languages`);
+    const res = await fetchWithAuth(`${API_BASE_URL}/api/v1/languages`);
     return (await handleResponse(res)) as LanguageListResponse;
   },
 
   async getAvatars(): Promise<AvatarListResponse> {
-    const res = await fetchWithAuth(`${API_BASE_URL}/api/v1/seed/avatars`);
+    const res = await fetchWithAuth(`${API_BASE_URL}/api/v1/avatars`);
     return (await handleResponse(res)) as AvatarListResponse;
   },
 
   async getVoices(languageId?: number): Promise<VoiceListResponse> {
     const params = languageId ? `?language_id=${languageId}` : '';
-    const res = await fetchWithAuth(`${API_BASE_URL}/api/v1/seed/voices${params}`);
+    const res = await fetchWithAuth(`${API_BASE_URL}/api/v1/voices${params}`);
     return (await handleResponse(res)) as VoiceListResponse;
   },
 };
