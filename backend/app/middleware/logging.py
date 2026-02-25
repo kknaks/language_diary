@@ -17,8 +17,10 @@ class RequestLoggingMiddleware(BaseHTTPMiddleware):
         method = request.method
         path = request.url.path
 
-        # Skip noisy health-check logs
+        # Skip health checks and WebSocket upgrades
         if path == "/health":
+            return await call_next(request)
+        if request.headers.get("upgrade", "").lower() == "websocket":
             return await call_next(request)
 
         try:

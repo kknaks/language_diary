@@ -61,7 +61,7 @@ app.add_middleware(
 # Rate limiting
 app.add_middleware(RateLimitMiddleware, requests_per_minute=settings.RATE_LIMIT_PER_MINUTE)
 
-# Request/Response logging
+# Request/Response logging (skips WebSocket upgrades)
 app.add_middleware(RequestLoggingMiddleware)
 
 # --- Exception handlers ---
