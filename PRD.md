@@ -54,11 +54,242 @@ AI: → 대화를 종합해서 영어 일기 텍스트 자동 생성
 
 | # | 기능 | 설명 |
 |---|------|------|
-| F8 | 소셜 로그인 + 개인설정 | Google/Apple OAuth 소셜 로그인 → 자체 JWT 발급 → 개인설정(온보딩) → 홈 진입 |
+| F8 | DB 스키마 (인증/온보딩) | users, user_profiles, languages, avatars, voices, refresh_tokens 테이블 생성 |
+| F9 | 소셜 로그인 + 개인설정 | Google/Apple OAuth 소셜 로그인 → 자체 JWT 발급 → 개인설정(온보딩) → 홈 진입 |
 
 ---
 
-### F8 상세: 소셜 로그인 + 개인설정 (온보딩)
+### F8 상세: DB 스키마 (전체)
+
+전체 서비스에 필요한 DB 테이블. F9 이후 모든 기능의 기반.
+
+#### ERD
+```
+[시드 데이터]
+languages
+avatars
+voices ── language_id → languages (N:1)
+
+[인증/온보딩]
+users (1) ─── (1) user_profiles
+                    ├── native_language_id  → languages (N:1)
+                    ├── target_language_id  → languages (N:1)
+                    ├── avatar_id           → avatars (N:1)
+                    ├── voice_id            → voices (N:1)  ※ target_language 기준 필터
+                    └── empathy, intuition, logic
+refresh_tokens ── user_id → users (N:1)
+user_language_levels ── user_id → users (N:1)
+                     └── language_id → languages (N:1)
+
+[서비스]
+users (1) ──→ (N) diaries (1) ──→ (N) learning_cards
+      │                                    └──→ (N) pronunciation_results
+      │
+      └──→ (N) conversation_sessions (1) ──→ (N) conversation_messages
+                     └── diary_id → diaries (N:1, nullable)
+
+[캐시]
+tts_cache (독립)
+```
+
+#### 테이블 정의 — 시드 데이터
+
+**languages**
+
+| 컬럼 | 타입 | 설명 |
+|------|------|------|
+| id | SERIAL PK | 언어 ID |
+| code | VARCHAR(10) UNIQUE NOT NULL | 언어 코드 (ko, en, ja, zh, es...) |
+| name_native | VARCHAR(50) NOT NULL | 자국어 표기 (한국어, English, 日本語...) |
+| is_active | BOOLEAN DEFAULT true | 활성 여부 |
+| created_at | TIMESTAMP DEFAULT NOW() | |
+
+> 화면 표시 텍스트는 프론트 i18n 번역 파일에서 처리. DB는 코드 + 자국어명만 저장.
+
+**avatars (시드 데이터)**
+
+| 컬럼 | 타입 | 설명 |
+|------|------|------|
+| id | SERIAL PK | 아바타 ID |
+| name | VARCHAR(50) NOT NULL | 캐릭터 이름 (Luna, Mochi 등) |
+| thumbnail_url | VARCHAR(500) NOT NULL | 선택 화면 썸네일 |
+| model_url | VARCHAR(500) | Live2D .moc3 파일 경로 (nullable, 나중에) |
+| primary_color | VARCHAR(7) NOT NULL | hex 컬러 (#6C63FF) — placeholder 렌더링용 |
+| is_active | BOOLEAN DEFAULT true | 활성 여부 |
+| created_at | TIMESTAMP DEFAULT NOW() | |
+
+**voices (시드 데이터)**
+
+| 컬럼 | 타입 | 설명 |
+|------|------|------|
+| id | SERIAL PK | 목소리 ID |
+| language_id | INT FK → languages.id | 이 목소리의 언어 (영어, 한국어 등) |
+| name | VARCHAR(50) NOT NULL | 목소리 이름 (예: "밝은 여성", "차분한 남성") |
+| gender | VARCHAR(10) NOT NULL | `male` / `female` |
+| tone | VARCHAR(30) | 톤 태그 (예: "성인", "귀여운", "차분한", "활발한") |
+| elevenlabs_voice_id | VARCHAR(100) NOT NULL | ElevenLabs voice_id 매핑 |
+| sample_url | VARCHAR(500) | 샘플 음성 파일 경로 |
+| description | TEXT | 목소리 설명 |
+| is_active | BOOLEAN DEFAULT true | 활성 여부 |
+| created_at | TIMESTAMP DEFAULT NOW() | |
+
+> 유저의 target_language에 해당하는 목소리만 필터링하여 노출.
+
+#### 테이블 정의 — 인증/온보딩
+
+**users**
+
+| 컬럼 | 타입 | 설명 |
+|------|------|------|
+| id | SERIAL PK | 사용자 ID |
+| email | VARCHAR(255) UNIQUE NOT NULL | 이메일 (소셜 로그인에서 추출) |
+| social_provider | VARCHAR(20) NOT NULL | `google` / `apple` |
+| social_id | VARCHAR(255) NOT NULL | 소셜 계정 고유 ID |
+| nickname | VARCHAR(50) | 닉네임 (소셜에서 추출, nullable) |
+| is_active | BOOLEAN DEFAULT true | 활성 상태 |
+| created_at | TIMESTAMP DEFAULT NOW() | |
+| updated_at | TIMESTAMP DEFAULT NOW() | |
+| deleted_at | TIMESTAMP | 소프트 삭제일 (NULL이면 활성) |
+
+> ~~email, password_hash~~ → 소셜 로그인으로 변경. password_hash 제거.
+
+**user_profiles (신규)**
+
+| 컬럼 | 타입 | 설명 |
+|------|------|------|
+| id | SERIAL PK | 프로필 ID |
+| user_id | INT UNIQUE FK → users.id | 유저 (1:1) |
+| native_language_id | INT FK → languages.id | 모국어 |
+| target_language_id | INT FK → languages.id | 학습 언어 |
+| avatar_id | INT FK → avatars.id | 선택한 아바타 외형 |
+| avatar_name | VARCHAR(50) | 유저가 붙인 아바타 이름 (예: "루나", "내친구") |
+| voice_id | INT FK → voices.id | 선택한 아바타 목소리 |
+| empathy | INT NOT NULL DEFAULT 33 | 공감 비율 (0~100) |
+| intuition | INT NOT NULL DEFAULT 33 | 직관 비율 (0~100) |
+| logic | INT NOT NULL DEFAULT 34 | 논리 비율 (0~100) |
+| onboarding_completed | BOOLEAN DEFAULT false | 개인설정 완료 여부 |
+| created_at | TIMESTAMP DEFAULT NOW() | |
+| updated_at | TIMESTAMP DEFAULT NOW() | |
+
+**refresh_tokens (신규)**
+
+| 컬럼 | 타입 | 설명 |
+|------|------|------|
+| id | SERIAL PK | 토큰 ID |
+| user_id | INT FK → users.id | 유저 |
+| token_hash | VARCHAR(64) UNIQUE NOT NULL | 리프레시 토큰 SHA-256 해시 |
+| expires_at | TIMESTAMP NOT NULL | 만료일 |
+| created_at | TIMESTAMP DEFAULT NOW() | |
+
+**user_language_levels (신규)**
+
+| 컬럼 | 타입 | 설명 |
+|------|------|------|
+| id | SERIAL PK | ID |
+| user_id | INT FK → users.id NOT NULL | 유저 |
+| language_id | INT FK → languages.id NOT NULL | 언어 |
+| cefr_level | VARCHAR(5) NOT NULL DEFAULT 'A1' | CEFR 등급 (A1~C2) |
+| created_at | TIMESTAMP DEFAULT NOW() | |
+| updated_at | TIMESTAMP DEFAULT NOW() | |
+
+> UNIQUE(user_id, language_id) — 유저당 언어별 1개 레벨만 존재.
+
+#### 테이블 정의 — 서비스
+
+**diaries**
+
+| 컬럼 | 타입 | 설명 |
+|------|------|------|
+| id | SERIAL PK | 일기 ID |
+| user_id | INT FK → users.id NOT NULL | 작성자 |
+| original_text | TEXT NOT NULL | 한국어 원문 (AI가 대화 종합하여 생성) |
+| translated_text | TEXT | 영어 번역문 |
+| status | VARCHAR(20) NOT NULL DEFAULT 'draft' | 상태: `draft` → `translated` → `completed` |
+| created_at | TIMESTAMP DEFAULT NOW() | 작성일 |
+| updated_at | TIMESTAMP DEFAULT NOW() | 수정일 |
+| completed_at | TIMESTAMP | 학습 완료일 |
+| deleted_at | TIMESTAMP | 소프트 삭제일 (NULL이면 활성) |
+
+**conversation_sessions**
+
+| 컬럼 | 타입 | 설명 |
+|------|------|------|
+| id | VARCHAR(50) PK | 세션 ID (예: conv_abc123) |
+| user_id | INT FK → users.id NOT NULL | 사용자 |
+| diary_id | INT FK → diaries.id | 생성된 일기 (대화 완료 후 연결, nullable) |
+| status | VARCHAR(20) NOT NULL DEFAULT 'created' | 상태: `created` → `active` → `summarizing` → `completed` / `expired` |
+| turn_count | INT NOT NULL DEFAULT 0 | 현재 대화 턴 수 |
+| created_at | TIMESTAMP DEFAULT NOW() | 생성일 |
+| updated_at | TIMESTAMP DEFAULT NOW() | 수정일 |
+| completed_at | TIMESTAMP | 완료일 |
+| expired_at | TIMESTAMP | 만료일 |
+
+**conversation_messages**
+
+| 컬럼 | 타입 | 설명 |
+|------|------|------|
+| id | SERIAL PK | 메시지 ID |
+| session_id | VARCHAR(50) FK → conversation_sessions.id ON DELETE CASCADE | 소속 세션 |
+| role | VARCHAR(10) NOT NULL | `ai` / `user` |
+| content | TEXT NOT NULL | 메시지 내용 |
+| message_order | INT NOT NULL | 메시지 순서 |
+| created_at | TIMESTAMP DEFAULT NOW() | 생성일 |
+
+**learning_cards**
+
+| 컬럼 | 타입 | 설명 |
+|------|------|------|
+| id | SERIAL PK | 카드 ID |
+| diary_id | INT FK → diaries.id ON DELETE CASCADE | 소속 일기 |
+| card_type | VARCHAR(10) NOT NULL | `word` / `phrase` / `sentence` |
+| content_en | TEXT NOT NULL | 영어 단어/구문/문장 |
+| content_ko | TEXT NOT NULL | 한국어 뜻 |
+| part_of_speech | VARCHAR(20) | 품사 (word 타입만) |
+| cefr_level | VARCHAR(5) | CEFR 등급 (A1~C2) |
+| example_en | TEXT | 영어 예문 |
+| example_ko | TEXT | 한국어 예문 해석 |
+| card_order | INT NOT NULL DEFAULT 0 | 카드 순서 |
+| created_at | TIMESTAMP DEFAULT NOW() | |
+
+**pronunciation_results**
+
+| 컬럼 | 타입 | 설명 |
+|------|------|------|
+| id | SERIAL PK | 결과 ID |
+| card_id | INT FK → learning_cards.id ON DELETE CASCADE | 대상 카드 |
+| user_id | INT FK → users.id | 사용자 |
+| audio_url | VARCHAR(500) | 녹음 파일 경로 |
+| accuracy_score | NUMERIC(5,2) | 정확도 (0~100) |
+| fluency_score | NUMERIC(5,2) | 유창성 (0~100) |
+| completeness_score | NUMERIC(5,2) | 완성도 (0~100) |
+| overall_score | NUMERIC(5,2) | 종합 (0~100) |
+| feedback | TEXT | AI 피드백 |
+| attempt_number | INT NOT NULL DEFAULT 1 | 시도 횟수 |
+| created_at | TIMESTAMP DEFAULT NOW() | |
+
+#### 테이블 정의 — 캐시
+
+**tts_cache**
+
+| 컬럼 | 타입 | 설명 |
+|------|------|------|
+| id | SERIAL PK | 캐시 ID |
+| text_hash | VARCHAR(64) UNIQUE NOT NULL | 텍스트 SHA-256 해시 |
+| text | TEXT NOT NULL | 원본 텍스트 |
+| audio_url | VARCHAR(500) NOT NULL | 생성된 오디오 파일 경로 |
+| voice_id | VARCHAR(50) | ElevenLabs voice ID |
+| duration_ms | INT | 오디오 길이 (밀리초) |
+| created_at | TIMESTAMP DEFAULT NOW() | |
+
+#### i18n (다국어 UI) 규칙
+- 모든 화면 텍스트는 **프론트 i18n 번역 파일**로 관리 (DB에 표시 텍스트 저장 X)
+- DB에는 코드값만 저장 (언어 코드, enum 등)
+- 새 언어 지원 추가 시 → 프론트 번역 파일 추가 필수 (예: `locales/ja.json`)
+- 아바타 이름, 목소리 이름 등 시드 데이터 표시명도 i18n 번역 파일에서 관리
+
+---
+
+### F9 상세: 소셜 로그인 + 개인설정 (온보딩)
 
 #### 유저 플로우
 ```
@@ -174,6 +405,8 @@ AI: → 대화를 종합해서 영어 일기 텍스트 자동 생성
 │
 └─ ─→ 홈 탭 진입
 ```
+
+> DB 스키마는 F8 상세 참고.
 
 ## 5. 인증 (MVP: 하드코딩 유저)
 
