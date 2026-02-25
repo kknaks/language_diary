@@ -1,9 +1,9 @@
 import { create } from 'zustand';
-import type { Avatar } from '../types';
+import type { LocalAvatar } from '../types';
 import { getAvatars } from '../services/avatarApi';
 
 interface AvatarState {
-  avatars: Avatar[];
+  avatars: LocalAvatar[];
   selectedAvatarId: string | null;
   isLoading: boolean;
 

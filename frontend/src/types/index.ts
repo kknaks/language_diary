@@ -1,5 +1,5 @@
-// ===== 아바타 =====
-export interface Avatar {
+// ===== 아바타 (로컬 mock용) =====
+export interface LocalAvatar {
   id: string;
   name: string;
   thumbnailUrl: string;

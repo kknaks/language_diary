@@ -12,6 +12,7 @@ const tabConfig: Record<string, TabConfig> = {
   index: { icon: 'home-outline', iconFocused: 'home', label: '홈' },
   write: { icon: 'create-outline', iconFocused: 'create', label: '일기 쓰기' },
   history: { icon: 'time-outline', iconFocused: 'time', label: '히스토리' },
+  mypage: { icon: 'person-outline', iconFocused: 'person', label: '마이페이지' },
 };
 
 export default function TabLayout() {
@@ -40,6 +41,7 @@ export default function TabLayout() {
       <Tabs.Screen name="index" options={{ tabBarAccessibilityLabel: '홈 탭' }} />
       <Tabs.Screen name="write" options={{ tabBarAccessibilityLabel: '일기 쓰기 탭' }} />
       <Tabs.Screen name="history" options={{ tabBarAccessibilityLabel: '히스토리 탭' }} />
+      <Tabs.Screen name="mypage" options={{ tabBarAccessibilityLabel: '마이페이지 탭' }} />
     </Tabs>
   );
 }

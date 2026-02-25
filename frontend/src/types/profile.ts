@@ -1,3 +1,22 @@
+export interface ProfileUpdateRequest {
+  nickname?: string;
+  avatar_id?: number;
+  avatar_name?: string;
+  voice_id?: number;
+  empathy?: number;
+  intuition?: number;
+  logic?: number;
+  target_language_id?: number;
+  native_language_id?: number;
+  app_locale?: string;
+  cefr_level?: string;
+}
+
+export interface LanguageLevelUpdateRequest {
+  language_id: number;
+  cefr_level: string;
+}
+
 export interface ProfileCreateRequest {
   native_language_id: number;
   target_language_id: number;

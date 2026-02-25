@@ -1,5 +1,6 @@
 import { ClientMessage, ServerMessage, ConnectionStatus } from '../types';
 import { env } from '../config/env';
+import { tokenManager } from '../utils/tokenManager';
 
 const WS_BASE_URL = env.WS_BASE_URL;
 
@@ -51,10 +52,14 @@ export class WebSocketClient {
     this.createConnection();
   }
 
-  private createConnection() {
+  private async createConnection() {
     this.setStatus(this.reconnectAttempt > 0 ? 'reconnecting' : 'connecting');
 
-    const url = `${WS_BASE_URL}/ws/conversation`;
+    // 토큰 가져오기 — JWT 인증
+    const token = await tokenManager.getAccessToken();
+    const url = token
+      ? `${WS_BASE_URL}/ws/conversation?token=${token}`
+      : `${WS_BASE_URL}/ws/conversation`;
     this.ws = new WebSocket(url);
 
     this.ws.onopen = () => {

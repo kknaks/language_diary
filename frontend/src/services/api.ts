@@ -1,7 +1,8 @@
 import { Diary, LearningCard, Message, PaginatedResponse, ConversationSession, TtsResponse, PronunciationResult } from '../types';
 import { AuthTokens, SocialLoginResponse } from '../types/auth';
 import { LanguageListResponse, AvatarListResponse, VoiceListResponse } from '../types/seed';
-import { ProfileCreateRequest, UserProfileResponse } from '../types/profile';
+import { ProfileCreateRequest, ProfileUpdateRequest, LanguageLevelUpdateRequest, UserProfileResponse } from '../types/profile';
+import { HomeResponse } from '../types/home';
 import { env } from '../config/env';
 import { debugFetch } from '../components/common/DebugBanner';
 import { tokenManager } from '../utils/tokenManager';
@@ -171,7 +172,7 @@ export async function getDiaries(cursor?: number | null, limit: number = 20): Pr
   const params = new URLSearchParams({ limit: String(limit) });
   if (cursor != null) params.set('cursor', String(cursor));
 
-  const res = await debugFetch(`${API_BASE_URL}/api/v1/diary?${params}`);
+  const res = await fetchWithAuth(`${API_BASE_URL}/api/v1/diary?${params}`);
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const json = await handleResponse(res) as any;
 
@@ -183,20 +184,19 @@ export async function getDiaries(cursor?: number | null, limit: number = 20): Pr
 }
 
 export async function getDiary(id: string | number): Promise<Diary> {
-  const res = await debugFetch(`${API_BASE_URL}/api/v1/diary/${id}`);
+  const res = await fetchWithAuth(`${API_BASE_URL}/api/v1/diary/${id}`);
   const json = await handleResponse(res);
   return normalizeDiary(json);
 }
 
 export async function deleteDiary(id: string | number): Promise<void> {
-  const res = await debugFetch(`${API_BASE_URL}/api/v1/diary/${id}`, { method: 'DELETE' });
+  const res = await fetchWithAuth(`${API_BASE_URL}/api/v1/diary/${id}`, { method: 'DELETE' });
   await handleResponse(res);
 }
 
 export async function updateDiary(id: string | number, data: { original_text?: string; translated_text?: string }): Promise<Diary> {
-  const res = await debugFetch(`${API_BASE_URL}/api/v1/diary/${id}`, {
+  const res = await fetchWithAuth(`${API_BASE_URL}/api/v1/diary/${id}`, {
     method: 'PUT',
-    headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(data),
   });
   const json = await handleResponse(res);
@@ -206,9 +206,8 @@ export async function updateDiary(id: string | number, data: { original_text?: s
 // ===== Conversation API =====
 
 export async function createConversation(): Promise<ConversationSession> {
-  const res = await debugFetch(`${API_BASE_URL}/api/v1/conversation`, {
+  const res = await fetchWithAuth(`${API_BASE_URL}/api/v1/conversation`, {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
   });
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const json = await handleResponse(res) as any;
@@ -222,7 +221,7 @@ export async function createConversation(): Promise<ConversationSession> {
 }
 
 export async function getConversationMessages(conversationId: string): Promise<Message[]> {
-  const res = await debugFetch(`${API_BASE_URL}/api/v1/conversation/${conversationId}`);
+  const res = await fetchWithAuth(`${API_BASE_URL}/api/v1/conversation/${conversationId}`);
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const json = await handleResponse(res) as any;
   const rawMessages = json.messages ?? [];
@@ -232,9 +231,8 @@ export async function getConversationMessages(conversationId: string): Promise<M
 // ===== ConvAI API (deprecated — kept for rollback) =====
 
 export async function createConvAISession(): Promise<{ session_id: string; signed_url: string }> {
-  const res = await debugFetch(`${API_BASE_URL}/api/v1/convai/session`, {
+  const res = await fetchWithAuth(`${API_BASE_URL}/api/v1/convai/session`, {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
   });
   return await handleResponse(res) as { session_id: string; signed_url: string };
 }
@@ -243,9 +241,8 @@ export async function finishConvAISession(
   sessionId: string,
   messages: Array<{ role: string; content: string }>,
 ): Promise<Diary> {
-  const res = await debugFetch(`${API_BASE_URL}/api/v1/convai/session/${sessionId}/finish`, {
+  const res = await fetchWithAuth(`${API_BASE_URL}/api/v1/convai/session/${sessionId}/finish`, {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ messages }),
   });
   const json = await handleResponse(res);
@@ -255,9 +252,8 @@ export async function finishConvAISession(
 // ===== Custom Pipeline Conversation API =====
 
 export async function createConversationSession(): Promise<{ session_id: string }> {
-  const res = await debugFetch(`${API_BASE_URL}/api/v1/conversation`, {
+  const res = await fetchWithAuth(`${API_BASE_URL}/api/v1/conversation`, {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
   });
   return await handleResponse(res) as { session_id: string };
 }
@@ -265,9 +261,8 @@ export async function createConversationSession(): Promise<{ session_id: string 
 // ===== Speech API =====
 
 export async function requestTts(text: string): Promise<TtsResponse> {
-  const res = await debugFetch(`${API_BASE_URL}/api/v1/speech/tts`, {
+  const res = await fetchWithAuth(`${API_BASE_URL}/api/v1/speech/tts`, {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ text }),
   });
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -282,9 +277,8 @@ export async function requestTts(text: string): Promise<TtsResponse> {
 }
 
 export async function evaluatePronunciation(text: string): Promise<PronunciationResult> {
-  const res = await debugFetch(`${API_BASE_URL}/api/v1/speech/evaluate`, {
+  const res = await fetchWithAuth(`${API_BASE_URL}/api/v1/speech/evaluate`, {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ text }),
   });
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -300,7 +294,7 @@ export async function evaluatePronunciation(text: string): Promise<Pronunciation
 }
 
 export async function completeDiary(id: string | number): Promise<void> {
-  const res = await debugFetch(`${API_BASE_URL}/api/v1/diary/${id}/complete`, { method: 'POST' });
+  const res = await fetchWithAuth(`${API_BASE_URL}/api/v1/diary/${id}/complete`, { method: 'POST' });
   await handleResponse(res);
 }
 
@@ -382,5 +376,29 @@ export const profileApi = {
     const res = await fetchWithAuth(`${API_BASE_URL}/api/v1/user/profile`);
     if (!res.ok) throw new Error('프로필 조회 실패');
     return res.json();
+  },
+
+  async updateProfile(data: ProfileUpdateRequest): Promise<UserProfileResponse> {
+    const res = await fetchWithAuth(`${API_BASE_URL}/api/v1/user/profile`, {
+      method: 'PUT',
+      body: JSON.stringify(data),
+    });
+    return (await handleResponse(res)) as UserProfileResponse;
+  },
+
+  async updateLanguageLevel(data: LanguageLevelUpdateRequest): Promise<void> {
+    await fetchWithAuth(`${API_BASE_URL}/api/v1/user/language-level`, {
+      method: 'PUT',
+      body: JSON.stringify(data),
+    });
+  },
+};
+
+// ===== Home API =====
+
+export const homeApi = {
+  async getHome(): Promise<HomeResponse> {
+    const res = await fetchWithAuth(`${API_BASE_URL}/api/v1/home`);
+    return (await handleResponse(res)) as HomeResponse;
   },
 };
