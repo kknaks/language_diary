@@ -12,56 +12,17 @@ from openai import AsyncOpenAI
 
 from app.config import settings
 from app.utils.circuit_breaker import CircuitBreaker, CircuitBreakerError, retry_with_backoff
+from app.utils.prompt_builder import (
+    build_conversation_prompt,
+    build_diary_prompt,
+    build_diary_user_prompt,
+    build_first_message_user_prompt,
+    build_learning_prompt,
+    build_learning_user_prompt,
+    get_role_labels,
+)
 
 logger = logging.getLogger(__name__)
-
-SYSTEM_PROMPT_CONVERSATION = """너는 사용자의 친근한 친구야. 사용자가 오늘 하루 있었던 일을 자연스럽게 이야기할 수 있도록 도와줘.
-
-규칙:
-1. 한국어로 대화해.
-2. 친근하고 따뜻한 말투를 써. (반말 OK)
-3. 사용자의 대답에 공감하고, 구체적인 후속 질문을 해.
-4. 첫 질문은 "오늘 하루 어땠어?"처럼 개방형으로 시작해.
-5. 감정, 사람, 장소, 구체적 상황에 대해 물어봐.
-6. 한 번에 질문 하나만 해. 너무 길게 말하지 마.
-7. 3턴 이상이면 자연스럽게 마무리를 유도할 수 있어.
-8. 절대 영어로 대화하지 마. 오직 한국어만 사용해.
-9. 사용자가 "[silence]"라고 보내면, 이건 사용자가 10초 이상 아무 말도 하지 않았다는 뜻이야. 부드럽게 다시 말을 걸어봐. 예: "괜찮아, 천천히 말해봐~", "생각 중이야? 편하게 말해도 돼!" 등."""  # noqa: E501
-
-SYSTEM_PROMPT_DIARY = """너는 대화 내용을 바탕으로 일기를 작성하는 AI야.
-
-주어진 대화를 종합하여 아래 형식의 JSON을 반환해:
-{
-  "original_text": "한국어 일기 (자연스러운 일기체, 1~3문단)",
-  "translated_text": "영어 번역 (자연스러운 영어 일기체, 한국어와 동일한 내용)"
-}
-
-규칙:
-1. 대화에서 언급된 사건, 감정, 사람, 장소를 포함해.
-2. 한국어 일기는 자연스러운 일기체로 작성해. (~했다, ~였다 체)
-3. 영어 번역은 자연스러운 영어 일기체로 작성해.
-4. JSON만 반환해. 다른 텍스트는 포함하지 마."""
-
-SYSTEM_PROMPT_LEARNING = """너는 영어 학습 전문가야. 영어 일기에서 학습 포인트를 추출해.
-
-아래 JSON 배열을 반환해:
-[
-  {
-    "card_type": "word" 또는 "phrase",
-    "content_en": "영어 단어 또는 구문",
-    "content_ko": "한국어 뜻",
-    "part_of_speech": "품사 (word일 때만, 예: noun, verb, adjective)",
-    "cefr_level": "A1/A2/B1/B2/C1/C2",
-    "example_en": "영어 예문 (일기 문맥 활용)",
-    "example_ko": "한국어 예문 해석"
-  }
-]
-
-규칙:
-1. 단어(word) 3~5개 + 구문(phrase) 2~3개를 추출해.
-2. CEFR 등급을 정확히 매겨. 고빈도 단어 우선.
-3. 예문은 일기 본문에서 가져와.
-4. JSON 배열만 반환해. 다른 텍스트는 포함하지 마."""
 
 MAX_TURNS = 10
 
@@ -80,27 +41,18 @@ class AIService:
     def __init__(self, client: AsyncOpenAI = None):
         self.client = client or AsyncOpenAI(api_key=settings.OPENAI_API_KEY)
 
-    def _build_system_prompt(self, personality: Optional[Dict[str, int]] = None) -> str:
-        """Build conversation system prompt with optional personality traits."""
-        base = SYSTEM_PROMPT_CONVERSATION
-        if personality:
-            empathy = personality.get("empathy", 34)
-            intuition = personality.get("intuition", 33)
-            logic = personality.get("logic", 33)
-            trait_line = (
-                "\n10. 너의 성격: 공감 %d%%, 직관 %d%%, 논리 %d%%. "
-                "이 비율에 맞게 대화해." % (empathy, intuition, logic)
-            )
-            base = base + trait_line
-        return base
-
-    async def get_first_message(self, personality: Optional[Dict[str, int]] = None) -> str:
+    async def get_first_message(
+        self,
+        native_lang: str = "ko",
+        personality: Optional[Dict[str, int]] = None,
+    ) -> str:
         """Generate the AI's opening question to start the conversation."""
-        system_prompt = self._build_system_prompt(personality)
+        system_prompt = build_conversation_prompt(native_lang, personality)
+        user_prompt = build_first_message_user_prompt(native_lang)
         return await self._chat(
             messages=[
                 {"role": "system", "content": system_prompt},
-                {"role": "user", "content": "대화를 시작해줘. 첫 질문을 해줘."},
+                {"role": "user", "content": user_prompt},
             ],
             max_tokens=150,
             temperature=0.8,
@@ -108,23 +60,25 @@ class AIService:
 
     async def get_reply(
         self, conversation_history: List[Dict[str, str]],
+        native_lang: str = "ko",
         personality: Optional[Dict[str, int]] = None,
     ) -> str:
         """Generate AI follow-up question based on conversation history."""
-        system_prompt = self._build_system_prompt(personality)
+        system_prompt = build_conversation_prompt(native_lang, personality)
         messages = [{"role": "system", "content": system_prompt}]
         messages.extend(conversation_history)
         return await self._chat(messages=messages, max_tokens=200, temperature=0.8)
 
     async def get_reply_streaming(
         self, conversation_history: List[Dict[str, str]],
+        native_lang: str = "ko",
         personality: Optional[Dict[str, int]] = None,
     ) -> AsyncGenerator[str, None]:
         """Generate AI reply with streaming, yielding complete sentences.
 
         Yields sentences as they are detected (split on .!? and Korean endings).
         """
-        system_prompt = self._build_system_prompt(personality)
+        system_prompt = build_conversation_prompt(native_lang, personality)
         messages = [{"role": "system", "content": system_prompt}]
         messages.extend(conversation_history)
 
@@ -166,29 +120,46 @@ class AIService:
                 _openai_cb.record_failure()
             raise AIServiceError(f"OpenAI API 호출 실패: {e}")
 
-    async def generate_diary(self, conversation_history: List[Dict[str, str]]) -> Dict[str, str]:
-        """Generate diary (Korean original + English translation) from conversation."""
+    async def generate_diary(
+        self,
+        conversation_history: List[Dict[str, str]],
+        native_lang: str = "ko",
+        target_lang: str = "en",
+    ) -> Dict[str, str]:
+        """Generate diary (native original + target translation) from conversation."""
+        labels = get_role_labels(native_lang)
         conversation_text = "\n".join(
-            f"{'AI' if m['role'] == 'assistant' else '사용자'}: {m['content']}"
+            f"{labels['ai'] if m['role'] == 'assistant' else labels['user']}: {m['content']}"
             for m in conversation_history
         )
 
+        system_prompt = build_diary_prompt(native_lang, target_lang)
+        user_prompt = build_diary_user_prompt(native_lang, conversation_text)
+
         content = await self._chat(
             messages=[
-                {"role": "system", "content": SYSTEM_PROMPT_DIARY},
-                {"role": "user", "content": f"아래 대화를 바탕으로 일기를 작성해줘:\n\n{conversation_text}"},
+                {"role": "system", "content": system_prompt},
+                {"role": "user", "content": user_prompt},
             ],
             max_tokens=1000,
             temperature=0.7,
         )
         return self._parse_json(content, {"original_text": "", "translated_text": ""})
 
-    async def extract_learning_points(self, translated_text: str) -> List[Dict[str, Any]]:
-        """Extract learning points (words + phrases) from English diary text."""
+    async def extract_learning_points(
+        self,
+        translated_text: str,
+        native_lang: str = "ko",
+        target_lang: str = "en",
+    ) -> List[Dict[str, Any]]:
+        """Extract learning points (words + phrases) from target-language diary text."""
+        system_prompt = build_learning_prompt(native_lang, target_lang)
+        user_prompt = build_learning_user_prompt(native_lang, target_lang, translated_text)
+
         content = await self._chat(
             messages=[
-                {"role": "system", "content": SYSTEM_PROMPT_LEARNING},
-                {"role": "user", "content": f"아래 영어 일기에서 학습 포인트를 추출해줘:\n\n{translated_text}"},
+                {"role": "system", "content": system_prompt},
+                {"role": "user", "content": user_prompt},
             ],
             max_tokens=1500,
             temperature=0.5,

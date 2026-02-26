@@ -181,7 +181,7 @@ async def test_generate_greeting(db_session, seed_user):
 @pytest.mark.asyncio
 async def test_handle_user_message_streaming(db_session, seed_conversation):
     """handle_user_message_streaming yields sentences from AI."""
-    async def mock_streaming(history):
+    async def mock_streaming(history, **kwargs):
         yield "어떤 회의였어?"
         yield "재미있었어?"
 

@@ -26,6 +26,34 @@ logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/conversation", tags=["conversation"])
 
 
+async def _resolve_user_lang_personality(
+    db: AsyncSession, user_id: int,
+) -> "tuple[str, Optional[dict]]":
+    """Look up user profile and return (native_lang, personality).
+
+    Returns defaults ("ko", None) if profile not found.
+    """
+    from sqlalchemy import select
+    from sqlalchemy.orm import selectinload
+    from app.models.profile import UserProfile
+
+    result = await db.execute(
+        select(UserProfile)
+        .where(UserProfile.user_id == user_id)
+        .options(selectinload(UserProfile.native_language))
+    )
+    profile = result.scalar_one_or_none()
+    if not profile:
+        return "ko", None
+    native_lang = profile.native_language.code if profile.native_language else "ko"
+    personality = {
+        "empathy": profile.empathy,
+        "intuition": profile.intuition,
+        "logic": profile.logic,
+    }
+    return native_lang, personality
+
+
 def _ms_since(t0: float) -> float:
     """Return milliseconds elapsed since *t0* (from time.monotonic())."""
     return (time.monotonic() - t0) * 1000.0
@@ -57,21 +85,28 @@ async def _send_tts_rest(
         })
 
 
-async def _send_tts_ws(websocket: WebSocket, text: str, index: int = 0) -> None:
+async def _send_tts_ws(
+    websocket: WebSocket, text: str, index: int = 0,
+    voice_id: Optional[str] = None, language_code: str = "ko",
+    volume_gain_db: float = 0.0,
+) -> None:
     """Generate TTS audio via WebSocket streaming and push chunks to client.
 
     Falls back to REST TTS if WebSocket connection fails.
     """
+    from app.services.tts_service import _normalize_volume
     tts_session = None  # type: Optional[TTSStreamSession]
     try:
         tts_session = TTSStreamSession()
-        await tts_session.connect()
+        await tts_session.connect(voice_id=voice_id, language_code=language_code)
 
         await tts_session.send_sentence(text)
         await tts_session.send_eos()
 
         chunk_index = 0
         async for audio_chunk in tts_session.receive_audio_chunks():
+            if volume_gain_db != 0:
+                audio_chunk = _normalize_volume(audio_chunk, volume_gain_db)
             audio_b64 = base64.b64encode(audio_chunk).decode("ascii")
             await websocket.send_json({
                 "type": "tts_audio",
@@ -100,8 +135,13 @@ async def create_conversation(
     db: AsyncSession = Depends(get_db),
 ):
     """Create a new conversation session. Returns AI's first question."""
+    native_lang, personality = await _resolve_user_lang_personality(db, current_user.id)
     service = ConversationService(db)
-    return await service.create_session(user_id=current_user.id)
+    return await service.create_session(
+        user_id=current_user.id,
+        native_lang=native_lang,
+        personality=personality,
+    )
 
 
 @router.get("/{session_id}", response_model=ConversationDetailResponse)
@@ -126,6 +166,10 @@ async def _handle_ai_reply_streaming(
     pipeline_state: Optional[dict] = None,
     user_id: Optional[int] = None,
     voice_id: Optional[str] = None,
+    native_lang: str = "ko",
+    target_lang: str = "en",
+    personality: Optional[dict] = None,
+    volume_gain_db: float = 0.0,
 ):
     """Handle user message with streaming AI reply + TTS WebSocket streaming.
 
@@ -158,7 +202,7 @@ async def _handle_ai_reply_streaming(
         use_ws_tts = True
         try:
             tts_session = TTSStreamSession()
-            await tts_session.connect(voice_id=voice_id)
+            await tts_session.connect(voice_id=voice_id, language_code=native_lang)
         except TTSError as e:
             logger.warning("TTS WebSocket connection failed, falling back to REST: %s", e)
             tts_session = None
@@ -170,10 +214,13 @@ async def _handle_ai_reply_streaming(
         # --- Background: relay TTS audio chunks to client ---
         async def _relay_tts_audio():
             """Read audio chunks from TTS WebSocket and push to client."""
+            from app.services.tts_service import _normalize_volume
             if not tts_session:
                 return
             try:
                 async for audio_chunk in tts_session.receive_audio_chunks():
+                    if volume_gain_db != 0:
+                        audio_chunk = _normalize_volume(audio_chunk, volume_gain_db)
                     audio_b64 = base64.b64encode(audio_chunk).decode("ascii")
                     await websocket.send_json({
                         "type": "tts_audio",
@@ -199,7 +246,10 @@ async def _handle_ai_reply_streaming(
             """Run the LLM streaming loop; populates *sentences* as a side-effect."""
             nonlocal index, use_ws_tts, tts_session, relay_task
             t_first_sentence = None  # type: Optional[float]
-            async for sentence in service.handle_user_message_streaming(session_id, user_text):
+            async for sentence in service.handle_user_message_streaming(
+                session_id, user_text,
+                native_lang=native_lang, personality=personality,
+            ):
                 if t_first_sentence is None:
                     t_first_sentence = time.monotonic()
                     logger.info(
@@ -298,7 +348,10 @@ async def _handle_ai_reply_streaming(
                 await tts_session.close()
             if relay_task:
                 relay_task.cancel()
-            diary_resp = await service.finish_conversation(session_id, user_id=user_id)
+            diary_resp = await service.finish_conversation(
+                session_id, user_id=user_id,
+                native_lang=native_lang, target_lang=target_lang,
+            )
             await websocket.send_json(
                 {"type": "diary_created", "diary": diary_resp.model_dump(mode="json")}
             )
@@ -365,26 +418,45 @@ async def conversation_websocket(
 
     await websocket.accept()
 
-    # Resolve user's voice_id for TTS personalization
+    # Resolve user profile: voice_id, languages, personality, volume for TTS/AI personalization
     user_voice_id = None  # type: Optional[str]
+    native_lang = "ko"
+    target_lang = "en"
+    personality = None  # type: Optional[dict]
+    volume_gain_db = 0.0
 
     async with async_session() as db:
-        # Look up user's voice preference
+        # Look up user's profile (voice, languages, personality)
         try:
             from sqlalchemy import select
             from sqlalchemy.orm import selectinload
             from app.models.profile import UserProfile
-            from app.models.seed import Voice  # noqa: F401
+            from app.models.seed import Language, Voice  # noqa: F401
             profile_result = await db.execute(
                 select(UserProfile)
                 .where(UserProfile.user_id == user_id)
-                .options(selectinload(UserProfile.voice))
+                .options(
+                    selectinload(UserProfile.voice),
+                    selectinload(UserProfile.native_language),
+                    selectinload(UserProfile.target_language),
+                )
             )
             user_profile = profile_result.scalar_one_or_none()
-            if user_profile and user_profile.voice:
-                user_voice_id = user_profile.voice.elevenlabs_voice_id
+            if user_profile:
+                if user_profile.voice:
+                    user_voice_id = user_profile.voice.elevenlabs_voice_id
+                    volume_gain_db = float(user_profile.voice.volume_gain_db or 0)
+                if user_profile.native_language:
+                    native_lang = user_profile.native_language.code
+                if user_profile.target_language:
+                    target_lang = user_profile.target_language.code
+                personality = {
+                    "empathy": user_profile.empathy,
+                    "intuition": user_profile.intuition,
+                    "logic": user_profile.logic,
+                }
         except Exception:
-            logger.warning("Failed to resolve user voice_id, using default")
+            logger.warning("Failed to resolve user profile, using defaults")
 
         service = ConversationService(db)
         stt_session = None
@@ -425,14 +497,20 @@ async def conversation_websocket(
             })
 
             # --- AI greeting ---
-            greeting = await service.generate_greeting(session_id)
+            greeting = await service.generate_greeting(
+                session_id, native_lang=native_lang, personality=personality,
+            )
             await websocket.send_json({
                 "type": "ai_message",
                 "text": greeting,
             })
             # Try WebSocket TTS for greeting, fall back to REST
             try:
-                await _send_tts_ws(websocket, greeting, index=0)
+                await _send_tts_ws(
+                    websocket, greeting, index=0,
+                    voice_id=user_voice_id, language_code=native_lang,
+                    volume_gain_db=volume_gain_db,
+                )
             except Exception as e:
                 logger.warning("Greeting TTS WS failed, falling back to REST: %s", e)
                 await _send_tts_rest(websocket, db, greeting, index=0, voice_id=user_voice_id)
@@ -478,6 +556,10 @@ async def conversation_websocket(
                             pipeline_state=pipeline_state,
                             user_id=user_id,
                             voice_id=user_voice_id,
+                            native_lang=native_lang,
+                            target_lang=target_lang,
+                            personality=personality,
+                            volume_gain_db=volume_gain_db,
                         )
                     )
                     try:
@@ -550,6 +632,10 @@ async def conversation_websocket(
                         pipeline_state=pipeline_state,
                         user_id=user_id,
                         voice_id=user_voice_id,
+                        native_lang=native_lang,
+                        target_lang=target_lang,
+                        personality=personality,
+                        volume_gain_db=volume_gain_db,
                     )
                     if not cont:
                         break
@@ -566,6 +652,10 @@ async def conversation_websocket(
                         pipeline_state=pipeline_state,
                         user_id=user_id,
                         voice_id=user_voice_id,
+                        native_lang=native_lang,
+                        target_lang=target_lang,
+                        personality=personality,
+                        volume_gain_db=volume_gain_db,
                     )
                     if not cont:
                         break
@@ -591,7 +681,10 @@ async def conversation_websocket(
                         await stt_session.close()
                         stt_session = None
                     try:
-                        diary_resp = await service.finish_conversation(session_id, user_id=user_id)
+                        diary_resp = await service.finish_conversation(
+                session_id, user_id=user_id,
+                native_lang=native_lang, target_lang=target_lang,
+            )
                         await websocket.send_json(
                             {"type": "diary_created", "diary": diary_resp.model_dump(mode="json")}
                         )

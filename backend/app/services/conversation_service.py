@@ -35,14 +35,21 @@ class ConversationService:
         self.repo = ConversationRepository(db)
         self.ai = ai_service or AIService()
 
-    async def create_session(self, user_id: int = 1) -> ConversationCreateResponse:
+    async def create_session(
+        self,
+        user_id: int = 1,
+        native_lang: str = "ko",
+        personality: Optional[Dict] = None,
+    ) -> ConversationCreateResponse:
         """Create a new conversation session and return AI's first question."""
         session_id = _generate_session_id()
         session = await self.repo.create_session(session_id, user_id)
 
         # Generate AI first message
         try:
-            first_message = await self.ai.get_first_message()
+            first_message = await self.ai.get_first_message(
+                native_lang=native_lang, personality=personality,
+            )
         except AIServiceError as e:
             raise TranslationFailedError(detail=str(e))
 
@@ -69,13 +76,20 @@ class ConversationService:
         await self.db.commit()
         return session_id
 
-    async def generate_greeting(self, session_id: str) -> str:
+    async def generate_greeting(
+        self,
+        session_id: str,
+        native_lang: str = "ko",
+        personality: Optional[Dict] = None,
+    ) -> str:
         """Generate AI first greeting message and save to DB.
 
         Returns the greeting text.
         """
         try:
-            first_message = await self.ai.get_first_message()
+            first_message = await self.ai.get_first_message(
+                native_lang=native_lang, personality=personality,
+            )
         except AIServiceError as e:
             raise TranslationFailedError(detail=str(e))
 
@@ -114,7 +128,11 @@ class ConversationService:
             messages=[ConversationMessageResponse.model_validate(m) for m in messages],
         )
 
-    async def handle_user_message(self, session_id: str, text: str) -> str:
+    async def handle_user_message(
+        self, session_id: str, text: str,
+        native_lang: str = "ko",
+        personality: Optional[Dict] = None,
+    ) -> str:
         """Process user message and return AI reply.
 
         Returns the AI's response text.
@@ -152,7 +170,9 @@ class ConversationService:
 
         # Get AI reply
         try:
-            ai_reply = await self.ai.get_reply(history)
+            ai_reply = await self.ai.get_reply(
+                history, native_lang=native_lang, personality=personality,
+            )
         except AIServiceError as e:
             raise TranslationFailedError(detail=str(e))
 
@@ -164,6 +184,8 @@ class ConversationService:
 
     async def handle_user_message_streaming(
         self, session_id: str, text: str,
+        native_lang: str = "ko",
+        personality: Optional[Dict] = None,
     ) -> AsyncGenerator[str, None]:
         """Process user message and stream AI reply sentence by sentence.
 
@@ -202,7 +224,9 @@ class ConversationService:
         # Stream AI reply sentence by sentence
         full_reply_parts = []  # type: List[str]
         try:
-            async for sentence in self.ai.get_reply_streaming(history):
+            async for sentence in self.ai.get_reply_streaming(
+                history, native_lang=native_lang, personality=personality,
+            ):
                 full_reply_parts.append(sentence)
                 yield sentence
         except AIServiceError as e:
@@ -213,7 +237,10 @@ class ConversationService:
         await self.repo.add_message(session_id, "ai", full_reply, message_order=current_order + 1)
         await self.db.commit()
 
-    async def finish_conversation(self, session_id: str, user_id: Optional[int] = None) -> DiaryDetailResponse:
+    async def finish_conversation(
+        self, session_id: str, user_id: Optional[int] = None,
+        native_lang: str = "ko", target_lang: str = "en",
+    ) -> DiaryDetailResponse:
         """Finish conversation: generate diary + learning points.
 
         Returns the created diary with learning cards.
@@ -248,7 +275,9 @@ class ConversationService:
 
         # Generate diary
         try:
-            diary_data = await self.ai.generate_diary(history)
+            diary_data = await self.ai.generate_diary(
+                history, native_lang=native_lang, target_lang=target_lang,
+            )
         except AIServiceError as e:
             raise TranslationFailedError(detail=str(e))
 
@@ -266,7 +295,9 @@ class ConversationService:
         # Extract learning points
         try:
             learning_points = await self.ai.extract_learning_points(
-                diary_data.get("translated_text", "")
+                diary_data.get("translated_text", ""),
+                native_lang=native_lang,
+                target_lang=target_lang,
             )
         except AIServiceError as e:
             raise TranslationFailedError(detail=str(e))
@@ -311,6 +342,7 @@ class ConversationService:
     async def finish_with_messages(
         self, session_id: str, messages: List[Dict[str, str]],
         user_id: Optional[int] = None,
+        native_lang: str = "ko", target_lang: str = "en",
     ) -> "DiaryDetailResponse":
         """Save externally-provided messages, then generate diary + learning cards.
 
@@ -351,7 +383,9 @@ class ConversationService:
         await self.db.commit()
 
         # Reuse finish_conversation logic
-        return await self.finish_conversation(session_id)
+        return await self.finish_conversation(
+            session_id, native_lang=native_lang, target_lang=target_lang,
+        )
 
     def _validate_session_active(self, session: ConversationSession) -> None:
         """Ensure session is in an active state (created or active)."""

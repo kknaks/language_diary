@@ -137,6 +137,18 @@ async def generate_voice_previews(session: AsyncSession) -> None:
         if output_file.exists():
             if voice.sample_url != expected_url:
                 voice.sample_url = expected_url
+            # 파일은 있지만 volume_gain_db가 미계산(0)이면 RMS 측정해서 업데이트
+            if voice.volume_gain_db == 0:
+                try:
+                    current_rms = _measure_rms(str(output_file))
+                    gain_db = TARGET_RMS_DB - current_rms
+                    voice.volume_gain_db = gain_db
+                    logger.info(
+                        "Voice %s: measured existing file RMS=%.1f dB → gain=%.1f dB",
+                        voice.name, current_rms, gain_db,
+                    )
+                except Exception as e:
+                    logger.error("Failed to measure RMS for %s: %s", voice.name, e)
             continue
 
         text = PREVIEW_TEXTS.get(voice.language_id, PREVIEW_TEXTS[2])
