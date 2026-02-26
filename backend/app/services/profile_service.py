@@ -177,7 +177,7 @@ class ProfileService:
         profile_fields = {}
         allowed_fields = {
             "app_locale", "native_language_id", "target_language_id",
-            "avatar_id", "avatar_name", "voice_id",
+            "avatar_id", "avatar_name", "voice_id", "pronunciation_voice_id",
             "empathy", "intuition", "logic",
         }
         for key in allowed_fields:

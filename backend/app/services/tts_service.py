@@ -149,12 +149,34 @@ class TTSService:
         self,
         text: str,
         voice_id: Optional[str] = None,
+        user_id: Optional[int] = None,
+        db=None,
     ) -> dict:
         """Generate TTS audio, returning cached result if available.
+
+        If voice_id is not provided and user_id + db are given,
+        auto-resolves voice from the user's profile.
 
         Returns:
             dict with keys: audio_url, text, cached, duration_ms
         """
+        # Auto-resolve voice_id from user profile if not specified
+        if not voice_id and user_id is not None and db is not None:
+            try:
+                from sqlalchemy import select
+                from sqlalchemy.orm import selectinload
+                from app.models.profile import UserProfile
+                result = await db.execute(
+                    select(UserProfile)
+                    .where(UserProfile.user_id == user_id)
+                    .options(selectinload(UserProfile.voice))
+                )
+                profile = result.scalar_one_or_none()
+                if profile and profile.voice:
+                    voice_id = profile.voice.elevenlabs_voice_id
+            except Exception:
+                pass  # Fall through to default
+
         voice = voice_id or DEFAULT_VOICE_ID
         text_h = _text_hash(text, voice)
 

@@ -3,6 +3,7 @@ export interface ProfileUpdateRequest {
   avatar_id?: number;
   avatar_name?: string;
   voice_id?: number;
+  pronunciation_voice_id?: number | null;
   empathy?: number;
   intuition?: number;
   logic?: number;
@@ -50,6 +51,7 @@ export interface ProfileData {
   avatar: { id: number; name: string; thumbnail_url: string; primary_color: string } | null;
   avatar_name: string | null;
   voice: { id: number; name: string; gender: string; tone: string | null; sample_url: string | null } | null;
+  pronunciation_voice_id?: number | null;
   empathy: number;
   intuition: number;
   logic: number;

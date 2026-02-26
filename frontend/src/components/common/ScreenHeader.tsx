@@ -6,12 +6,14 @@ interface ScreenHeaderProps {
   title: string;
   subtitle?: string;
   right?: React.ReactNode;
+  left?: React.ReactNode;
 }
 
-export default function ScreenHeader({ title, subtitle, right }: ScreenHeaderProps) {
+export default function ScreenHeader({ title, subtitle, right, left }: ScreenHeaderProps) {
   return (
     <View style={styles.header}>
-      <View>
+      {left ? <View style={styles.left}>{left}</View> : null}
+      <View style={styles.titleContainer}>
         <Text style={styles.title}>{title}</Text>
         {subtitle ? <Text style={styles.subtitle}>{subtitle}</Text> : null}
       </View>
@@ -28,6 +30,13 @@ const styles = StyleSheet.create({
     paddingHorizontal: spacing.lg,
     paddingTop: spacing.lg,
     paddingBottom: spacing.md,
+  },
+  left: {
+    flexShrink: 0,
+    marginRight: spacing.sm,
+  },
+  titleContainer: {
+    flex: 1,
   },
   title: {
     fontSize: fontSize.xxl,

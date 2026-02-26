@@ -42,6 +42,7 @@ class ProfileUpdateRequest(BaseModel):
     avatar_id: Optional[int] = None
     avatar_name: Optional[str] = None
     voice_id: Optional[int] = None
+    pronunciation_voice_id: Optional[int] = None
     empathy: Optional[int] = None
     intuition: Optional[int] = None
     logic: Optional[int] = None

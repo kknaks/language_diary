@@ -64,6 +64,7 @@ class ProfileResponse(BaseModel):
     avatar: Optional[AvatarInfo]
     avatar_name: Optional[str]
     voice: Optional[VoiceInfo]
+    pronunciation_voice_id: Optional[int] = None
     empathy: int
     intuition: int
     logic: int
@@ -95,6 +96,7 @@ class ProfileCreateRequest(BaseModel):
     avatar_id: Optional[int] = None
     avatar_name: Optional[str] = None
     voice_id: Optional[int] = None
+    pronunciation_voice_id: Optional[int] = None
     empathy: int = 34
     intuition: int = 33
     logic: int = 33
