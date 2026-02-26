@@ -1,10 +1,12 @@
 """소셜 로그인 ID 토큰 검증 유틸리티."""
+import os
 import httpx
 from typing import Optional
 from google.oauth2 import id_token as google_id_token
 from google.auth.transport import requests as google_requests
 
-GOOGLE_CLIENT_IDS = []  # Phase 2에서 설정, 지금은 빈 리스트 (테스트용)
+_google_client_id = os.getenv("GOOGLE_CLIENT_ID", "")
+GOOGLE_CLIENT_IDS = [_google_client_id] if _google_client_id else []
 
 
 async def verify_google_token(token: str) -> Optional[dict]:

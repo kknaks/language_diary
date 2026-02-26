@@ -10,22 +10,45 @@ import {
 } from 'react-native';
 import { router } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
+import * as WebBrowser from 'expo-web-browser';
+import * as Google from 'expo-auth-session/providers/google';
+import * as AppleAuthentication from 'expo-apple-authentication';
+import { makeRedirectUri } from 'expo-auth-session';
 import { colors, spacing, fontSize, borderRadius, shadows } from '../src/constants/theme';
 import { authApi } from '../src/services/api';
 import { useAuthStore } from '../src/stores/useAuthStore';
 
+WebBrowser.maybeCompleteAuthSession();
+
+const GOOGLE_IOS_CLIENT_ID = process.env.EXPO_PUBLIC_GOOGLE_CLIENT_ID ?? '';
+
 export default function LoginScreen() {
   const [loading, setLoading] = useState(false);
 
-  const handleGoogleLogin = async () => {
+  const [_request, response, promptAsync] = Google.useAuthRequest({
+    iosClientId: GOOGLE_IOS_CLIENT_ID,
+    scopes: ['openid', 'profile', 'email'],
+  });
+
+  // Google 응답 처리
+  const handleGoogleResponse = async () => {
+    if (!response) return;
+    if (response.type !== 'success') {
+      if (response.type === 'error') {
+        Alert.alert('로그인 실패', response.error?.message ?? '구글 로그인에 실패했습니다.');
+      }
+      return;
+    }
+
     try {
       setLoading(true);
-      // 개발 모드: 테스트용 토큰 (백엔드 GOOGLE_CLIENT_IDS 빈 리스트일 때 파싱만 하는 개발 모드 지원)
-      const testIdToken = `dev_google_token.eyJzdWIiOiJnb29nbGVfdGVzdF8xMjMiLCJlbWFpbCI6InRlc3RAZ21haWwuY29tIiwibmFtZSI6IlRlc3QgVXNlciJ9.sig`;
-      const response = await authApi.socialLogin('google', testIdToken);
-      await useAuthStore.getState().setAuth(response.user, response);
+      const idToken = response.authentication?.idToken;
+      if (!idToken) throw new Error('ID 토큰을 받지 못했습니다.');
 
-      if (response.user.onboarding_completed) {
+      const result = await authApi.socialLogin('google', idToken);
+      await useAuthStore.getState().setAuth(result.user, result);
+
+      if (result.user.onboarding_completed) {
         router.replace('/(tabs)');
       } else {
         router.replace('/onboarding/step1-language');
@@ -38,20 +61,36 @@ export default function LoginScreen() {
     }
   };
 
+  // Google 버튼 클릭
+  const handleGoogleLogin = async () => {
+    await promptAsync();
+    await handleGoogleResponse();
+  };
+
+  // Apple 로그인
   const handleAppleLogin = async () => {
     try {
       setLoading(true);
-      // 개발 모드: 테스트용 Apple 토큰
-      const testIdToken = `dev_apple_token.eyJzdWIiOiJhcHBsZV90ZXN0XzEyMyIsImVtYWlsIjoiYXBwbGV0ZXN0QGljbG91ZC5jb20iLCJuYW1lIjoiQXBwbGUgVXNlciJ9.sig`;
-      const response = await authApi.socialLogin('apple', testIdToken);
-      await useAuthStore.getState().setAuth(response.user, response);
+      const credential = await AppleAuthentication.signInAsync({
+        requestedScopes: [
+          AppleAuthentication.AppleAuthenticationScope.FULL_NAME,
+          AppleAuthentication.AppleAuthenticationScope.EMAIL,
+        ],
+      });
 
-      if (response.user.onboarding_completed) {
+      const idToken = credential.identityToken;
+      if (!idToken) throw new Error('Apple ID 토큰을 받지 못했습니다.');
+
+      const result = await authApi.socialLogin('apple', idToken);
+      await useAuthStore.getState().setAuth(result.user, result);
+
+      if (result.user.onboarding_completed) {
         router.replace('/(tabs)');
       } else {
         router.replace('/onboarding/step1-language');
       }
-    } catch (e) {
+    } catch (e: any) {
+      if (e?.code === 'ERR_REQUEST_CANCELED') return; // 유저가 취소
       const message = e instanceof Error ? e.message : '다시 시도해주세요.';
       Alert.alert('로그인 실패', message);
     } finally {
@@ -84,14 +123,13 @@ export default function LoginScreen() {
             </TouchableOpacity>
 
             {Platform.OS === 'ios' && (
-              <TouchableOpacity
+              <AppleAuthentication.AppleAuthenticationButton
+                buttonType={AppleAuthentication.AppleAuthenticationButtonType.SIGN_IN}
+                buttonStyle={AppleAuthentication.AppleAuthenticationButtonStyle.BLACK}
+                cornerRadius={borderRadius.md}
                 style={styles.appleButton}
                 onPress={handleAppleLogin}
-                activeOpacity={0.7}
-              >
-                <Ionicons name="logo-apple" size={20} color="#FFFFFF" />
-                <Text style={styles.appleButtonText}>Apple로 계속하기</Text>
-              </TouchableOpacity>
+              />
             )}
           </>
         )}
@@ -160,19 +198,8 @@ const styles = StyleSheet.create({
     color: colors.text,
   },
   appleButton: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    backgroundColor: '#000000',
-    borderRadius: borderRadius.md,
-    paddingVertical: 14,
-    gap: spacing.sm,
-    ...shadows.sm,
-  },
-  appleButtonText: {
-    fontSize: fontSize.md,
-    fontWeight: '600',
-    color: '#FFFFFF',
+    height: 50,
+    width: '100%',
   },
   termsContainer: {
     marginTop: spacing.md,
