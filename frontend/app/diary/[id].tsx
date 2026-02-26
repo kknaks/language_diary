@@ -14,7 +14,8 @@ import { Diary, Message } from '../../src/types';
 type Language = 'ko' | 'en';
 
 export default function DiaryDetailScreen() {
-  const { id } = useLocalSearchParams<{ id: string }>();
+  const { id: idParam } = useLocalSearchParams<{ id: string }>();
+  const id = Number(idParam);
   const router = useRouter();
   const removeDiary = useDiaryStore((s) => s.removeDiary);
 

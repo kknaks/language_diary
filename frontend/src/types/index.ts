@@ -27,6 +27,7 @@ export interface Diary {
   created_at: string;
   updated_at: string;
   completed_at: string | null;
+  conversation_id?: number | null;
   learning_cards: LearningCard[];
 }
 

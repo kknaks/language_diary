@@ -8,7 +8,6 @@ import httpx
 from google.oauth2 import id_token as google_id_token
 from google.auth.transport import requests as google_requests
 from jose import jwt, JWTError
-from jose.utils import base64url_decode
 from cryptography.hazmat.primitives.asymmetric.rsa import RSAPublicNumbers
 from cryptography.hazmat.backends import default_backend
 

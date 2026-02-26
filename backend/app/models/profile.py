@@ -23,7 +23,7 @@ class UserProfile(Base):
     app_locale: Mapped[str] = mapped_column(String(10), server_default="ko", nullable=False)
     onboarding_completed: Mapped[bool] = mapped_column(Boolean, server_default="false", nullable=False)
     created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now(), nullable=False)
-    updated_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now(), onupdate=func.now(), nullable=False)
+    updated_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now(), onupdate=func.now(), nullable=False)  # noqa: E501
 
     # relationships
     user = relationship("User", back_populates="profile")

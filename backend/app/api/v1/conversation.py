@@ -15,7 +15,6 @@ from app.database import async_session, get_db
 from app.dependencies import get_onboarded_user
 from app.exceptions import AppError
 from app.models.user import User
-from app.repositories.user_repo import UserRepository
 from app.schemas.conversation import ConversationCreateResponse, ConversationDetailResponse
 from app.services.conversation_service import ConversationService
 from app.services.stt_service import STTError, STTSession
@@ -233,10 +232,10 @@ async def _handle_ai_reply_streaming(
                             relay_task = None
                             pipeline_state["relay_task"] = None
                         tts_svc = TTSService(db)
-                        rest_tts_tasks.append((index, asyncio.create_task(tts_svc.generate_bytes(sentence, voice_id=voice_id))))
+                        rest_tts_tasks.append((index, asyncio.create_task(tts_svc.generate_bytes(sentence, voice_id=voice_id))))  # noqa: E501
                 elif not use_ws_tts:
                     tts_svc = TTSService(db)
-                    rest_tts_tasks.append((index, asyncio.create_task(tts_svc.generate_bytes(sentence, voice_id=voice_id))))
+                    rest_tts_tasks.append((index, asyncio.create_task(tts_svc.generate_bytes(sentence, voice_id=voice_id))))  # noqa: E501
 
                 index += 1
 
@@ -375,7 +374,7 @@ async def conversation_websocket(
             from sqlalchemy import select
             from sqlalchemy.orm import selectinload
             from app.models.profile import UserProfile
-            from app.models.seed import Voice as VoiceModel
+            from app.models.seed import Voice  # noqa: F401
             profile_result = await db.execute(
                 select(UserProfile)
                 .where(UserProfile.user_id == user_id)

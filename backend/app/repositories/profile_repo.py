@@ -5,7 +5,7 @@ from sqlalchemy.orm import selectinload
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.profile import UserProfile
-from app.models.seed import Language, Avatar, Voice
+from app.models.seed import Language, Avatar, Voice  # noqa: F401
 
 
 class ProfileRepository:

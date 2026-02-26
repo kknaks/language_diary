@@ -2,7 +2,7 @@ from typing import Optional
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.exceptions import BadRequestError, ConflictError, ForbiddenError, NotFoundError
+from app.exceptions import BadRequestError, ConflictError, NotFoundError
 from app.repositories.diary_repo import DiaryRepository
 from app.schemas.diary import (
     DiaryDetailResponse,

@@ -155,7 +155,7 @@ async def _call_azure_pronunciation(
     region: str,
 ) -> dict:
     """[DEPRECATED] Call Azure Speech pronunciation assessment REST API."""
-    url = "https://{region}.stt.speech.microsoft.com/speech/recognition/conversation/cognitiveservices/v1?language=en-US".format(region=region)
+    url = "https://{region}.stt.speech.microsoft.com/speech/recognition/conversation/cognitiveservices/v1?language=en-US".format(region=region)  # noqa: E501
     headers = {
         "Ocp-Apim-Subscription-Key": api_key,
         "Content-Type": "audio/wav; codecs=audio/pcm; samplerate=16000",

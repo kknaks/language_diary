@@ -1,7 +1,6 @@
 """Home Service — assembles home screen data."""
 
 from datetime import date, timedelta
-from typing import Optional
 
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession

@@ -19,7 +19,7 @@ class ConversationSession(Base):
     status: Mapped[str] = mapped_column(String(20), server_default="created", nullable=False)
     turn_count: Mapped[int] = mapped_column(Integer, server_default="0", nullable=False)
     created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now(), nullable=False)
-    updated_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now(), onupdate=func.now(), nullable=False)
+    updated_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now(), onupdate=func.now(), nullable=False)  # noqa: E501
     completed_at: Mapped[Optional[datetime]] = mapped_column(DateTime)
     expired_at: Mapped[Optional[datetime]] = mapped_column(DateTime)
 

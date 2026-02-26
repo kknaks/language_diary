@@ -10,7 +10,6 @@ Usage:
     python -m app.scripts.generate_voice_previews
 """
 
-import json
 import logging
 import re
 import subprocess
