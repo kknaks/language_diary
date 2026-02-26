@@ -32,6 +32,12 @@ class ProfileService:
                 message="이미 프로필이 존재합니다. PUT으로 수정해주세요.",
             )
 
+        if data.empathy + data.intuition + data.logic != 100:
+            raise BadRequestError(
+                code="INVALID_PERSONALITY_SUM",
+                message="성격 합계는 100이어야 합니다.",
+            )
+
         await repo.create(
             user_id=user_id,
             native_language_id=data.native_language_id,

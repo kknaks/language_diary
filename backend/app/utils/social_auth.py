@@ -125,12 +125,25 @@ async def verify_apple_token(token: str) -> Optional[dict]:
     """
     Apple id_token JWKS 검증.
     반환: {"sub": "...", "email": "..."} 또는 None
+    - APPLE_CLIENT_ID 미설정(기본값) 시 개발 모드 (파싱만, 검증 스킵)
     - Apple 공개키로 서명 검증
     - iss = https://appleid.apple.com
     - aud = com.kknaks.languagediary
     - exp 만료 체크
     """
     try:
+        # 개발 모드: APPLE_CLIENT_ID가 기본값이면 파싱만 수행
+        if not os.getenv("APPLE_CLIENT_ID"):
+            parts = token.split(".")
+            if len(parts) != 3:
+                return None
+            padding = 4 - len(parts[1]) % 4
+            payload = json.loads(base64.urlsafe_b64decode(parts[1] + "=" * padding).decode())
+            return {
+                "sub": payload.get("sub", "test_apple_id"),
+                "email": payload.get("email", ""),
+            }
+
         # 1. 헤더에서 kid 추출 (어떤 공개키로 서명됐는지 확인)
         header_part = token.split(".")[0]
         padding = 4 - len(header_part) % 4
