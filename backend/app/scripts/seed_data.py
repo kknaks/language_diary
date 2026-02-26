@@ -39,9 +39,15 @@ async def _upsert_avatars(session: AsyncSession) -> None:
 async def _upsert_voices(session: AsyncSession) -> None:
     data = json.loads((SEEDS_DIR / "voices.json").read_text(encoding="utf-8"))
     for item in data:
-        existing = await session.execute(select(Voice).where(Voice.id == item["id"]))
-        if existing.scalar_one_or_none() is None:
+        result = await session.execute(select(Voice).where(Voice.id == item["id"]))
+        existing = result.scalar_one_or_none()
+        if existing is None:
             session.add(Voice(**item))
+        else:
+            # 기존 레코드 업데이트 (elevenlabs_voice_id 등 변경 반영)
+            for key, value in item.items():
+                if key != "id":
+                    setattr(existing, key, value)
     await session.flush()
 
 
