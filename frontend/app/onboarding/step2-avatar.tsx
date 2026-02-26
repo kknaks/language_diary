@@ -2,37 +2,57 @@ import { useState, useEffect } from 'react';
 import {
   View,
   Text,
+  TextInput,
   TouchableOpacity,
   StyleSheet,
   ScrollView,
   ActivityIndicator,
   Alert,
   Image,
+  Dimensions,
 } from 'react-native';
 import { router } from 'expo-router';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { colors, spacing, fontSize, borderRadius, shadows } from '../../src/constants/theme';
-import { seedApi } from '../../src/services/api';
+import { seedApi, API_BASE_URL } from '../../src/services/api';
 import { useOnboardingStore } from '../../src/stores/useOnboardingStore';
+import { useOnboardingPrefetch } from '../../src/stores/useOnboardingPrefetch';
 import { Avatar } from '../../src/types/seed';
 import StepIndicator from '../../src/components/onboarding/StepIndicator';
+import Live2DAvatar from '../../src/components/conversation/Live2DAvatar';
 
 export default function Step2Avatar() {
   const [avatars, setAvatars] = useState<Avatar[]>([]);
   const [loading, setLoading] = useState(true);
   const [selectedId, setSelectedId] = useState<number | null>(null);
+  const [characterName, setCharacterName] = useState('');
 
   const setAvatar = useOnboardingStore((s) => s.setAvatar);
+  const cachedAvatars = useOnboardingPrefetch((s) => s.avatars);
 
   useEffect(() => {
-    loadAvatars();
-  }, []);
+    if (cachedAvatars) {
+      setAvatars(cachedAvatars);
+      if (cachedAvatars.length > 0) {
+        setSelectedId(cachedAvatars[0].id);
+        setCharacterName(cachedAvatars[0].name);
+      }
+      setLoading(false);
+    } else {
+      loadAvatars();
+    }
+  }, [cachedAvatars]);
 
   const loadAvatars = async () => {
     try {
       const res = await seedApi.getAvatars();
-      setAvatars(res.items.filter((a) => a.is_active));
+      const active = res.items.filter((a) => a.is_active);
+      setAvatars(active);
+      if (active.length > 0) {
+        setSelectedId(active[0].id);
+        setCharacterName(active[0].name);
+      }
     } catch {
       Alert.alert('오류', '아바타 목록을 불러올 수 없습니다.');
     } finally {
@@ -45,8 +65,7 @@ export default function Step2Avatar() {
       Alert.alert('선택 필요', '아바타를 선택해주세요.');
       return;
     }
-    const avatar = avatars.find((a) => a.id === selectedId);
-    setAvatar(selectedId, avatar?.name);
+    setAvatar(selectedId, characterName.trim() || avatars.find((a) => a.id === selectedId)?.name);
     router.push('/onboarding/step3-voice');
   };
 
@@ -62,23 +81,27 @@ export default function Step2Avatar() {
     <SafeAreaView style={styles.container}>
       <StepIndicator currentStep={2} totalSteps={4} />
 
-      <ScrollView
-        style={styles.scrollView}
-        contentContainerStyle={styles.content}
-        showsVerticalScrollIndicator={false}
-      >
+      <View style={styles.mainContent}>
         <Text style={styles.title}>어떤 친구와 함께할까요?</Text>
 
-        <View style={styles.grid}>
+        <ScrollView
+          horizontal
+          showsHorizontalScrollIndicator={false}
+          contentContainerStyle={styles.avatarScrollContent}
+          style={styles.avatarScroll}
+        >
           {avatars.map((avatar) => (
             <TouchableOpacity
               key={avatar.id}
               style={[
                 styles.avatarCard,
-                { borderColor: selectedId === avatar.id ? avatar.primary_color : colors.border },
+                { borderColor: selectedId === avatar.id ? colors.primary : colors.border },
                 selectedId === avatar.id && styles.avatarCardSelected,
               ]}
-              onPress={() => setSelectedId(avatar.id)}
+              onPress={() => {
+                setSelectedId(avatar.id);
+                setCharacterName(avatar.name);
+              }}
               activeOpacity={0.7}
             >
               <View
@@ -89,24 +112,50 @@ export default function Step2Avatar() {
               >
                 {avatar.thumbnail_url ? (
                   <Image
-                    source={{ uri: avatar.thumbnail_url }}
+                    source={{ uri: `${API_BASE_URL}/${avatar.thumbnail_url.replace(/^\//, '')}` }}
                     style={styles.avatarImage}
                     resizeMode="cover"
                   />
                 ) : (
-                  <Ionicons name="person" size={48} color={avatar.primary_color} />
+                  <Ionicons name="person" size={28} color={avatar.primary_color} />
                 )}
               </View>
               <Text style={styles.avatarName}>{avatar.name}</Text>
               {selectedId === avatar.id && (
-                <View style={[styles.checkBadge, { backgroundColor: avatar.primary_color }]}>
-                  <Ionicons name="checkmark" size={14} color="#FFFFFF" />
+                <View style={[styles.checkBadge, { backgroundColor: colors.primary }]}>
+                  <Ionicons name="checkmark" size={10} color="#FFFFFF" />
                 </View>
               )}
             </TouchableOpacity>
           ))}
+        </ScrollView>
+
+        <View style={styles.modelPreview}>
+          <View style={styles.nameInputRow}>
+            <Ionicons name="pencil" size={20} color={colors.textSecondary} style={styles.nameEditIcon} />
+            <TextInput
+              style={styles.nameInput}
+              value={characterName}
+              onChangeText={setCharacterName}
+              placeholder="이름 입력"
+              placeholderTextColor={colors.textSecondary}
+              maxLength={20}
+            />
+          </View>
+          {selectedId ? (
+            <Live2DAvatar
+              voiceState="idle"
+              volume={0}
+              color={avatars.find((a) => a.id === selectedId)?.primary_color}
+              modelUrl={avatars.find((a) => a.id === selectedId)?.model_url ?? undefined}
+            />
+          ) : (
+            <Text style={styles.modelPreviewPlaceholder}>
+              아바타를 선택해주세요
+            </Text>
+          )}
         </View>
-      </ScrollView>
+      </View>
 
       <View style={styles.footer}>
         <TouchableOpacity
@@ -122,39 +171,46 @@ export default function Step2Avatar() {
   );
 }
 
+const { width: SCREEN_WIDTH } = Dimensions.get('window');
+const AVATAR_GAP = 8;
+const AVATAR_HORIZONTAL_PADDING = 8;
+const VISIBLE_COUNT = 4.5;
+const AVATAR_CARD_WIDTH = (SCREEN_WIDTH - AVATAR_HORIZONTAL_PADDING * 2 - AVATAR_GAP * (VISIBLE_COUNT - 0.5)) / VISIBLE_COUNT;
+
 const styles = StyleSheet.create({
   container: {
     flex: 1,
     backgroundColor: colors.background,
   },
-  scrollView: {
+  mainContent: {
     flex: 1,
-  },
-  content: {
     paddingHorizontal: spacing.lg,
-    paddingBottom: spacing.xl,
   },
   title: {
     fontSize: fontSize.xl,
     fontWeight: '700',
     color: colors.text,
     textAlign: 'center',
-    marginBottom: spacing.xl,
+    marginBottom: spacing.md,
   },
-  grid: {
-    flexDirection: 'row',
-    flexWrap: 'wrap',
-    gap: spacing.md,
+  avatarScroll: {
+    flexGrow: 0,
+    marginBottom: spacing.lg,
+  },
+  avatarScrollContent: {
+    paddingHorizontal: AVATAR_HORIZONTAL_PADDING,
+    gap: AVATAR_GAP,
+    flexGrow: 1,
     justifyContent: 'center',
   },
   avatarCard: {
     backgroundColor: colors.surface,
     borderWidth: 2,
     borderColor: colors.border,
-    borderRadius: borderRadius.lg,
-    padding: spacing.md,
+    borderRadius: borderRadius.md,
+    padding: spacing.sm,
     alignItems: 'center',
-    width: '45%',
+    width: AVATAR_CARD_WIDTH,
     position: 'relative',
     ...shadows.sm,
   },
@@ -162,33 +218,68 @@ const styles = StyleSheet.create({
     ...shadows.md,
   },
   avatarImageContainer: {
-    width: 80,
-    height: 80,
-    borderRadius: 40,
+    width: 48,
+    height: 48,
+    borderRadius: 24,
     justifyContent: 'center',
     alignItems: 'center',
     overflow: 'hidden',
-    marginBottom: spacing.sm,
+    marginBottom: 4,
   },
   avatarImage: {
-    width: 80,
-    height: 80,
+    width: 48,
+    height: 48,
   },
   avatarName: {
-    fontSize: fontSize.sm,
+    fontSize: 11,
     fontWeight: '600',
     color: colors.text,
     textAlign: 'center',
   },
   checkBadge: {
     position: 'absolute',
-    top: spacing.sm,
-    right: spacing.sm,
-    width: 22,
-    height: 22,
-    borderRadius: 11,
+    top: 4,
+    right: 4,
+    width: 16,
+    height: 16,
+    borderRadius: 8,
     justifyContent: 'center',
     alignItems: 'center',
+  },
+  modelPreview: {
+    flex: 1,
+    backgroundColor: colors.surface,
+    borderRadius: borderRadius.lg,
+    overflow: 'hidden',
+    borderWidth: 1,
+    borderColor: colors.border,
+  },
+  modelPreviewPlaceholder: {
+    fontSize: fontSize.md,
+    color: colors.textSecondary,
+  },
+  nameInputRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    alignSelf: 'center',
+    marginTop: spacing.sm,
+    borderBottomWidth: 3,
+    borderBottomColor: colors.border,
+    paddingBottom: 4,
+  },
+  nameInput: {
+    fontSize: fontSize.md,
+    fontWeight: '600',
+    color: colors.text,
+    textAlign: 'center',
+    paddingHorizontal: 2,
+    paddingLeft: 0,
+    paddingVertical: 4,
+    minWidth: 80,
+    maxWidth: 160,
+  },
+  nameEditIcon: {
+    marginRight: 0,
   },
   footer: {
     paddingHorizontal: spacing.lg,

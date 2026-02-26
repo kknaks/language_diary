@@ -14,6 +14,10 @@ from cryptography.hazmat.backends import default_backend
 
 # ───────────────────────────── Google ──────────────────────────────
 
+import logging
+
+_logger = logging.getLogger(__name__)
+
 _google_client_id = os.getenv("GOOGLE_CLIENT_ID", "")
 GOOGLE_CLIENT_IDS = [_google_client_id] if _google_client_id else []
 
@@ -44,7 +48,43 @@ async def verify_google_token(token: str) -> Optional[dict]:
             "email": idinfo.get("email", ""),
             "name": idinfo.get("name", ""),
         }
-    except Exception:
+    except Exception as e:
+        _logger.error("[Google Auth] verify failed: %s", e)
+        return None
+
+
+# ───────────────────────────── Kakao ──────────────────────────────
+
+KAKAO_USER_INFO_URL = "https://kapi.kakao.com/v2/user/me"
+
+
+async def verify_kakao_token(access_token: str) -> Optional[dict]:
+    """
+    카카오 access_token으로 유저 정보 조회.
+    반환: {"sub": "...", "email": "...", "name": "..."} 또는 None
+    """
+    try:
+        async with httpx.AsyncClient(timeout=10.0) as client:
+            resp = await client.get(
+                KAKAO_USER_INFO_URL,
+                headers={"Authorization": f"Bearer {access_token}"},
+            )
+        if resp.status_code != 200:
+            _logger.error("[Kakao Auth] API failed: status=%s", resp.status_code)
+            return None
+
+        data = resp.json()
+        kakao_id = str(data.get("id", ""))
+        account = data.get("kakao_account", {})
+        profile = account.get("profile", {})
+
+        return {
+            "sub": kakao_id,
+            "email": account.get("email", ""),
+            "name": profile.get("nickname", ""),
+        }
+    except Exception as e:
+        _logger.error("[Kakao Auth] verify failed: %s", e)
         return None
 
 

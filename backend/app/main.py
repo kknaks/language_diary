@@ -41,6 +41,12 @@ async def lifespan(app: FastAPI):
     else:
         logger.info("Seed data OK — skipping.")
 
+    # voice preview MP3가 없으면 ElevenLabs TTS로 생성
+    from app.scripts.generate_voice_previews import generate_voice_previews
+    async with async_session() as session:
+        await generate_voice_previews(session)
+        await session.commit()
+
     yield
 
 # Configure structured logging

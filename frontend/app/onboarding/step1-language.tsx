@@ -13,6 +13,7 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { colors, spacing, fontSize, borderRadius, shadows } from '../../src/constants/theme';
 import { seedApi } from '../../src/services/api';
 import { useOnboardingStore } from '../../src/stores/useOnboardingStore';
+import { useOnboardingPrefetch } from '../../src/stores/useOnboardingPrefetch';
 import { Language } from '../../src/types/seed';
 import StepIndicator from '../../src/components/onboarding/StepIndicator';
 
@@ -23,9 +24,11 @@ export default function Step1Language() {
   const [targetId, setTargetId] = useState<number | null>(null);
 
   const setLanguages_ = useOnboardingStore((s) => s.setLanguages);
+  const prefetchAvatars = useOnboardingPrefetch((s) => s.prefetchAvatars);
 
   useEffect(() => {
     loadLanguages();
+    prefetchAvatars();
   }, []);
 
   const loadLanguages = async () => {
@@ -39,15 +42,19 @@ export default function Step1Language() {
     }
   };
 
+  const prefetchVoices = useOnboardingPrefetch((s) => s.prefetchVoices);
+
   const handleNext = () => {
     if (nativeId == null || targetId == null) {
       Alert.alert('선택 필요', '모국어와 학습 언어를 모두 선택해주세요.');
       return;
     }
     setLanguages_(nativeId, targetId);
+    prefetchVoices(nativeId);
     router.push('/onboarding/step2-avatar');
   };
 
+  const nativeLanguages = languages.filter((l) => l.id !== targetId);
   const targetLanguages = languages.filter((l) => l.id !== nativeId);
 
   if (loading) {
@@ -71,7 +78,7 @@ export default function Step1Language() {
 
         <Text style={styles.sectionLabel}>모국어</Text>
         <View style={styles.languageGrid}>
-          {languages.map((lang) => (
+          {nativeLanguages.map((lang) => (
             <TouchableOpacity
               key={lang.id}
               style={[
@@ -79,8 +86,12 @@ export default function Step1Language() {
                 nativeId === lang.id && styles.languageCardSelected,
               ]}
               onPress={() => {
-                setNativeId(lang.id);
-                if (targetId === lang.id) setTargetId(null);
+                if (nativeId === lang.id) {
+                  setNativeId(null);
+                } else {
+                  setNativeId(lang.id);
+                  if (targetId === lang.id) setTargetId(null);
+                }
               }}
               activeOpacity={0.7}
             >
@@ -106,7 +117,14 @@ export default function Step1Language() {
                 styles.languageCard,
                 targetId === lang.id && styles.languageCardSelected,
               ]}
-              onPress={() => setTargetId(lang.id)}
+              onPress={() => {
+                if (targetId === lang.id) {
+                  setTargetId(null);
+                } else {
+                  setTargetId(lang.id);
+                  if (nativeId === lang.id) setNativeId(null);
+                }
+              }}
               activeOpacity={0.7}
             >
               <Text

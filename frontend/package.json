@@ -12,6 +12,9 @@
     "format": "prettier --write \"src/**/*.{ts,tsx}\" \"app/**/*.{ts,tsx}\""
   },
   "dependencies": {
+    "@react-native-async-storage/async-storage": "2.2.0",
+    "@react-native-google-signin/google-signin": "^16.1.1",
+    "@react-native-seoul/kakao-login": "^5.4.2",
     "@shopify/flash-list": "^2.0.2",
     "@siteed/expo-audio-studio": "^2.18.5",
     "axios": "^1.13.5",
@@ -25,6 +28,7 @@
     "expo-crypto": "~15.0.8",
     "expo-file-system": "~19.0.21",
     "expo-linking": "~8.0.11",
+    "expo-localization": "^55.0.8",
     "expo-router": "~6.0.23",
     "expo-secure-store": "~15.0.8",
     "expo-status-bar": "~3.0.9",
@@ -33,6 +37,7 @@
     "react-native": "0.81.5",
     "react-native-safe-area-context": "^5.6.2",
     "react-native-screens": "~4.16.0",
+    "react-native-svg": "^15.15.3",
     "react-native-webview": "13.15.0",
     "zustand": "^5.0.11"
   },

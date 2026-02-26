@@ -4,6 +4,7 @@ export interface HomeAvatar {
   custom_name: string | null;
   thumbnail_url: string;
   primary_color: string;
+  model_url: string | null;
 }
 
 export interface HomeUser {

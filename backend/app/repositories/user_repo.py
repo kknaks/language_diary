@@ -13,7 +13,11 @@ class UserRepository:
         self.db = db
 
     async def get_by_id(self, user_id: int) -> Optional[User]:
-        result = await self.db.execute(select(User).where(User.id == user_id))
+        result = await self.db.execute(
+            select(User)
+            .where(User.id == user_id)
+            .options(selectinload(User.profile))
+        )
         return result.scalar_one_or_none()
 
     async def find_by_social(self, provider: str, social_id: str) -> Optional[User]:

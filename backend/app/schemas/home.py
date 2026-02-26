@@ -9,6 +9,7 @@ class HomeAvatar(BaseModel):
     custom_name: Optional[str]
     thumbnail_url: str
     primary_color: str
+    model_url: Optional[str] = None
 
     class Config:
         from_attributes = True

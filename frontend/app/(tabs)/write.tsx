@@ -307,7 +307,7 @@ export default function WriteScreen() {
 
       {/* Live2D Avatar area */}
       <View style={styles.avatarArea}>
-        <Live2DAvatar voiceState={voiceState} volume={volume} color={selectedAvatar?.primaryColor} />
+        <Live2DAvatar voiceState={voiceState} volume={volume} color={selectedAvatar?.primaryColor} modelUrl={selectedAvatar?.modelUrl} />
       </View>
 
       {/* Message bubbles (dev) */}

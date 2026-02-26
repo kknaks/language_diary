@@ -63,6 +63,7 @@ class HomeService:
                 custom_name=user.profile.avatar_name,
                 thumbnail_url=av.thumbnail_url,
                 primary_color=av.primary_color,
+                model_url=av.model_url,
             )
 
         # 2. Recent diaries (5)

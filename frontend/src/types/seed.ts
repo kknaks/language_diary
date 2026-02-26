@@ -10,6 +10,7 @@ export interface Avatar {
   name: string;
   thumbnail_url: string;
   primary_color: string;
+  model_url: string | null;
   is_active: boolean;
 }
 

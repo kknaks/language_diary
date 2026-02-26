@@ -13,7 +13,7 @@ from app.utils.jwt import (
     create_refresh_token,
     hash_refresh_token,
 )
-from app.utils.social_auth import verify_apple_token, verify_google_token
+from app.utils.social_auth import verify_apple_token, verify_google_token, verify_kakao_token
 
 
 class AuthService:
@@ -61,13 +61,16 @@ class AuthService:
         self,
         db: AsyncSession,
         provider: str,
-        id_token_str: str,
+        id_token_str: str = "",
+        access_token_str: str = "",
     ) -> SocialLoginResponse:
         # 1. 토큰 검증
         if provider == "google":
             social_info = await verify_google_token(id_token_str)
         elif provider == "apple":
             social_info = await verify_apple_token(id_token_str)
+        elif provider == "kakao":
+            social_info = await verify_kakao_token(access_token_str)
         else:
             raise BadRequestError(code="UNSUPPORTED_PROVIDER", message="지원하지 않는 소셜 로그인입니다.")
 

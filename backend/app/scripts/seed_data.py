@@ -30,9 +30,14 @@ async def _upsert_languages(session: AsyncSession) -> None:
 async def _upsert_avatars(session: AsyncSession) -> None:
     data = json.loads((SEEDS_DIR / "avatars.json").read_text(encoding="utf-8"))
     for item in data:
-        existing = await session.execute(select(Avatar).where(Avatar.id == item["id"]))
-        if existing.scalar_one_or_none() is None:
+        result = await session.execute(select(Avatar).where(Avatar.id == item["id"]))
+        existing = result.scalar_one_or_none()
+        if existing is None:
             session.add(Avatar(**item))
+        else:
+            for key, value in item.items():
+                if key != "id":
+                    setattr(existing, key, value)
     await session.flush()
 
 

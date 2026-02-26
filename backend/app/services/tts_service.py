@@ -9,6 +9,8 @@ import base64
 import hashlib
 import json
 import logging
+import subprocess
+import tempfile
 import uuid
 from pathlib import Path
 from typing import AsyncIterator, Optional
@@ -99,6 +101,33 @@ async def _generate_openai_tts(text: str) -> bytes:
     return response.content
 
 
+def _normalize_volume(audio_bytes: bytes, gain_db: float) -> bytes:
+    """ffmpeg volume 필터로 gain 적용 후 bytes 반환."""
+    if gain_db == 0:
+        return audio_bytes
+
+    with tempfile.NamedTemporaryFile(suffix=".mp3", delete=False) as tmp_in:
+        tmp_in.write(audio_bytes)
+        tmp_in_path = tmp_in.name
+
+    tmp_out_path = tmp_in_path + ".out.mp3"
+    try:
+        result = subprocess.run(
+            ["ffmpeg", "-y", "-i", tmp_in_path, "-af", f"volume={gain_db}dB", tmp_out_path],
+            capture_output=True,
+            timeout=10,
+        )
+        if result.returncode == 0:
+            return Path(tmp_out_path).read_bytes()
+        logger.warning("ffmpeg volume adjust failed, returning raw audio")
+        return audio_bytes
+    except Exception:
+        return audio_bytes
+    finally:
+        Path(tmp_in_path).unlink(missing_ok=True)
+        Path(tmp_out_path).unlink(missing_ok=True)
+
+
 def _save_audio_file(audio_bytes: bytes, extension: str = "mp3") -> str:
     """Save audio bytes to local disk and return the relative URL path."""
     _ensure_audio_dir()
@@ -142,6 +171,11 @@ class TTSService:
         # Try ElevenLabs first, fallback to OpenAI
         audio_bytes = await self._generate_with_fallback(text, voice)
 
+        # voice별 볼륨 정규화 적용
+        gain_db = await self._get_volume_gain(voice)
+        if gain_db != 0:
+            audio_bytes = _normalize_volume(audio_bytes, gain_db)
+
         # Save to disk
         audio_url = _save_audio_file(audio_bytes)
 
@@ -168,7 +202,21 @@ class TTSService:
     ) -> bytes:
         """Generate TTS audio and return raw MP3 bytes (no file save)."""
         voice = voice_id or DEFAULT_VOICE_ID
-        return await self._generate_with_fallback(text, voice)
+        audio_bytes = await self._generate_with_fallback(text, voice)
+        gain_db = await self._get_volume_gain(voice)
+        if gain_db != 0:
+            audio_bytes = _normalize_volume(audio_bytes, gain_db)
+        return audio_bytes
+
+    async def _get_volume_gain(self, elevenlabs_voice_id: str) -> float:
+        """DB에서 voice의 volume_gain_db 조회."""
+        from app.models.seed import Voice
+        from sqlalchemy import select
+        result = await self.db.execute(
+            select(Voice.volume_gain_db).where(Voice.elevenlabs_voice_id == elevenlabs_voice_id)
+        )
+        row = result.scalar_one_or_none()
+        return row if row is not None else 0.0
 
     async def _generate_with_fallback(self, text: str, voice_id: str) -> bytes:
         """Try ElevenLabs TTS, fall back to OpenAI TTS on failure."""

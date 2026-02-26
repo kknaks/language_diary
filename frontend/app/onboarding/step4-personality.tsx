@@ -1,4 +1,4 @@
-import { useState, useCallback } from 'react';
+import { useRef, useState } from 'react';
 import {
   View,
   Text,
@@ -6,6 +6,9 @@ import {
   StyleSheet,
   Alert,
   ActivityIndicator,
+  PanResponder,
+  GestureResponderEvent,
+  LayoutChangeEvent,
 } from 'react-native';
 import { router } from 'expo-router';
 import { SafeAreaView } from 'react-native-safe-area-context';
@@ -16,67 +19,17 @@ import { useAuthStore } from '../../src/stores/useAuthStore';
 import { ProfileCreateRequest } from '../../src/types/profile';
 import StepIndicator from '../../src/components/onboarding/StepIndicator';
 
-const TOTAL = 100;
-
 export default function Step4Personality() {
-  const [empathy, setEmpathy] = useState(34);
-  const [intuition, setIntuition] = useState(33);
-  const [logic, setLogic] = useState(33);
+  const [empathy, setEmpathy] = useState(50);
+  const [intuition, setIntuition] = useState(50);
+  const [logic, setLogic] = useState(50);
   const [submitting, setSubmitting] = useState(false);
 
   const onboardingStore = useOnboardingStore();
   const user = useAuthStore((s) => s.user);
   const setUser = useAuthStore((s) => s.setUser);
 
-  const adjustValues = useCallback(
-    (changed: 'empathy' | 'intuition' | 'logic', newValue: number) => {
-      const rounded = Math.max(0, Math.min(100, Math.round(newValue)));
-      const remaining = TOTAL - rounded;
-
-      if (changed === 'empathy') {
-        const otherTotal = intuition + logic;
-        if (otherTotal === 0) {
-          setEmpathy(rounded);
-          setIntuition(Math.round(remaining / 2));
-          setLogic(remaining - Math.round(remaining / 2));
-        } else {
-          const newIntuition = Math.round((intuition / otherTotal) * remaining);
-          setEmpathy(rounded);
-          setIntuition(newIntuition);
-          setLogic(remaining - newIntuition);
-        }
-      } else if (changed === 'intuition') {
-        const otherTotal = empathy + logic;
-        if (otherTotal === 0) {
-          setIntuition(rounded);
-          setEmpathy(Math.round(remaining / 2));
-          setLogic(remaining - Math.round(remaining / 2));
-        } else {
-          const newEmpathy = Math.round((empathy / otherTotal) * remaining);
-          setIntuition(rounded);
-          setEmpathy(newEmpathy);
-          setLogic(remaining - newEmpathy);
-        }
-      } else {
-        const otherTotal = empathy + intuition;
-        if (otherTotal === 0) {
-          setLogic(rounded);
-          setEmpathy(Math.round(remaining / 2));
-          setIntuition(remaining - Math.round(remaining / 2));
-        } else {
-          const newEmpathy = Math.round((empathy / otherTotal) * remaining);
-          setLogic(rounded);
-          setEmpathy(newEmpathy);
-          setIntuition(remaining - newEmpathy);
-        }
-      }
-    },
-    [empathy, intuition, logic],
-  );
-
   const handleComplete = async () => {
-    if (!user) return;
-
     try {
       setSubmitting(true);
       onboardingStore.setPersonality(empathy, intuition, logic);
@@ -86,7 +39,9 @@ export default function Step4Personality() {
       payload.logic = logic;
 
       await profileApi.createProfile(payload);
-      setUser({ ...user, onboarding_completed: true });
+      if (user) {
+        setUser({ ...user, onboarding_completed: true });
+      }
       onboardingStore.reset();
       router.replace('/(tabs)');
     } catch (e) {
@@ -97,12 +52,15 @@ export default function Step4Personality() {
     }
   };
 
+  const clamp = (v: number) => Math.max(0, Math.min(100, v));
+
   const incrementValue = (
     which: 'empathy' | 'intuition' | 'logic',
     delta: number,
   ) => {
-    const current = which === 'empathy' ? empathy : which === 'intuition' ? intuition : logic;
-    adjustValues(which, current + delta);
+    if (which === 'empathy') setEmpathy((v) => clamp(v + delta));
+    else if (which === 'intuition') setIntuition((v) => clamp(v + delta));
+    else setLogic((v) => clamp(v + delta));
   };
 
   return (
@@ -112,8 +70,7 @@ export default function Step4Personality() {
       <View style={styles.content}>
         <Text style={styles.title}>어떤 성격의 친구가 좋나요?</Text>
         <Text style={styles.description}>
-          버튼으로 AI 친구의 성격을 조절하세요.{'\n'}
-          합계는 항상 100으로 유지됩니다.
+          슬라이더를 드래그하여 AI 친구의 성격을 조절하세요.
         </Text>
 
         <View style={styles.slidersContainer}>
@@ -124,6 +81,7 @@ export default function Step4Personality() {
             color="#FF6B6B"
             onIncrement={() => incrementValue('empathy', 5)}
             onDecrement={() => incrementValue('empathy', -5)}
+            onValueChange={setEmpathy}
           />
           <PersonalityRow
             label="직관"
@@ -132,6 +90,7 @@ export default function Step4Personality() {
             color="#FFD93D"
             onIncrement={() => incrementValue('intuition', 5)}
             onDecrement={() => incrementValue('intuition', -5)}
+            onValueChange={setIntuition}
           />
           <PersonalityRow
             label="논리"
@@ -140,13 +99,10 @@ export default function Step4Personality() {
             color="#6BCB77"
             onIncrement={() => incrementValue('logic', 5)}
             onDecrement={() => incrementValue('logic', -5)}
+            onValueChange={setLogic}
           />
         </View>
 
-        <View style={styles.totalContainer}>
-          <Text style={styles.totalLabel}>합계</Text>
-          <Text style={styles.totalValue}>{empathy + intuition + logic}</Text>
-        </View>
       </View>
 
       <View style={styles.footer}>
@@ -159,7 +115,7 @@ export default function Step4Personality() {
           {submitting ? (
             <ActivityIndicator color="#FFFFFF" />
           ) : (
-            <Text style={styles.completeButtonText}>시작하기 🚀</Text>
+            <Text style={styles.completeButtonText}>시작하기</Text>
           )}
         </TouchableOpacity>
       </View>
@@ -174,6 +130,7 @@ function PersonalityRow({
   color,
   onIncrement,
   onDecrement,
+  onValueChange,
 }: {
   label: string;
   emoji: string;
@@ -181,8 +138,41 @@ function PersonalityRow({
   color: string;
   onIncrement: () => void;
   onDecrement: () => void;
+  onValueChange: (v: number) => void;
 }) {
+  const trackWidth = useRef(0);
   const fillWidth = `${value}%` as const;
+
+  const clamp = (v: number) => Math.max(0, Math.min(100, v));
+
+  const calcValue = (pageX: number, trackPageX: number) => {
+    const x = pageX - trackPageX;
+    const ratio = x / trackWidth.current;
+    return clamp(Math.round(ratio * 100 / 5) * 5);
+  };
+
+  const trackRef = useRef<View>(null);
+  const trackPageX = useRef(0);
+
+  const panResponder = useRef(
+    PanResponder.create({
+      onStartShouldSetPanResponder: () => true,
+      onMoveShouldSetPanResponder: () => true,
+      onPanResponderGrant: (evt: GestureResponderEvent) => {
+        trackRef.current?.measure((_x, _y, _w, _h, pageX) => {
+          trackPageX.current = pageX;
+          onValueChange(calcValue(evt.nativeEvent.pageX, pageX));
+        });
+      },
+      onPanResponderMove: (evt: GestureResponderEvent) => {
+        onValueChange(calcValue(evt.nativeEvent.pageX, trackPageX.current));
+      },
+    }),
+  ).current;
+
+  const onTrackLayout = (e: LayoutChangeEvent) => {
+    trackWidth.current = e.nativeEvent.layout.width;
+  };
 
   return (
     <View style={rowStyles.container}>
@@ -200,11 +190,22 @@ function PersonalityRow({
         >
           <Text style={rowStyles.adjustText}>−</Text>
         </TouchableOpacity>
-        <View style={rowStyles.barTrack}>
+        <View
+          ref={trackRef}
+          style={rowStyles.barTrack}
+          onLayout={onTrackLayout}
+          {...panResponder.panHandlers}
+        >
           <View
             style={[
               rowStyles.barFill,
               { width: fillWidth, backgroundColor: color },
+            ]}
+          />
+          <View
+            style={[
+              rowStyles.thumb,
+              { left: fillWidth, borderColor: color },
             ]}
           />
         </View>
@@ -246,23 +247,6 @@ const styles = StyleSheet.create({
   },
   slidersContainer: {
     gap: spacing.lg,
-  },
-  totalContainer: {
-    flexDirection: 'row',
-    justifyContent: 'center',
-    alignItems: 'center',
-    marginTop: spacing.xl,
-    gap: spacing.sm,
-  },
-  totalLabel: {
-    fontSize: fontSize.md,
-    color: colors.textSecondary,
-    fontWeight: '600',
-  },
-  totalValue: {
-    fontSize: fontSize.lg,
-    fontWeight: '700',
-    color: colors.primary,
   },
   footer: {
     paddingHorizontal: spacing.lg,
@@ -329,10 +313,22 @@ const rowStyles = StyleSheet.create({
     height: 12,
     backgroundColor: colors.border,
     borderRadius: 6,
-    overflow: 'hidden',
+    overflow: 'visible',
+    position: 'relative',
   },
   barFill: {
     height: '100%',
     borderRadius: 6,
+  },
+  thumb: {
+    position: 'absolute',
+    top: -6,
+    width: 24,
+    height: 24,
+    borderRadius: 12,
+    backgroundColor: '#FFFFFF',
+    borderWidth: 3,
+    marginLeft: -12,
+    ...shadows.sm,
   },
 });

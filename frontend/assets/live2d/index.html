@@ -3,165 +3,304 @@
 <head>
 <meta charset="UTF-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no" />
-<title>Live2D Placeholder</title>
+<title>Live2D Avatar</title>
 <style>
   * { margin: 0; padding: 0; box-sizing: border-box; }
   html, body { width: 100%; height: 100%; overflow: hidden; background: transparent; }
   canvas { display: block; width: 100%; height: 100%; }
+  #fallback { display: none; width: 100%; height: 100%; }
 </style>
 </head>
 <body>
-<canvas id="c"></canvas>
+<canvas id="fallback"></canvas>
+<script src="https://cubism.live2d.com/sdk-web/cubismcore/live2dcubismcore.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/pixi.js@6.5.10/dist/browser/pixi.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/pixi-live2d-display@0.4.0/dist/cubism4.min.js"></script>
 <script>
 (function () {
-  const canvas = document.getElementById('c');
-  const ctx = canvas.getContext('2d');
+  function sendLog(msg) {
+    try { window.ReactNativeWebView.postMessage(JSON.stringify({ type: 'error', data: msg })); } catch(_) { console.log(msg); }
+  }
 
-  let voiceState = 'idle';   // idle | listening | ai_speaking
-  let volume = 0;            // 0~1
+  /* ── State ── */
+  let voiceState = 'idle';
+  let volume = 0;
+  let primaryColor = '#9CA3AF';
+  let model = null;
+  let app = null;
+  let useFallback = false;
+
+  /* ── Fallback placeholder (same as old version) ── */
+  const fallbackCanvas = document.getElementById('fallback');
+  const fallbackCtx = fallbackCanvas ? fallbackCanvas.getContext('2d') : null;
   let frame = 0;
 
-  const STATE_COLORS = {
-    idle: '#9CA3AF',
-    listening: '#6C63FF',
-    ai_speaking: '#8B5CF6',
-  };
-
-  function applyColor(hex) {
-    STATE_COLORS.idle = hex;
-    // listening/ai_speaking: brighten/darken variant
-    STATE_COLORS.listening = hex;
-    STATE_COLORS.ai_speaking = hex + 'DD';
-  }
-
-  function handleMsg(e) {
-    try {
-      const msg = JSON.parse(e.data);
-      if (msg.type === 'voiceState') voiceState = msg.data;
-      if (msg.type === 'volume') volume = msg.data;
-      if (msg.type === 'color') applyColor(msg.data);
-    } catch (_) {}
-  }
-
-  // Listen for messages from React Native
-  window.addEventListener('message', handleMsg);
-  // Also handle document-level message for Android WebView
-  document.addEventListener('message', handleMsg);
-
-  function resize() {
+  function resizeFallback() {
+    if (!fallbackCanvas) return;
     const dpr = window.devicePixelRatio || 1;
-    canvas.width = canvas.clientWidth * dpr;
-    canvas.height = canvas.clientHeight * dpr;
-    ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+    fallbackCanvas.width = fallbackCanvas.clientWidth * dpr;
+    fallbackCanvas.height = fallbackCanvas.clientHeight * dpr;
+    fallbackCtx.setTransform(dpr, 0, 0, dpr, 0, 0);
   }
-  window.addEventListener('resize', resize);
-  resize();
 
-  function draw() {
+  function drawFallback() {
+    if (!useFallback) return;
     frame++;
-    const w = canvas.clientWidth;
-    const h = canvas.clientHeight;
-    ctx.clearRect(0, 0, w, h);
+    const w = fallbackCanvas.clientWidth;
+    const h = fallbackCanvas.clientHeight;
+    fallbackCtx.clearRect(0, 0, w, h);
 
     const cx = w / 2;
     const cy = h * 0.42;
     const baseRadius = Math.min(w, h) * 0.18;
-    const color = STATE_COLORS[voiceState] || STATE_COLORS.idle;
+    const color = primaryColor;
 
-    // Breathing / volume scale
     let scale = 1;
     if (voiceState === 'idle') {
       scale = 1 + 0.03 * Math.sin(frame * 0.03);
     } else {
       scale = 1 + volume * 0.25;
     }
-
     const r = baseRadius * scale;
 
     // Outer glow
-    const grad = ctx.createRadialGradient(cx, cy, r * 0.5, cx, cy, r * 1.8);
+    const grad = fallbackCtx.createRadialGradient(cx, cy, r * 0.5, cx, cy, r * 1.8);
     grad.addColorStop(0, color + '30');
     grad.addColorStop(1, color + '00');
-    ctx.beginPath();
-    ctx.arc(cx, cy, r * 1.8, 0, Math.PI * 2);
-    ctx.fillStyle = grad;
-    ctx.fill();
+    fallbackCtx.beginPath();
+    fallbackCtx.arc(cx, cy, r * 1.8, 0, Math.PI * 2);
+    fallbackCtx.fillStyle = grad;
+    fallbackCtx.fill();
 
-    // Main circle (head)
-    ctx.beginPath();
-    ctx.arc(cx, cy, r, 0, Math.PI * 2);
-    ctx.fillStyle = color;
-    ctx.fill();
+    // Main circle
+    fallbackCtx.beginPath();
+    fallbackCtx.arc(cx, cy, r, 0, Math.PI * 2);
+    fallbackCtx.fillStyle = color;
+    fallbackCtx.fill();
 
     // Eyes
     const eyeY = cy - r * 0.1;
     const eyeSpacing = r * 0.35;
     const eyeR = r * 0.1;
     const blinkPhase = Math.sin(frame * 0.05);
-    const eyeScaleY = blinkPhase > 0.95 ? 0.1 : 1; // blink
+    const eyeScaleY = blinkPhase > 0.95 ? 0.1 : 1;
 
-    ctx.fillStyle = '#fff';
-    ctx.save();
-    ctx.translate(cx - eyeSpacing, eyeY);
-    ctx.scale(1, eyeScaleY);
-    ctx.beginPath();
-    ctx.arc(0, 0, eyeR, 0, Math.PI * 2);
-    ctx.fill();
-    ctx.restore();
+    fallbackCtx.fillStyle = '#fff';
+    fallbackCtx.save();
+    fallbackCtx.translate(cx - eyeSpacing, eyeY);
+    fallbackCtx.scale(1, eyeScaleY);
+    fallbackCtx.beginPath();
+    fallbackCtx.arc(0, 0, eyeR, 0, Math.PI * 2);
+    fallbackCtx.fill();
+    fallbackCtx.restore();
 
-    ctx.save();
-    ctx.translate(cx + eyeSpacing, eyeY);
-    ctx.scale(1, eyeScaleY);
-    ctx.beginPath();
-    ctx.arc(0, 0, eyeR, 0, Math.PI * 2);
-    ctx.fill();
-    ctx.restore();
+    fallbackCtx.save();
+    fallbackCtx.translate(cx + eyeSpacing, eyeY);
+    fallbackCtx.scale(1, eyeScaleY);
+    fallbackCtx.beginPath();
+    fallbackCtx.arc(0, 0, eyeR, 0, Math.PI * 2);
+    fallbackCtx.fill();
+    fallbackCtx.restore();
 
-    // Mouth — reacts to state
+    // Mouth
     const mouthY = cy + r * 0.3;
-    ctx.strokeStyle = '#fff';
-    ctx.lineWidth = 2;
-    ctx.lineCap = 'round';
+    fallbackCtx.strokeStyle = '#fff';
+    fallbackCtx.lineWidth = 2;
+    fallbackCtx.lineCap = 'round';
     if (voiceState === 'ai_speaking') {
-      // Open mouth (animated)
       const openness = 4 + volume * 10;
-      ctx.beginPath();
-      ctx.ellipse(cx, mouthY, r * 0.2, openness, 0, 0, Math.PI * 2);
-      ctx.fillStyle = '#ffffff80';
-      ctx.fill();
+      fallbackCtx.beginPath();
+      fallbackCtx.ellipse(cx, mouthY, r * 0.2, openness, 0, 0, Math.PI * 2);
+      fallbackCtx.fillStyle = '#ffffff80';
+      fallbackCtx.fill();
     } else if (voiceState === 'listening') {
-      // Small open mouth
       const openness = 2 + volume * 6;
-      ctx.beginPath();
-      ctx.ellipse(cx, mouthY, r * 0.12, openness, 0, 0, Math.PI * 2);
-      ctx.fillStyle = '#ffffff60';
-      ctx.fill();
+      fallbackCtx.beginPath();
+      fallbackCtx.ellipse(cx, mouthY, r * 0.12, openness, 0, 0, Math.PI * 2);
+      fallbackCtx.fillStyle = '#ffffff60';
+      fallbackCtx.fill();
     } else {
-      // Smile
-      ctx.beginPath();
-      ctx.arc(cx, mouthY - 4, r * 0.18, 0.1 * Math.PI, 0.9 * Math.PI);
-      ctx.stroke();
+      fallbackCtx.beginPath();
+      fallbackCtx.arc(cx, mouthY - 4, r * 0.18, 0.1 * Math.PI, 0.9 * Math.PI);
+      fallbackCtx.stroke();
     }
 
-    // Body (simple rounded shape below head)
+    // Body
     const bodyTop = cy + r * 0.85;
     const bodyW = r * 1.2;
     const bodyH = r * 1.0;
-    ctx.beginPath();
-    ctx.ellipse(cx, bodyTop + bodyH * 0.5, bodyW, bodyH, 0, 0, Math.PI * 2);
-    ctx.fillStyle = color + 'CC';
-    ctx.fill();
+    fallbackCtx.beginPath();
+    fallbackCtx.ellipse(cx, bodyTop + bodyH * 0.5, bodyW, bodyH, 0, 0, Math.PI * 2);
+    fallbackCtx.fillStyle = color + 'CC';
+    fallbackCtx.fill();
 
-    // State label (debug)
-    ctx.fillStyle = '#9CA3AF';
-    ctx.font = '12px system-ui, sans-serif';
-    ctx.textAlign = 'center';
-    ctx.fillText(voiceState, cx, h - 16);
-
-    requestAnimationFrame(draw);
+    requestAnimationFrame(drawFallback);
   }
 
-  requestAnimationFrame(draw);
+  function activateFallback() {
+    useFallback = true;
+    fallbackCanvas.style.display = 'block';
+    resizeFallback();
+    window.addEventListener('resize', resizeFallback);
+    requestAnimationFrame(drawFallback);
+  }
+
+  /* ── Live2D Parameter Animation ── */
+  let breathFrame = 0;
+  let blinkTimer = 0;
+  let nextBlinkAt = 120 + Math.random() * 180;
+  let blinkProgress = -1; // -1 = not blinking
+
+  function animateModel() {
+    if (!model) {
+      requestAnimationFrame(animateModel);
+      return;
+    }
+
+    const coreModel = model.internalModel.coreModel;
+    breathFrame++;
+
+    // ── Breathing (always active) ──
+    const breathValue = 0.5 * Math.sin(breathFrame * 0.03) + 0.5;
+    try { coreModel.setParameterValueById('ParamBreath', breathValue); } catch(_) {}
+
+    // ── Blinking ──
+    blinkTimer++;
+    if (blinkProgress < 0) {
+      // Not blinking — check if it's time
+      if (blinkTimer >= nextBlinkAt) {
+        blinkProgress = 0;
+        blinkTimer = 0;
+        // Increase blink frequency when listening
+        const baseInterval = voiceState === 'listening' ? 60 : 120;
+        nextBlinkAt = baseInterval + Math.random() * 180;
+      }
+    }
+
+    if (blinkProgress >= 0) {
+      // Blink animation: close (0→1) then open (1→0) over ~12 frames
+      const blinkDuration = 12;
+      const half = blinkDuration / 2;
+      let eyeOpen;
+      if (blinkProgress < half) {
+        eyeOpen = 1 - (blinkProgress / half); // closing
+      } else {
+        eyeOpen = (blinkProgress - half) / half; // opening
+      }
+      try {
+        coreModel.setParameterValueById('ParamEyeLOpen', eyeOpen);
+        coreModel.setParameterValueById('ParamEyeROpen', eyeOpen);
+      } catch(_) {}
+      blinkProgress++;
+      if (blinkProgress >= blinkDuration) {
+        blinkProgress = -1;
+        try {
+          coreModel.setParameterValueById('ParamEyeLOpen', 1);
+          coreModel.setParameterValueById('ParamEyeROpen', 1);
+        } catch(_) {}
+      }
+    }
+
+    // ── Mouth (ai_speaking) ──
+    if (voiceState === 'ai_speaking') {
+      const mouthOpen = Math.min(1, volume * 1.5);
+      try { coreModel.setParameterValueById('ParamMouthOpenY', mouthOpen); } catch(_) {}
+    } else {
+      try { coreModel.setParameterValueById('ParamMouthOpenY', 0); } catch(_) {}
+    }
+
+    requestAnimationFrame(animateModel);
+  }
+
+  /* ── Load Live2D Model ── */
+  async function initLive2D(modelUrl) {
+    try {
+      // Create PixiJS app
+      app = new PIXI.Application({
+        view: document.createElement('canvas'),
+        transparent: true,
+        autoDensity: true,
+        resizeTo: window,
+        resolution: window.devicePixelRatio || 1,
+      });
+      document.body.insertBefore(app.view, fallbackCanvas);
+      app.view.style.width = '100%';
+      app.view.style.height = '100%';
+      app.view.style.display = 'block';
+
+      // Load model
+      model = await PIXI.live2d.Live2DModel.from(modelUrl);
+
+      // Scale & position to fit
+      const origW = model.width;
+      const origH = model.height;
+      const scaleX = app.screen.width / origW;
+      const scaleY = app.screen.height / origH;
+      const scale = Math.min(scaleX, scaleY) * 1.2;
+      model.scale.set(scale);
+      model.x = (app.screen.width - origW * scale) / 2;
+      model.y = (app.screen.height - origH * scale) / 2;
+
+      app.stage.addChild(model);
+
+      // Handle resize
+      window.addEventListener('resize', () => {
+        if (!model || !app) return;
+        const sx = app.screen.width / model.texture.width;
+        const sy = app.screen.height / model.texture.height;
+        const s = Math.min(sx, sy) * 0.8;
+        model.scale.set(s);
+        model.x = (app.screen.width - model.texture.width * s) / 2;
+        model.y = (app.screen.height - model.texture.height * s) / 2;
+      });
+
+      // Start parameter animation loop
+      requestAnimationFrame(animateModel);
+
+      console.log('[Live2D] Model loaded successfully');
+    } catch (err) {
+      console.error('[Live2D] Failed to load model:', err);
+      try { window.ReactNativeWebView.postMessage(JSON.stringify({ type: 'error', data: String(err) })); } catch(_e) {}
+      // Fall back to placeholder
+      if (app) {
+        app.destroy(true);
+        app = null;
+      }
+      model = null;
+      activateFallback();
+    }
+  }
+
+  /* ── Message handler ── */
+  function handleMsg(e) {
+    try {
+      const msg = JSON.parse(e.data);
+      switch (msg.type) {
+        case 'init':
+          if (msg.data && msg.data.modelUrl) {
+            initLive2D(msg.data.modelUrl);
+          } else {
+            activateFallback();
+          }
+          if (msg.data && msg.data.color) {
+            primaryColor = msg.data.color;
+          }
+          break;
+        case 'voiceState':
+          voiceState = msg.data;
+          break;
+        case 'volume':
+          volume = msg.data;
+          break;
+        case 'color':
+          primaryColor = msg.data;
+          break;
+      }
+    } catch (_) {}
+  }
+
+  window.addEventListener('message', handleMsg);
+  document.addEventListener('message', handleMsg);
 })();
 </script>
 </body>

@@ -17,6 +17,7 @@ class AvatarResponse(BaseModel):
     name: str
     thumbnail_url: str
     primary_color: str
+    model_url: Optional[str] = None
     is_active: bool
 
     model_config = {"from_attributes": True}

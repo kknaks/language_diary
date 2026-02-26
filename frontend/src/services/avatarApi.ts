@@ -1,25 +1,27 @@
 import type { LocalAvatar } from '../types';
 
+const MODEL_URL = '/static/models/mark/mark_free_t04.model3.json';
+
 const MOCK_AVATARS: LocalAvatar[] = [
   {
     id: '1',
     name: 'Luna',
     thumbnailUrl: '',
-    modelUrl: '',
+    modelUrl: MODEL_URL,
     primaryColor: '#6C63FF',
   },
   {
     id: '2',
     name: 'Mochi',
     thumbnailUrl: '',
-    modelUrl: '',
+    modelUrl: MODEL_URL,
     primaryColor: '#FF6B6B',
   },
   {
     id: '3',
     name: 'Kiwi',
     thumbnailUrl: '',
-    modelUrl: '',
+    modelUrl: MODEL_URL,
     primaryColor: '#4ECDC4',
   },
 ];

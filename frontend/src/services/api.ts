@@ -7,7 +7,7 @@ import { env } from '../config/env';
 import { debugFetch } from '../components/common/DebugBanner';
 import { tokenManager } from '../utils/tokenManager';
 
-const API_BASE_URL = env.API_BASE_URL;
+export const API_BASE_URL = env.API_BASE_URL;
 
 // ===== Token refresh queue =====
 
@@ -301,11 +301,11 @@ export async function completeDiary(id: string | number): Promise<void> {
 // ===== Auth API =====
 
 export const authApi = {
-  async socialLogin(provider: 'google' | 'apple', idToken: string): Promise<SocialLoginResponse> {
+  async socialLogin(provider: 'google' | 'apple' | 'kakao', idToken?: string, accessToken?: string): Promise<SocialLoginResponse> {
     const res = await fetch(`${API_BASE_URL}/api/v1/auth/social`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ provider, id_token: idToken }),
+      body: JSON.stringify({ provider, id_token: idToken ?? '', access_token: accessToken ?? '' }),
     });
     if (!res.ok) {
       const err = await res.json().catch(() => ({}));

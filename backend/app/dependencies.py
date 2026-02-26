@@ -8,13 +8,15 @@ from app.models.user import User
 from app.repositories.user_repo import UserRepository
 from app.utils.jwt import verify_access_token
 
-security = HTTPBearer()
+security = HTTPBearer(auto_error=False)
 
 
 async def get_current_user(
-    credentials: HTTPAuthorizationCredentials = Depends(security),
+    credentials: HTTPAuthorizationCredentials | None = Depends(security),
     db: AsyncSession = Depends(get_db),
 ) -> User:
+    if not credentials:
+        raise InvalidAccessTokenError()
     token = credentials.credentials
     user_id = verify_access_token(token)
     if not user_id:

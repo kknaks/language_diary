@@ -19,8 +19,9 @@ class TokenData(BaseModel):
 
 
 class SocialLoginRequest(BaseModel):
-    provider: str  # "google" | "apple"
-    id_token: str
+    provider: str  # "google" | "apple" | "kakao"
+    id_token: str = ""
+    access_token: str = ""  # 카카오용
 
 
 class UserInToken(BaseModel):

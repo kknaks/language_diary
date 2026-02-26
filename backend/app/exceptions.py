@@ -163,11 +163,6 @@ class ProfileNotFoundError(NotFoundError):
         super().__init__(code="PROFILE_NOT_FOUND", message="프로필을 찾을 수 없습니다.", detail=detail)
 
 
-class InvalidPersonalitySumError(BadRequestError):
-    def __init__(self, detail: str = ""):
-        super().__init__(code="INVALID_PERSONALITY_SUM", message="성격 합계가 100이 아닙니다.", detail=detail)
-
-
 class VoiceLanguageMismatchError(BadRequestError):
     def __init__(self, detail: str = ""):
         super().__init__(code="VOICE_LANGUAGE_MISMATCH", message="음성과 언어가 일치하지 않습니다.", detail=detail)

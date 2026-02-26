@@ -10,11 +10,12 @@ import {
 } from 'react-native';
 import { router } from 'expo-router';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { Audio } from 'expo-av';
+import { createAudioPlayer, AudioPlayer } from 'expo-audio';
 import { Ionicons } from '@expo/vector-icons';
 import { colors, spacing, fontSize, borderRadius, shadows } from '../../src/constants/theme';
-import { seedApi } from '../../src/services/api';
+import { seedApi, API_BASE_URL } from '../../src/services/api';
 import { useOnboardingStore } from '../../src/stores/useOnboardingStore';
+import { useOnboardingPrefetch } from '../../src/stores/useOnboardingPrefetch';
 import { Voice } from '../../src/types/seed';
 import StepIndicator from '../../src/components/onboarding/StepIndicator';
 
@@ -23,22 +24,29 @@ export default function Step3Voice() {
   const [loading, setLoading] = useState(true);
   const [selectedId, setSelectedId] = useState<number | null>(null);
   const [playingId, setPlayingId] = useState<number | null>(null);
-  const soundRef = useRef<Audio.Sound | null>(null);
+  const playerRef = useRef<AudioPlayer | null>(null);
+  const subscriptionRef = useRef<{ remove: () => void } | null>(null);
 
-  const targetLanguageId = useOnboardingStore((s) => s.target_language_id);
+  const nativeLanguageId = useOnboardingStore((s) => s.native_language_id);
   const setVoice = useOnboardingStore((s) => s.setVoice);
+  const cachedVoices = useOnboardingPrefetch((s) => s.voices);
 
   useEffect(() => {
-    loadVoices();
+    if (cachedVoices) {
+      setVoices(cachedVoices);
+      setLoading(false);
+    } else {
+      loadVoices();
+    }
     return () => {
-      // 클린업: 재생 중인 사운드 해제
-      soundRef.current?.unloadAsync();
+      subscriptionRef.current?.remove();
+      playerRef.current?.release();
     };
-  }, []);
+  }, [cachedVoices]);
 
   const loadVoices = async () => {
     try {
-      const res = await seedApi.getVoices(targetLanguageId ?? undefined);
+      const res = await seedApi.getVoices(nativeLanguageId ?? undefined);
       setVoices(res.items.filter((v) => v.is_active));
     } catch {
       Alert.alert('오류', '목소리 목록을 불러올 수 없습니다.');
@@ -47,37 +55,38 @@ export default function Step3Voice() {
     }
   };
 
-  const handlePreview = async (voice: Voice) => {
+  const handlePreview = (voice: Voice) => {
     if (!voice.sample_url) {
       Alert.alert('미리듣기 불가', '이 목소리의 샘플이 없습니다.');
       return;
     }
 
+    // 이전 플레이어 정리
+    subscriptionRef.current?.remove();
+    playerRef.current?.release();
+    subscriptionRef.current = null;
+    playerRef.current = null;
+
+    if (playingId === voice.id) {
+      setPlayingId(null);
+      return;
+    }
+
     try {
-      // 이전 사운드 정리
-      if (soundRef.current) {
-        await soundRef.current.unloadAsync();
-        soundRef.current = null;
-      }
-
-      if (playingId === voice.id) {
-        setPlayingId(null);
-        return;
-      }
-
       setPlayingId(voice.id);
-      const { sound } = await Audio.Sound.createAsync(
-        { uri: voice.sample_url },
-        { shouldPlay: true },
-      );
-      soundRef.current = sound;
+      const player = createAudioPlayer(`${API_BASE_URL}${voice.sample_url}`);
+      playerRef.current = player;
 
-      sound.setOnPlaybackStatusUpdate((status) => {
-        if (status.isLoaded && status.didJustFinish) {
+      const sub = player.addListener('playbackStatusUpdate', (status) => {
+        if (status.didJustFinish) {
           setPlayingId(null);
         }
       });
-    } catch {
+      subscriptionRef.current = sub;
+
+      player.play();
+    } catch (err) {
+      console.error('Audio playback error:', err);
       setPlayingId(null);
       Alert.alert('재생 실패', '오디오를 재생할 수 없습니다.');
     }

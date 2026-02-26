@@ -33,13 +33,6 @@ class ProfileService:
                 message="이미 프로필이 존재합니다. PUT으로 수정해주세요.",
             )
 
-        # 성격 합계 검증
-        if data.empathy + data.intuition + data.logic != 100:
-            raise BadRequestError(
-                code="INVALID_PERSONALITY_SUM",
-                message="성격 비율의 합이 100이어야 합니다.",
-            )
-
         profile = await repo.create(
             user_id=user_id,
             native_language_id=data.native_language_id,
@@ -125,25 +118,6 @@ class ProfileService:
             )
 
         update_data = data.dict(exclude_unset=True) if hasattr(data, 'dict') else data.model_dump(exclude_unset=True)
-
-        # Personality validation
-        has_personality = any(
-            k in update_data for k in ("empathy", "intuition", "logic")
-        )
-        if has_personality:
-            empathy = update_data.get("empathy")
-            intuition = update_data.get("intuition")
-            logic = update_data.get("logic")
-            if empathy is None or intuition is None or logic is None:
-                raise BadRequestError(
-                    code="INVALID_PERSONALITY_SUM",
-                    message="empathy, intuition, logic 세 값을 모두 입력해야 합니다.",
-                )
-            if empathy + intuition + logic != 100:
-                raise BadRequestError(
-                    code="INVALID_PERSONALITY_SUM",
-                    message="성격 비율의 합이 100이어야 합니다.",
-                )
 
         voice_reset = False
 

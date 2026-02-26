@@ -112,8 +112,8 @@ def upgrade() -> None:
     op.create_index("idx_pronunciation_results_card_id", "pronunciation_results", ["card_id"])
     op.create_index("idx_pronunciation_results_user_id", "pronunciation_results", ["user_id"])
 
-    # Seed MVP user
-    op.execute("INSERT INTO users (id, nickname, native_lang, target_lang) VALUES (1, 'MVP User', 'ko', 'en')")
+    # Seed MVP user — disabled: social login handles user creation
+    # op.execute("INSERT INTO users (id, nickname, native_lang, target_lang) VALUES (1, 'MVP User', 'ko', 'en')")
 
 
 def downgrade() -> None:

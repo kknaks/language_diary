@@ -25,7 +25,7 @@ async def social_login(
     body: SocialLoginRequest,
     db: AsyncSession = Depends(get_db),
 ):
-    return await _auth_service.social_login(db, body.provider, body.id_token)
+    return await _auth_service.social_login(db, body.provider, body.id_token, body.access_token)
 
 
 @router.post("/logout", status_code=204)

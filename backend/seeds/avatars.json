@@ -1,5 +1,3 @@
 [
-  {"id": 1, "name": "Luna", "thumbnail_url": "/static/avatars/luna.png", "primary_color": "#6C63FF", "is_active": true},
-  {"id": 2, "name": "Mochi", "thumbnail_url": "/static/avatars/mochi.png", "primary_color": "#FF6B6B", "is_active": true},
-  {"id": 3, "name": "Rex", "thumbnail_url": "/static/avatars/rex.png", "primary_color": "#4ECDC4", "is_active": true}
+  {"id": 1, "name": "Mark", "thumbnail_url": "/static/models/mark/mark_thumbnail.png", "primary_color": "#6C63FF", "model_url": "/static/models/mark/mark_free_t04.model3.json", "is_active": true}
 ]

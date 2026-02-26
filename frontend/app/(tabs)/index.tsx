@@ -7,6 +7,7 @@ import {
   RefreshControl,
   ActivityIndicator,
   TouchableOpacity,
+  Dimensions,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
@@ -131,12 +132,12 @@ export default function HomeScreen() {
           )}
         </View>
 
-        {/* Avatar + CTA */}
-        <View style={styles.avatarContainer}>
-          <View style={[styles.avatarPreview, { backgroundColor: avatarColor + '20' }]}>
-            <Live2DAvatar voiceState="idle" volume={0} color={avatarColor} />
-          </View>
+        {/* Avatar */}
+        <View style={styles.avatarPreview}>
+          <Live2DAvatar voiceState="idle" volume={0} color={avatarColor} modelUrl={avatar?.model_url ?? selectedAvatar?.modelUrl} />
         </View>
+
+        {/* CTA */}
         <View style={styles.ctaContainer}>
           <Button
             title="대화 시작하기"
@@ -210,6 +211,8 @@ export default function HomeScreen() {
   );
 }
 
+const { height: SCREEN_HEIGHT } = Dimensions.get('window');
+
 const styles = StyleSheet.create({
   container: {
     flex: 1,
@@ -251,14 +254,9 @@ const styles = StyleSheet.create({
     marginTop: spacing.xs,
   },
   // Avatar
-  avatarContainer: {
-    alignItems: 'center',
-    paddingHorizontal: spacing.lg,
-  },
   avatarPreview: {
-    width: 200,
-    height: 200,
-    borderRadius: borderRadius.lg,
+    height: SCREEN_HEIGHT * 0.5,
+    marginHorizontal: spacing.lg,
     overflow: 'hidden',
   },
   ctaContainer: {

@@ -1,4 +1,4 @@
-from sqlalchemy import Boolean, ForeignKey, Integer, String
+from sqlalchemy import Boolean, Float, ForeignKey, Integer, String
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.models.base import Base
@@ -38,6 +38,7 @@ class Voice(Base):
     elevenlabs_voice_id: Mapped[str] = mapped_column(String(100), nullable=False)
     sample_url: Mapped[str] = mapped_column(String(500), nullable=True)
     description: Mapped[str] = mapped_column(String(500), nullable=True)
+    volume_gain_db: Mapped[float] = mapped_column(Float, server_default="0", nullable=False)
     is_active: Mapped[bool] = mapped_column(Boolean, server_default="true", nullable=False)
 
     # relationships
