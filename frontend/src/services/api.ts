@@ -360,7 +360,7 @@ export const seedApi = {
 // ===== Profile API =====
 
 export const profileApi = {
-  async createProfile(data: ProfileCreateRequest): Promise<{ message: string; onboarding_completed: boolean }> {
+  async createProfile(data: ProfileCreateRequest): Promise<{ message: string; onboarding_completed: boolean; access_token?: string }> {
     const res = await fetchWithAuth(`${API_BASE_URL}/api/v1/user/profile`, {
       method: 'POST',
       body: JSON.stringify(data),

@@ -19,6 +19,7 @@ import { useAuthStore } from '../../src/stores/useAuthStore';
 import { ProfileCreateRequest } from '../../src/types/profile';
 import StepIndicator from '../../src/components/onboarding/StepIndicator';
 
+
 export default function Step4Personality() {
   const [empathy, setEmpathy] = useState(50);
   const [intuition, setIntuition] = useState(50);
@@ -26,8 +27,7 @@ export default function Step4Personality() {
   const [submitting, setSubmitting] = useState(false);
 
   const onboardingStore = useOnboardingStore();
-  const user = useAuthStore((s) => s.user);
-  const setUser = useAuthStore((s) => s.setUser);
+  const setOnboarded = useAuthStore((s) => s.setOnboarded);
 
   const handleComplete = async () => {
     try {
@@ -38,9 +38,10 @@ export default function Step4Personality() {
       payload.intuition = intuition;
       payload.logic = logic;
 
-      await profileApi.createProfile(payload);
-      if (user) {
-        setUser({ ...user, onboarding_completed: true });
+      const result = await profileApi.createProfile(payload);
+      // 새 access_token(ob=true)으로 SecureStore 갱신
+      if (result.access_token) {
+        await setOnboarded(result.access_token);
       }
       onboardingStore.reset();
       router.replace('/(tabs)');

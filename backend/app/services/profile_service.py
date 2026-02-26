@@ -13,6 +13,7 @@ from app.schemas.user import (
     ProfileResponse,
     UserProfileResponse,
 )
+from app.utils.jwt import create_access_token
 
 VALID_CEFR_LEVELS = {"A1", "A2", "B1", "B2", "C1", "C2"}
 
@@ -63,7 +64,14 @@ class ProfileService:
 
         await db.commit()
 
-        return {"message": "프로필이 생성되었습니다.", "onboarding_completed": True}
+        # 온보딩 완료된 새 access_token 발급 (ob=True 포함)
+        new_access_token = create_access_token(user_id, onboarding_completed=True)
+
+        return {
+            "message": "프로필이 생성되었습니다.",
+            "onboarding_completed": True,
+            "access_token": new_access_token,
+        }
 
     async def get_profile(
         self,

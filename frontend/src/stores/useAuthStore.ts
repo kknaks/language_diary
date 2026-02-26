@@ -11,6 +11,7 @@ interface AuthState {
   setAuth: (user: AuthUser, tokens: AuthTokens) => Promise<void>;
   clearAuth: () => Promise<void>;
   setUser: (user: AuthUser) => void;
+  setOnboarded: (newAccessToken: string) => Promise<void>;
   setLoading: (loading: boolean) => void;
   initializeFromStorage: () => Promise<void>;
 }
@@ -40,6 +41,17 @@ export const useAuthStore = create<AuthState>((set) => ({
   },
 
   setUser: (user) => set({ user, isOnboarded: user.onboarding_completed }),
+
+  setOnboarded: async (newAccessToken) => {
+    const refreshToken = await tokenManager.getRefreshToken();
+    if (refreshToken) {
+      await tokenManager.saveTokens(newAccessToken, refreshToken);
+    }
+    set((state) => ({
+      isOnboarded: true,
+      user: state.user ? { ...state.user, onboarding_completed: true } : state.user,
+    }));
+  },
 
   setLoading: (loading) => set({ isLoading: loading }),
 
