@@ -39,7 +39,7 @@ def _make_wav(sample_rate=16000, bits_per_sample=16, num_channels=1, data_size=3
 
 def _make_streaming_reply(*sentences):
     """Create an async generator for get_reply_streaming."""
-    async def _gen(history):
+    async def _gen(history, **kwargs):
         for s in sentences:
             yield s
     return _gen
@@ -119,7 +119,7 @@ async def test_full_conversation_to_learning_flow(client, seed_user, tmp_path):
     reply_count = 0
     replies = ["어떤 회의였어? 누구랑 했어?", "결과는 어땠어? 힘들진 않았어?"]
 
-    async def streaming_reply(history):
+    async def streaming_reply(history, **kwargs):
         nonlocal reply_count
         text = replies[reply_count] if reply_count < len(replies) else "알겠어!"
         reply_count += 1

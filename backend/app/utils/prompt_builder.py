@@ -31,7 +31,7 @@ CONVERSATION_PROMPTS: Dict[str, str] = {
 6. 한 번에 질문 하나만 해. 너무 길게 말하지 마.
 7. 3턴 이상이면 자연스럽게 마무리를 유도할 수 있어.
 8. 절대 다른 언어로 대화하지 마. 오직 한국어만 사용해.
-9. 사용자가 "[silence]"라고 보내면, 이건 사용자가 10초 이상 아무 말도 하지 않았다는 뜻이야. 부드럽게 다시 말을 걸어봐. 예: "괜찮아, 천천히 말해봐~", "생각 중이야? 편하게 말해도 돼!" 등.""",
+9. 사용자가 "[silence]"라고 보내면, 이건 사용자가 10초 이상 아무 말도 하지 않았다는 뜻이야. 부드럽게 다시 말을 걸어봐. 예: "괜찮아, 천천히 말해봐~", "생각 중이야? 편하게 말해도 돼!" 등.""",  # noqa: E501
 
     "en": """You are the user's friendly companion. Help them naturally talk about their day.
 
@@ -44,7 +44,7 @@ Rules:
 6. Ask only one question at a time. Keep your responses short.
 7. After 3+ turns you may gently wrap up the conversation.
 8. Never switch to another language. Use English only.
-9. If the user sends "[silence]", it means they haven't spoken for 10+ seconds. Gently re-engage them, e.g. "Take your time!", "Still thinking? No rush!".""",
+9. If the user sends "[silence]", it means they haven't spoken for 10+ seconds. Gently re-engage them, e.g. "Take your time!", "Still thinking? No rush!".""",  # noqa: E501
 
     "ja": """あなたはユーザーの親しい友達です。ユーザーが今日あった出来事を自然に話せるように手助けしてください。
 
@@ -83,7 +83,7 @@ Reglas:
 6. Haz solo una pregunta a la vez. No te extiendas demasiado.
 7. Después de 3+ turnos puedes guiar suavemente hacia el cierre.
 8. Nunca cambies a otro idioma. Usa solo español.
-9. Si el usuario envía "[silence]", significa que no ha hablado en más de 10 segundos. Vuelve a hablarle suavemente, ej: "Tranquilo, tómate tu tiempo~", "¿Estás pensando? ¡Sin prisa!".""",
+9. Si el usuario envía "[silence]", significa que no ha hablado en más de 10 segundos. Vuelve a hablarle suavemente, ej: "Tranquilo, tómate tu tiempo~", "¿Estás pensando? ¡Sin prisa!".""",  # noqa: E501
 }
 
 # ---------------------------------------------------------------------------
@@ -91,10 +91,10 @@ Reglas:
 # ---------------------------------------------------------------------------
 _PERSONALITY_TEMPLATES: Dict[str, str] = {
     "ko": "\n10. 너의 성격: 공감 %d%%, 직관 %d%%, 논리 %d%%. 이 비율에 맞게 대화해.",
-    "en": "\n10. Your personality: empathy %d%%, intuition %d%%, logic %d%%. Adjust your conversation style to match these ratios.",
+    "en": "\n10. Your personality: empathy %d%%, intuition %d%%, logic %d%%. Adjust your conversation style to match these ratios.",  # noqa: E501
     "ja": "\n10. あなたの性格：共感 %d%%、直感 %d%%、論理 %d%%。この比率に合わせて会話してください。",
     "zh": "\n10. 你的性格：共情 %d%%，直觉 %d%%，逻辑 %d%%。按照这个比例调整对话风格。",
-    "es": "\n10. Tu personalidad: empatía %d%%, intuición %d%%, lógica %d%%. Ajusta tu estilo de conversación a estas proporciones.",
+    "es": "\n10. Tu personalidad: empatía %d%%, intuición %d%%, lógica %d%%. Ajusta tu estilo de conversación a estas proporciones.",  # noqa: E501
 }
 
 # ---------------------------------------------------------------------------
@@ -173,7 +173,8 @@ Rules:
 Resume la conversación dada y devuelve JSON en este formato:
 {{
   "original_text": "Diario en español (estilo natural de diario, 1-3 párrafos)",
-  "translated_text": "Traducción en {target_language} (estilo natural de diario en {target_language}, mismo contenido que en español)"
+  "translated_text": "Traducción en {target_language} (estilo natural de diario en {target_language},
+mismo contenido que en español)"
 }}
 
 Reglas:
@@ -293,7 +294,8 @@ Rules:
 3. 例句从日记正文中取。
 4. 只返回JSON数组。不要包含其他文字。""",
 
-    "es": """Eres un experto en aprendizaje de {target_language}. Extrae puntos de aprendizaje del diario en {target_language}.
+    "es": """Eres un experto en aprendizaje de {target_language}.
+Extrae puntos de aprendizaje del diario en {target_language}.
 
 Devuelve un array JSON como este:
 [
