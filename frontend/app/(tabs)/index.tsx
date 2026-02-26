@@ -1,4 +1,4 @@
-import React, { useEffect, useCallback, useState } from 'react';
+import React, { useCallback, useState } from 'react';
 import {
   View,
   Text,
@@ -11,7 +11,7 @@ import {
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
-import { useRouter } from 'expo-router';
+import { useRouter, useFocusEffect } from 'expo-router';
 
 import { homeApi } from '../../src/services/api';
 import { HomeResponse, HomeDiary } from '../../src/types/home';
@@ -62,10 +62,12 @@ export default function HomeScreen() {
     }
   }, []);
 
-  useEffect(() => {
-    loadHome();
-    fetchAvatars();
-  }, [loadHome, fetchAvatars]);
+  useFocusEffect(
+    useCallback(() => {
+      loadHome();
+      fetchAvatars();
+    }, [loadHome, fetchAvatars]),
+  );
 
   const onRefresh = useCallback(async () => {
     setRefreshing(true);

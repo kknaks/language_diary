@@ -16,10 +16,10 @@ ACCESS_TOKEN_EXPIRE_MINUTES: int = 30
 REFRESH_TOKEN_EXPIRE_DAYS: int = 30
 
 
-def create_access_token(user_id: int) -> str:
+def create_access_token(user_id: int, onboarding_completed: bool = False) -> str:
     """Return a signed JWT containing ``sub=<user_id>``."""
     expire = datetime.utcnow() + timedelta(minutes=ACCESS_TOKEN_EXPIRE_MINUTES)
-    payload = {"sub": str(user_id), "exp": expire}
+    payload = {"sub": str(user_id), "exp": expire, "ob": onboarding_completed}
     return jwt.encode(payload, SECRET_KEY, algorithm=ALGORITHM)
 
 

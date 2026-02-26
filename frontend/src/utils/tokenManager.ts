@@ -35,4 +35,14 @@ export const tokenManager = {
       return true;
     }
   },
+
+  // JWT payload에서 onboarding_completed 읽기
+  getOnboardingCompleted(token: string): boolean {
+    try {
+      const payload = JSON.parse(atob(token.split('.')[1]));
+      return !!payload.ob;
+    } catch {
+      return false;
+    }
+  },
 };

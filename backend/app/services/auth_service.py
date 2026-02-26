@@ -39,8 +39,11 @@ class AuthService:
         # 4. rotation — delete old token
         await repo.delete(stored.id)
 
-        # 5. issue new tokens
-        new_access = create_access_token(user_id)
+        # 5. issue new tokens — include onboarding_completed
+        user_repo = UserRepository(db)
+        user = await user_repo.get_by_id(user_id)
+        ob = bool(user and user.profile and user.profile.onboarding_completed)
+        new_access = create_access_token(user_id, onboarding_completed=ob)
         new_refresh = create_refresh_token()
 
         # 6. persist new refresh token
@@ -89,8 +92,13 @@ class AuthService:
             user = await user_repo.create_social_user(provider, social_id, email, name)
             is_new_user = True
 
-        # 3. JWT 발급
-        access_token = create_access_token(user.id)
+        # 3. onboarding_completed 확인
+        onboarding_completed = False
+        if not is_new_user and user.profile and user.profile.onboarding_completed:
+            onboarding_completed = True
+
+        # 4. JWT 발급
+        access_token = create_access_token(user.id, onboarding_completed=onboarding_completed)
         refresh_token_str = create_refresh_token()
         token_hash = hash_refresh_token(refresh_token_str)
 
@@ -98,12 +106,6 @@ class AuthService:
         token_repo = RefreshTokenRepository(db)
         await token_repo.create(user_id=user.id, token_hash=token_hash, expires_at=expires_at)
         await db.commit()
-
-        # 4. onboarding_completed 확인
-        # find_by_social eagerly loads profile; new users have no profile
-        onboarding_completed = False
-        if not is_new_user and user.profile and user.profile.onboarding_completed:
-            onboarding_completed = True
 
         return SocialLoginResponse(
             access_token=access_token,

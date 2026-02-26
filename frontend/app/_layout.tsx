@@ -1,5 +1,5 @@
 import { useEffect } from 'react';
-import { Stack, router } from 'expo-router';
+import { Stack, router, useRootNavigationState } from 'expo-router';
 import { StatusBar } from 'expo-status-bar';
 import { View, ActivityIndicator, StyleSheet } from 'react-native';
 import { colors, fontSize } from '../src/constants/theme';
@@ -9,6 +9,7 @@ import { useAuthStore } from '../src/stores/useAuthStore';
 
 export default function RootLayout() {
   const { isLoading, isAuthenticated, isOnboarded, initializeFromStorage } = useAuthStore();
+  const navigationState = useRootNavigationState();
 
   useEffect(() => {
     debugLog('info', `API: ${env.API_BASE_URL}`);
@@ -18,6 +19,7 @@ export default function RootLayout() {
 
   useEffect(() => {
     if (isLoading) return;
+    if (!navigationState?.key) return;
 
     if (!isAuthenticated) {
       router.replace('/login');
@@ -28,15 +30,7 @@ export default function RootLayout() {
     } else {
       debugLog('info', 'Auth: authenticated & onboarded');
     }
-  }, [isLoading, isAuthenticated, isOnboarded]);
-
-  if (isLoading) {
-    return (
-      <View style={styles.loadingContainer}>
-        <ActivityIndicator size="large" color={colors.primary} />
-      </View>
-    );
-  }
+  }, [isLoading, isAuthenticated, isOnboarded, navigationState?.key]);
 
   return (
     <View style={{ flex: 1 }}>
@@ -63,13 +57,18 @@ export default function RootLayout() {
           options={{ title: '학습', headerShown: false }}
         />
       </Stack>
+      {isLoading && (
+        <View style={styles.loadingOverlay}>
+          <ActivityIndicator size="large" color={colors.primary} />
+        </View>
+      )}
     </View>
   );
 }
 
 const styles = StyleSheet.create({
-  loadingContainer: {
-    flex: 1,
+  loadingOverlay: {
+    ...StyleSheet.absoluteFillObject,
     justifyContent: 'center',
     alignItems: 'center',
     backgroundColor: colors.background,
