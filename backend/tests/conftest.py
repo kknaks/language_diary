@@ -235,3 +235,26 @@ def mock_tts_stream_session():
         )
         instance.close = AsyncMock()
         yield MockStream
+
+
+@pytest.fixture(autouse=True)
+def mock_stt_session():
+    """Stub STTSession so tests don't require ElevenLabs API key.
+
+    The mock connects successfully but iter_commits yields nothing,
+    preventing unexpected STT_FAILED errors from appearing in the
+    WebSocket message queue and breaking test assertions.
+    Tests that need specific STT behaviour should patch STTSession themselves.
+    """
+    with patch("app.api.v1.conversation.STTSession") as MockSTT:
+        instance = MockSTT.return_value
+        instance.connect = AsyncMock()  # succeeds silently
+
+        async def _empty_iter():
+            return
+            yield  # noqa: make this an async generator
+
+        instance.iter_commits = _empty_iter
+        instance.send_audio = AsyncMock()
+        instance.close = AsyncMock()
+        yield MockSTT
