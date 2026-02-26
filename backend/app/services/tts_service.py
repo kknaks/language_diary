@@ -30,7 +30,7 @@ AUDIO_DIR = Path("audio_files")
 # ElevenLabs TTS config
 ELEVENLABS_TTS_URL = "https://api.elevenlabs.io/v1/text-to-speech"
 DEFAULT_VOICE_ID = "21m00Tcm4TlvDq8ikWAM"  # Rachel - default English voice
-DEFAULT_MODEL_ID = "eleven_monolingual_v1"
+DEFAULT_MODEL_ID = "eleven_multilingual_v2"
 
 # ElevenLabs TTS WebSocket config
 ELEVENLABS_TTS_WS_URL = "wss://api.elevenlabs.io/v1/text-to-speech"

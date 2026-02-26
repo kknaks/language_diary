@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useRef } from 'react';
+import { Platform } from 'react-native';
 import { useAudioRecorder, ExpoAudioStreamModule } from '@siteed/expo-audio-studio';
 import { fromByteArray, toByteArray } from 'base64-js';
 import { ensureAudioMode } from '../utils/audio';

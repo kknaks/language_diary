@@ -14,10 +14,11 @@ export async function ensureAudioMode(): Promise<void> {
     await setAudioModeAsync({
       allowsRecording: true,
       playsInSilentMode: true,
-      interruptionMode: 'mixWithOthers',
+      interruptionMode: 'duckOthers',  // AEC requires duckOthers (not mixWithOthers)
+      shouldRouteThroughEarpiece: false, // Android: keep speaker output, AEC still active
     });
     audioModeConfigured = true;
-    console.log('[Audio] Audio mode set: playAndRecord + mixWithOthers');
+    console.log('[Audio] Audio mode set: playAndRecord + duckOthers + AEC');
   } catch (err) {
     console.error('[Audio] Failed to set audio mode:', err);
   }
