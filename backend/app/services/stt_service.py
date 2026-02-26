@@ -231,6 +231,6 @@ class STTSession:
         except websockets.exceptions.ConnectionClosed:
             logger.warning("ElevenLabs STT connection closed unexpectedly")
             self._connected = False
-        except Exception as e:
+        except Exception:
             logger.exception("STT listener error")
             self._connected = False

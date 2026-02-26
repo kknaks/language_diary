@@ -20,7 +20,7 @@ class Diary(Base):
     translated_text: Mapped[Optional[str]] = mapped_column(Text)
     status: Mapped[str] = mapped_column(String(20), server_default="draft", nullable=False)
     created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now(), nullable=False)
-    updated_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now(), onupdate=func.now(), nullable=False)
+    updated_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now(), onupdate=func.now(), nullable=False)  # noqa: E501
     completed_at: Mapped[Optional[datetime]] = mapped_column(DateTime)
     deleted_at: Mapped[Optional[datetime]] = mapped_column(DateTime)
 

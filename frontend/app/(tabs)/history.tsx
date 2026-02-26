@@ -86,14 +86,14 @@ export default function HistoryScreen() {
   }, [hasMore, isLoadingMore, fetchMore]);
 
   const handleDiaryPress = useCallback(
-    (id: string) => {
+    (id: number) => {
       router.push(`/diary/${id}`);
     },
     [router],
   );
 
   const handleDelete = useCallback(
-    (id: string) => {
+    (id: number) => {
       removeDiary(id);
     },
     [removeDiary],
@@ -126,7 +126,7 @@ export default function HistoryScreen() {
       ) : (
         <SectionList
           sections={sections}
-          keyExtractor={(item) => item.id}
+          keyExtractor={(item) => String(item.id)}
           renderSectionHeader={({ section }) => <DateHeader title={section.title} />}
           renderItem={({ item }) => (
             <DiaryListItem

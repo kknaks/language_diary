@@ -41,7 +41,7 @@ export default function CardSwiper({ cards, currentIndex, onIndexChange }: CardS
       ref={flatListRef}
       data={cards}
       renderItem={renderItem}
-      keyExtractor={(item) => item.id}
+      keyExtractor={(item) => String(item.id)}
       horizontal
       pagingEnabled
       showsHorizontalScrollIndicator={false}

@@ -6,7 +6,6 @@ Usage:
 """
 import asyncio
 import json
-import os
 from pathlib import Path
 
 from sqlalchemy import select

@@ -8,7 +8,7 @@ from app.database import get_db
 from app.dependencies import get_current_user
 from app.exceptions import BadRequestError, EvaluationFailedError, NotFoundError, TTSFailedError
 from app.models.learning import LearningCard
-from app.models.seed import Voice
+from app.models.seed import Voice  # noqa: F401
 from app.models.user import User
 from app.schemas.speech import PronunciationEvaluateResponse, TTSRequest, TTSResponse
 from app.services.pronunciation_service import PronunciationError, PronunciationService

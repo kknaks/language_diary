@@ -1,4 +1,3 @@
-from typing import Optional
 
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -33,7 +32,7 @@ class ProfileService:
                 message="이미 프로필이 존재합니다. PUT으로 수정해주세요.",
             )
 
-        profile = await repo.create(
+        await repo.create(
             user_id=user_id,
             native_language_id=data.native_language_id,
             target_language_id=data.target_language_id,
