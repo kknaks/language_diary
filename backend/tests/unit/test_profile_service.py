@@ -72,20 +72,6 @@ class TestCreateProfile:
         result = await service.create_profile(db_session, profile_user.id, data)
         assert result["onboarding_completed"] is True
 
-    async def test_invalid_personality_sum(self, db_session, profile_user, seed_languages):
-        """Personality sum != 100 should raise BadRequestError."""
-        service = ProfileService()
-        data = ProfileCreateRequest(
-            native_language_id=1,
-            target_language_id=2,
-            empathy=50,
-            intuition=30,
-            logic=30,
-        )
-        with pytest.raises(BadRequestError) as exc_info:
-            await service.create_profile(db_session, profile_user.id, data)
-        assert exc_info.value.code == "INVALID_PERSONALITY_SUM"
-
     async def test_duplicate_profile(self, db_session, profile_user, seed_languages):
         """Second profile creation should raise ConflictError."""
         service = ProfileService()

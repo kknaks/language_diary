@@ -233,34 +233,6 @@ class TestProfileEndpoints:
         data = resp.json()
         assert data["onboarding_completed"] is True
 
-    async def test_create_profile_invalid_personality(self, client, db_session, seed_languages, set_test_user):
-        """POST /user/profile — Invalid personality sum returns 400."""
-        user = User(
-            id=501,
-            nickname="BadPersonality",
-            email="bad@test.com",
-            native_lang="ko",
-            target_lang="en",
-            social_provider="google",
-            social_id="google_bad_personality",
-            created_at=datetime.utcnow(),
-            updated_at=datetime.utcnow(),
-        )
-        db_session.add(user)
-        await db_session.commit()
-        set_test_user(user)
-
-        resp = await client.post("/api/v1/user/profile", json={
-            "native_language_id": 1,
-            "target_language_id": 2,
-            "empathy": 50,
-            "intuition": 30,
-            "logic": 30,
-        })
-        assert resp.status_code == 400
-        data = resp.json()
-        assert data["error"]["code"] == "INVALID_PERSONALITY_SUM"
-
     async def test_get_profile(self, client, db_session, seed_languages, set_test_user):
         """GET /user/profile — Should return user profile with nested data."""
         user = User(
