@@ -497,8 +497,8 @@ MVP 히스토리 탭 구조 그대로:
 
 #### 탭 4: 마이페이지 (신규)
 
-**1depth — 메뉴 리스트:**
-- 프로필 헤더: 아바타 이미지 + 아바타 이름 + 닉네임
+**1depth — 메인 화면:**
+- 프로필 헤더: 아바타 이미지 + 아바타 이름 + 닉네임 + 이메일
 - [계정 설정] → 2depth
 - [아바타 설정] → 2depth
 - [학습 설정] → 2depth
@@ -510,12 +510,12 @@ MVP 히스토리 탭 구조 그대로:
 
 | 항목 | depth | 설명 | DB 매핑 |
 |------|-------|------|---------|
-| 유저 기본 정보 | 2depth | 닉네임 + 이메일(읽기) + SNS타입(읽기) 표시 | `users` |
-| └ 닉네임 수정 | 3depth | 닉네임 편집 화면 | `users.nickname` |
-| 화면 출력 언어 | 3depth | 앱 UI 언어 선택 (ko/en/ja...) | `user_profiles.app_locale` |
-| 모국어 | 3depth | 모국어 변경 | `user_profiles.native_language_id` |
+| 닉네임 수정 | 3depth | 닉네임 편집 화면 | `users.nickname` |
+| 이메일 / SNS 타입 | 2depth | 이메일 + 소셜 로그인 타입 (읽기 전용) | `users.email`, `users.social_provider` |
+| 화면 출력 언어 | 2depth | 앱 UI 언어 선택 (ko/en/ja...) | `user_profiles.app_locale` |
+| 모국어 변경 | 2depth | 모국어 변경 | `user_profiles.native_language_id` |
 | 로그아웃 | 2depth | 확인 알럿 → 토큰 삭제 → 로그인 화면 | `refresh_tokens` 삭제 |
-| 회원 탈퇴 | 3depth | 확인 알럿 ("정말 탈퇴하시겠습니까?") → 소프트 삭제 | `users.deleted_at` |
+| 회원 탈퇴 | 2depth | 확인 알럿 ("정말 탈퇴하시겠습니까?") → 소프트 삭제 | `users.deleted_at` |
 
 ---
 
@@ -525,7 +525,7 @@ MVP 히스토리 탭 구조 그대로:
 |------|-------|------|---------|
 | 캐릭터 변경 | 3depth | 아바타 외형 선택 (썸네일 그리드) | `user_profiles.avatar_id` |
 | 목소리 설정 | 3depth | 아바타 대화용 목소리 선택 (샘플 재생 가능) | `user_profiles.voice_id` |
-| 성격 설정 | 3depth | 공감/직관/논리 슬라이더 (합계 100) | `user_profiles.empathy, intuition, logic` |
+| 성격 설정 | 3depth | 공감/직관/논리 슬라이더 (0~100 독립) | `user_profiles.empathy, intuition, logic` |
 
 ---
 
@@ -533,9 +533,9 @@ MVP 히스토리 탭 구조 그대로:
 
 | 항목 | depth | 설명 | DB 매핑 |
 |------|-------|------|---------|
-| 학습 언어 | 3depth | 타겟 언어 변경 | `user_profiles.target_language_id` |
+| 학습 언어 변경 | 3depth | 타겟 언어 변경 | `user_profiles.target_language_id` |
 | 레벨 설정 | 3depth | CEFR 레벨 선택 (A1~C2) | `user_language_levels.cefr_level` |
-| 발음 설정 | 3depth | 학습 카드 예제 발음용 목소리 선택 (ElevenLabs voice) | `user_profiles.pronunciation_voice_id` |
+| 발음 목소리 설정 | 3depth | 학습 카드 예제 발음용 목소리 선택 (pronunciation_voice_id) | `user_profiles.pronunciation_voice_id` |
 
 ---
 
