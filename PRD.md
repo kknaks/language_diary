@@ -76,7 +76,8 @@ users (1) ─── (1) user_profiles
                     ├── native_language_id  → languages (N:1)
                     ├── target_language_id  → languages (N:1)
                     ├── avatar_id           → avatars (N:1)
-                    ├── voice_id            → voices (N:1)  ※ target_language 기준 필터
+                    ├── voice_id            → voices (N:1)  ※ 아바타 대화용
+                    ├── pronunciation_voice_id → voices (N:1)  ※ 학습 발음 예제용
                     └── empathy, intuition, logic
 refresh_tokens ── user_id → users (N:1)
 user_language_levels ── user_id → users (N:1)
@@ -165,7 +166,8 @@ tts_cache (독립)
 | target_language_id | INT FK → languages.id | 학습 언어 |
 | avatar_id | INT FK → avatars.id | 선택한 아바타 외형 |
 | avatar_name | VARCHAR(50) | 유저가 붙인 아바타 이름 (예: "루나", "내친구") |
-| voice_id | INT FK → voices.id | 선택한 아바타 목소리 |
+| voice_id | INT FK → voices.id | 선택한 아바타 대화용 목소리 |
+| pronunciation_voice_id | INT FK → voices.id | 학습 카드 예제 발음용 목소리 |
 | empathy | INT NOT NULL DEFAULT 33 | 공감 비율 (0~100) |
 | intuition | INT NOT NULL DEFAULT 33 | 직관 비율 (0~100) |
 | logic | INT NOT NULL DEFAULT 34 | 논리 비율 (0~100) |
@@ -462,7 +464,7 @@ MVP 3탭(홈/일기쓰기/히스토리) → **4탭** 구조로 개편.
 | 1 | 홈 | MVP 개량. 인사말 + 캐릭터 정보 + CTA |
 | 2 | 일기 쓰기 | MVP 플로우 그대로 (AI 대화 → 일기 생성 → 학습) |
 | 3 | 히스토리 | MVP 히스토리 탭 그대로 (날짜별 일기 목록 + 일기 상세) |
-| 4 | 마이페이지 | 유저 프로필 수정 (온보딩 설정 변경) |
+| 4 | 마이페이지 | 계정 설정 / 아바타 설정 / 학습 설정 / 약관 (2~3depth) |
 
 #### 탭 1: 홈 (MVP 개량)
 
@@ -495,35 +497,54 @@ MVP 히스토리 탭 구조 그대로:
 
 #### 탭 4: 마이페이지 (신규)
 
-**화면 구성:**
+**1depth — 메뉴 리스트:**
+- 프로필 헤더: 아바타 이미지 + 아바타 이름 + 닉네임
+- [계정 설정] → 2depth
+- [아바타 설정] → 2depth
+- [학습 설정] → 2depth
+- [약관] → 2depth
 
-- 프로필 헤더
-  - 아바타 이미지 + 아바타 이름 + 닉네임
+---
 
-- **1. 유저 설정**
-  - 닉네임 (수정 가능) ← `users.nickname`
-  - SNS 타입 (읽기 전용, 아이콘 표시) ← `users.social_provider` (Google / Apple)
-  - 이메일 (읽기 전용) ← `users.email`
+**계정 설정 (2depth)**
 
-- **2. 언어 설정**
-  - 화면 출력 언어 (앱 UI 언어) ← `user_profiles.app_locale`
-  - 모국어 ← `user_profiles.native_language_id`
-  - 학습 언어 ← `user_profiles.target_language_id`
-  - 학습 레벨 (CEFR: A1~C2) ← `user_language_levels.cefr_level`
+| 항목 | depth | 설명 | DB 매핑 |
+|------|-------|------|---------|
+| 유저 기본 정보 | 2depth | 닉네임 + 이메일(읽기) + SNS타입(읽기) 표시 | `users` |
+| └ 닉네임 수정 | 3depth | 닉네임 편집 화면 | `users.nickname` |
+| 화면 출력 언어 | 3depth | 앱 UI 언어 선택 (ko/en/ja...) | `user_profiles.app_locale` |
+| 모국어 | 3depth | 모국어 변경 | `user_profiles.native_language_id` |
+| 로그아웃 | 2depth | 확인 알럿 → 토큰 삭제 → 로그인 화면 | `refresh_tokens` 삭제 |
+| 회원 탈퇴 | 3depth | 확인 알럿 ("정말 탈퇴하시겠습니까?") → 소프트 삭제 | `users.deleted_at` |
 
-- **3. 아바타 설정**
-  - 아바타 외형 변경 ← `user_profiles.avatar_id`
-  - 커스텀 이름 변경 ← `user_profiles.avatar_name`
-  - 목소리 변경 ← `user_profiles.voice_id` (학습 언어 기준 필터)
-  - 성격 변경 (공감/직관/논리 슬라이더) ← `user_profiles.empathy, intuition, logic`
+---
 
-- **계정**
-  - 로그아웃
-  - 회원 탈퇴 (소프트 삭제)
+**아바타 설정 (2depth)**
 
-- **앱 정보**
-  - 이용약관 / 개인정보처리방침
-  - 앱 버전
+| 항목 | depth | 설명 | DB 매핑 |
+|------|-------|------|---------|
+| 캐릭터 변경 | 3depth | 아바타 외형 선택 (썸네일 그리드) | `user_profiles.avatar_id` |
+| 목소리 설정 | 3depth | 아바타 대화용 목소리 선택 (샘플 재생 가능) | `user_profiles.voice_id` |
+| 성격 설정 | 3depth | 공감/직관/논리 슬라이더 (합계 100) | `user_profiles.empathy, intuition, logic` |
+
+---
+
+**학습 설정 (2depth)**
+
+| 항목 | depth | 설명 | DB 매핑 |
+|------|-------|------|---------|
+| 학습 언어 | 3depth | 타겟 언어 변경 | `user_profiles.target_language_id` |
+| 레벨 설정 | 3depth | CEFR 레벨 선택 (A1~C2) | `user_language_levels.cefr_level` |
+| 발음 설정 | 3depth | 학습 카드 예제 발음용 목소리 선택 (ElevenLabs voice) | `user_profiles.pronunciation_voice_id` |
+
+---
+
+**약관 (2depth)**
+
+| 항목 | depth | 설명 |
+|------|-------|------|
+| 개인정보처리방침 | 2depth | 웹뷰로 표시 |
+| 서비스 이용약관 | 2depth | 웹뷰로 표시 |
 
 ## 5. 인증 (MVP: 하드코딩 유저)
 
