@@ -191,6 +191,10 @@ export function useRealtimeRecorder() {
       encoding: 'pcm_16bit',
       interval: 100,
       enableProcessing: false,
+      // Android: use communication audio focus to enable system AEC
+      ...(Platform.OS === 'android' && {
+        android: { audioFocusStrategy: 'communication' as const },
+      }),
       onAudioStream: async (event) => {
         const data = event.data;
 
