@@ -1,17 +1,41 @@
 import logging
+from contextlib import asynccontextmanager
 from pathlib import Path
 
 from fastapi import FastAPI
 from fastapi.exceptions import RequestValidationError
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
+from sqlalchemy import select
 
 from app.api.v1.conversation import conversation_websocket
 from app.api.v1.router import api_router
 from app.config import settings
+from app.database import async_session
 from app.exceptions import AppError, app_error_handler, generic_error_handler, validation_error_handler
 from app.middleware.logging import RequestLoggingMiddleware
 from app.middleware.rate_limit import RateLimitMiddleware
+from app.models.seed import Language
+
+logger = logging.getLogger(__name__)
+
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    """앱 시작 시 seed 데이터 자동 초기화."""
+    async with async_session() as session:
+        result = await session.execute(select(Language).limit(1))
+        has_seed = result.scalar_one_or_none() is not None
+
+    if not has_seed:
+        logger.info("Seed data not found — running initial seed...")
+        from app.scripts.seed_data import seed_all
+        await seed_all()
+        logger.info("Seed data initialized.")
+    else:
+        logger.info("Seed data already exists — skipping.")
+
+    yield
 
 # Configure structured logging
 logging.basicConfig(
@@ -21,6 +45,7 @@ logging.basicConfig(
 )
 
 app = FastAPI(
+    lifespan=lifespan,
     title="Language Diary API",
     description=(
         "AI-powered conversational diary app for language learning. "
