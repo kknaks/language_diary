@@ -15,25 +15,31 @@ from app.database import async_session
 from app.exceptions import AppError, app_error_handler, generic_error_handler, validation_error_handler
 from app.middleware.logging import RequestLoggingMiddleware
 from app.middleware.rate_limit import RateLimitMiddleware
-from app.models.seed import Language
+from app.models.seed import Avatar, Language, Voice
 
 logger = logging.getLogger(__name__)
 
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    """앱 시작 시 seed 데이터 자동 초기화."""
+    """앱 시작 시 seed 데이터 자동 초기화 (languages / avatars / voices 모두 확인)."""
     async with async_session() as session:
-        result = await session.execute(select(Language).limit(1))
-        has_seed = result.scalar_one_or_none() is not None
+        r_lang    = await session.execute(select(Language).limit(1))
+        r_avatar  = await session.execute(select(Avatar).limit(1))
+        r_voice   = await session.execute(select(Voice).limit(1))
+        has_seed  = all([
+            r_lang.scalar_one_or_none(),
+            r_avatar.scalar_one_or_none(),
+            r_voice.scalar_one_or_none(),
+        ])
 
     if not has_seed:
-        logger.info("Seed data not found — running initial seed...")
+        logger.info("Seed data incomplete — running seed_all()...")
         from app.scripts.seed_data import seed_all
         await seed_all()
         logger.info("Seed data initialized.")
     else:
-        logger.info("Seed data already exists — skipping.")
+        logger.info("Seed data OK — skipping.")
 
     yield
 
