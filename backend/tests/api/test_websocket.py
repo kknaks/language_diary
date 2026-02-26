@@ -28,7 +28,7 @@ def _make_mock_ai(
 
 def _make_streaming_reply(*sentences):
     """Create an async generator mock for get_reply_streaming."""
-    async def _gen(history):
+    async def _gen(history, **kwargs):
         for s in sentences:
             yield s
     return _gen

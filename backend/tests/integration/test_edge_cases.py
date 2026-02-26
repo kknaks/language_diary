@@ -29,7 +29,7 @@ def _make_wav(sample_rate=16000, bits_per_sample=16, num_channels=1, data_size=3
 
 def _make_streaming_reply(*sentences):
     """Create an async generator for get_reply_streaming."""
-    async def _gen(history):
+    async def _gen(history, **kwargs):
         for s in sentences:
             yield s
     return _gen

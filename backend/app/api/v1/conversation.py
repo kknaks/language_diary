@@ -682,9 +682,9 @@ async def conversation_websocket(
                         stt_session = None
                     try:
                         diary_resp = await service.finish_conversation(
-                session_id, user_id=user_id,
-                native_lang=native_lang, target_lang=target_lang,
-            )
+                            session_id, user_id=user_id,
+                            native_lang=native_lang, target_lang=target_lang,
+                        )
                         await websocket.send_json(
                             {"type": "diary_created", "diary": diary_resp.model_dump(mode="json")}
                         )

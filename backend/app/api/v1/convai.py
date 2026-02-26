@@ -1,6 +1,6 @@
 """ConvAI endpoints — ElevenLabs Conversational AI integration."""
 
-from typing import List, Optional, Tuple
+from typing import List, Tuple
 
 from fastapi import APIRouter, Depends
 from pydantic import BaseModel
