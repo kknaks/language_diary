@@ -20,13 +20,15 @@ import { useAuthStore } from '../src/stores/useAuthStore';
 
 WebBrowser.maybeCompleteAuthSession();
 
-const GOOGLE_IOS_CLIENT_ID = process.env.EXPO_PUBLIC_GOOGLE_CLIENT_ID ?? '';
+const GOOGLE_IOS_CLIENT_ID = process.env.EXPO_PUBLIC_GOOGLE_IOS_CLIENT_ID ?? '';
+const GOOGLE_ANDROID_CLIENT_ID = process.env.EXPO_PUBLIC_GOOGLE_ANDROID_CLIENT_ID ?? '';
 
 export default function LoginScreen() {
   const [loading, setLoading] = useState(false);
 
   const [_request, response, promptAsync] = Google.useAuthRequest({
     iosClientId: GOOGLE_IOS_CLIENT_ID,
+    androidClientId: GOOGLE_ANDROID_CLIENT_ID,
     scopes: ['openid', 'profile', 'email'],
   });
 
