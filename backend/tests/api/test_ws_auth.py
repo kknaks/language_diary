@@ -2,7 +2,6 @@
 
 import pytest
 from starlette.testclient import TestClient
-from starlette.websockets import WebSocketDisconnect
 
 from app.main import app
 from app.utils.jwt import create_access_token
@@ -28,7 +27,7 @@ def test_websocket_invalid_token_closes_4001():
             with tc.websocket_connect("/ws/conversation?token=invalid-jwt-token") as ws:
                 ws.receive_json()
                 pytest.fail("Expected WebSocket to close with 4001")
-        except Exception as e:
+        except Exception:
             # WebSocket should be rejected
             assert True  # Connection was rejected
 

@@ -1,7 +1,6 @@
 """Unit tests for app.utils.jwt module."""
 import time
 
-import pytest
 from jose import jwt as jose_jwt
 
 from app.utils.jwt import (

@@ -1,7 +1,6 @@
 """Tests for GET /api/v1/home endpoint."""
 
 import pytest
-from datetime import datetime
 
 
 @pytest.mark.asyncio

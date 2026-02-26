@@ -6,7 +6,7 @@ import pytest_asyncio
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.exceptions import BadRequestError, ConflictError, NotFoundError
-from app.models.seed import Avatar, Language, Voice
+from app.models.seed import Language
 from app.models.user import User
 from app.services.profile_service import ProfileService
 from app.schemas.user import ProfileCreateRequest

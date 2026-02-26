@@ -2,10 +2,8 @@
 
 import pytest
 from datetime import datetime
-from unittest.mock import AsyncMock, patch
 
 from app.models import Diary, ConversationSession, User
-from app.models.profile import UserProfile
 
 
 @pytest.mark.asyncio
