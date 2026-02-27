@@ -12,7 +12,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 
 from app.config import settings
-from app.models.seed import Avatar, Language, Voice
+from app.models.seed import Avatar, CefrLevel, Language, Voice
 
 SEEDS_DIR = Path(__file__).resolve().parent.parent.parent / "seeds"
 
@@ -40,6 +40,20 @@ async def _upsert_avatars(session: AsyncSession) -> None:
     await session.flush()
 
 
+async def _upsert_cefr_levels(session: AsyncSession) -> None:
+    data = json.loads((SEEDS_DIR / "cefr_levels.json").read_text(encoding="utf-8"))
+    for item in data:
+        result = await session.execute(select(CefrLevel).where(CefrLevel.code == item["code"]))
+        existing = result.scalar_one_or_none()
+        if existing is None:
+            session.add(CefrLevel(**item))
+        else:
+            for key, value in item.items():
+                if key != "code":
+                    setattr(existing, key, value)
+    await session.flush()
+
+
 async def _upsert_voices(session: AsyncSession) -> None:
     data = json.loads((SEEDS_DIR / "voices.json").read_text(encoding="utf-8"))
     for item in data:
@@ -61,6 +75,7 @@ async def seed_all(db_url: str = None) -> None:
     async_session = async_sessionmaker(engine, class_=AsyncSession, expire_on_commit=False)
 
     async with async_session() as session:
+        await _upsert_cefr_levels(session)
         await _upsert_languages(session)
         await _upsert_avatars(session)
         await _upsert_voices(session)

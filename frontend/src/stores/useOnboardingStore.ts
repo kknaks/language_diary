@@ -6,6 +6,7 @@ interface OnboardingData {
   avatar_id: number | null;
   avatar_name: string;
   voice_id: number | null;
+  pronunciation_voice_id: number | null;
   empathy: number;
   intuition: number;
   logic: number;
@@ -17,6 +18,7 @@ interface OnboardingState extends OnboardingData {
   setLanguages: (nativeId: number, targetId: number) => void;
   setAvatar: (avatarId: number, avatarName?: string) => void;
   setVoice: (voiceId: number) => void;
+  setPronunciationVoice: (voiceId: number) => void;
   setPersonality: (empathy: number, intuition: number, logic: number) => void;
   setLocale: (locale: string) => void;
   setCefrLevel: (level: string) => void;
@@ -30,6 +32,7 @@ const initialState: OnboardingData = {
   avatar_id: null,
   avatar_name: '',
   voice_id: null,
+  pronunciation_voice_id: null,
   empathy: 34,
   intuition: 33,
   logic: 33,
@@ -44,6 +47,7 @@ export const useOnboardingStore = create<OnboardingState>((set, get) => ({
   setAvatar: (avatarId, avatarName) =>
     set({ avatar_id: avatarId, avatar_name: avatarName ?? '' }),
   setVoice: (voiceId) => set({ voice_id: voiceId }),
+  setPronunciationVoice: (voiceId) => set({ pronunciation_voice_id: voiceId }),
   setPersonality: (empathy, intuition, logic) => set({ empathy, intuition, logic }),
   setLocale: (locale) => set({ app_locale: locale }),
   setCefrLevel: (level) => set({ cefr_level: level }),
@@ -56,6 +60,7 @@ export const useOnboardingStore = create<OnboardingState>((set, get) => ({
       avatar_id: s.avatar_id,
       avatar_name: s.avatar_name || undefined,
       voice_id: s.voice_id,
+      pronunciation_voice_id: s.pronunciation_voice_id ?? undefined,
       empathy: s.empathy,
       intuition: s.intuition,
       logic: s.logic,

@@ -79,7 +79,7 @@ export default function Step2Avatar() {
 
   return (
     <SafeAreaView style={styles.container}>
-      <StepIndicator currentStep={2} totalSteps={4} />
+      <StepIndicator currentStep={2} totalSteps={5} />
 
       <View style={styles.mainContent}>
         <Text style={styles.title}>어떤 친구와 함께할까요?</Text>

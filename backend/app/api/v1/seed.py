@@ -1,4 +1,4 @@
-from typing import Optional
+from typing import List, Optional
 
 from fastapi import APIRouter, Depends, Query
 from sqlalchemy import select
@@ -6,11 +6,12 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.database import get_db
 from app.dependencies import get_current_user
-from app.models.seed import Avatar, Language, Voice
+from app.models.seed import Avatar, CefrLevel, Language, Voice
 from app.models.user import User
 from app.schemas.seed import (
     AvatarListResponse,
     AvatarResponse,
+    CefrLevelResponse,
     LanguageListResponse,
     LanguageResponse,
     VoiceListResponse,
@@ -18,6 +19,15 @@ from app.schemas.seed import (
 )
 
 router = APIRouter(tags=["seed"])
+
+
+@router.get("/cefr-levels", response_model=List[CefrLevelResponse])
+async def get_cefr_levels(
+    db: AsyncSession = Depends(get_db),
+    _current_user: User = Depends(get_current_user),
+):
+    result = await db.execute(select(CefrLevel).order_by(CefrLevel.sort_order))
+    return result.scalars().all()
 
 
 @router.get("/languages", response_model=LanguageListResponse)

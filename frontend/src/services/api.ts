@@ -1,6 +1,6 @@
 import { Diary, LearningCard, Message, PaginatedResponse, ConversationSession, TtsResponse, PronunciationResult } from '../types';
 import { AuthTokens, SocialLoginResponse } from '../types/auth';
-import { LanguageListResponse, AvatarListResponse, VoiceListResponse } from '../types/seed';
+import { LanguageListResponse, AvatarListResponse, VoiceListResponse, CefrLevel } from '../types/seed';
 import { ProfileCreateRequest, ProfileUpdateRequest, LanguageLevelUpdateRequest, UserProfileResponse } from '../types/profile';
 import { HomeResponse } from '../types/home';
 import { env } from '../config/env';
@@ -354,6 +354,12 @@ export const seedApi = {
     const params = languageId ? `?language_id=${languageId}` : '';
     const res = await fetchWithAuth(`${API_BASE_URL}/api/v1/voices${params}`);
     return (await handleResponse(res)) as VoiceListResponse;
+  },
+
+  async getCefrLevels(): Promise<CefrLevel[]> {
+    const res = await fetch(`${API_BASE_URL}/api/v1/cefr-levels`);
+    if (!res.ok) throw new Error('CEFR 레벨 조회 실패');
+    return res.json();
   },
 };
 

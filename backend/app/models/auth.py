@@ -28,10 +28,11 @@ class UserLanguageLevel(Base):
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
     user_id: Mapped[int] = mapped_column(Integer, ForeignKey("users.id"), nullable=False)
     language_id: Mapped[int] = mapped_column(Integer, ForeignKey("languages.id"), nullable=False)
-    cefr_level: Mapped[str] = mapped_column(String(10), nullable=False)
+    cefr_level: Mapped[str] = mapped_column(String(10), ForeignKey("cefr_levels.code"), nullable=False)
     created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now(), nullable=False)
     updated_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now(), onupdate=func.now(), nullable=False)  # noqa: E501
 
     # relationships
     user = relationship("User", back_populates="language_levels")
     language = relationship("Language")
+    cefr = relationship("CefrLevel")

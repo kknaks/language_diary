@@ -67,7 +67,7 @@ export default function Step1Language() {
 
   return (
     <SafeAreaView style={styles.container}>
-      <StepIndicator currentStep={1} totalSteps={4} />
+      <StepIndicator currentStep={1} totalSteps={5} />
 
       <ScrollView
         style={styles.scrollView}

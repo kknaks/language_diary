@@ -1,5 +1,7 @@
+import random
 
 from sqlalchemy import select
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.exceptions import BadRequestError, ConflictError, NotFoundError
@@ -14,8 +16,6 @@ from app.schemas.user import (
     UserProfileResponse,
 )
 from app.utils.jwt import create_access_token
-
-VALID_CEFR_LEVELS = {"A1", "A2", "B1", "B2", "C1", "C2"}
 
 
 class ProfileService:
@@ -33,6 +33,15 @@ class ProfileService:
                 message="이미 프로필이 존재합니다. PUT으로 수정해주세요.",
             )
 
+        # pronunciation_voice_id 자동 배정
+        if not data.pronunciation_voice_id:
+            result = await db.execute(
+                select(Voice).where(Voice.language_id == data.target_language_id)
+            )
+            voices = result.scalars().all()
+            if voices:
+                data.pronunciation_voice_id = random.choice(voices).id
+
         await repo.create(
             user_id=user_id,
             native_language_id=data.native_language_id,
@@ -40,6 +49,7 @@ class ProfileService:
             avatar_id=data.avatar_id,
             avatar_name=data.avatar_name,
             voice_id=data.voice_id,
+            pronunciation_voice_id=data.pronunciation_voice_id,
             empathy=data.empathy,
             intuition=data.intuition,
             logic=data.logic,
@@ -202,14 +212,15 @@ class ProfileService:
         cefr_level: str,
     ) -> dict:
         """UPSERT user language level."""
-        if cefr_level not in VALID_CEFR_LEVELS:
+        try:
+            await self._upsert_language_level(db, user_id, language_id, cefr_level)
+            await db.commit()
+        except IntegrityError:
+            await db.rollback()
             raise BadRequestError(
                 code="VALIDATION_ERROR",
-                message=f"유효하지 않은 CEFR 레벨입니다. ({', '.join(sorted(VALID_CEFR_LEVELS))})",
+                message="유효하지 않은 CEFR 레벨입니다. (A1, A2, B1, B2, C1, C2)",
             )
-
-        await self._upsert_language_level(db, user_id, language_id, cefr_level)
-        await db.commit()
         return {"message": "언어 레벨이 업데이트되었습니다."}
 
     async def _upsert_language_level(

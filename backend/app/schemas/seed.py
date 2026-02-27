@@ -1,6 +1,6 @@
 from typing import List, Optional
 
-from pydantic import BaseModel
+from pydantic import BaseModel, ConfigDict
 
 
 class LanguageResponse(BaseModel):
@@ -46,3 +46,13 @@ class AvatarListResponse(BaseModel):
 
 class VoiceListResponse(BaseModel):
     items: List[VoiceResponse]
+
+
+class CefrLevelResponse(BaseModel):
+    code: str
+    group: str
+    name: str
+    description: str
+    sort_order: int
+
+    model_config = ConfigDict(from_attributes=True)

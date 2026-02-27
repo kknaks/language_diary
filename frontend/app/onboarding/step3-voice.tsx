@@ -122,7 +122,7 @@ export default function Step3Voice() {
 
   return (
     <SafeAreaView style={styles.container}>
-      <StepIndicator currentStep={3} totalSteps={4} />
+      <StepIndicator currentStep={3} totalSteps={5} />
 
       <ScrollView
         style={styles.scrollView}

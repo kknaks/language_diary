@@ -4,8 +4,6 @@ import {
   Text,
   TouchableOpacity,
   StyleSheet,
-  Alert,
-  ActivityIndicator,
   PanResponder,
   GestureResponderEvent,
   LayoutChangeEvent,
@@ -13,10 +11,7 @@ import {
 import { router } from 'expo-router';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { colors, spacing, fontSize, borderRadius, shadows } from '../../src/constants/theme';
-import { profileApi } from '../../src/services/api';
 import { useOnboardingStore } from '../../src/stores/useOnboardingStore';
-import { useAuthStore } from '../../src/stores/useAuthStore';
-import { ProfileCreateRequest } from '../../src/types/profile';
 import StepIndicator from '../../src/components/onboarding/StepIndicator';
 
 
@@ -24,33 +19,12 @@ export default function Step4Personality() {
   const [empathy, setEmpathy] = useState(50);
   const [intuition, setIntuition] = useState(50);
   const [logic, setLogic] = useState(50);
-  const [submitting, setSubmitting] = useState(false);
 
   const onboardingStore = useOnboardingStore();
-  const setOnboarded = useAuthStore((s) => s.setOnboarded);
 
-  const handleComplete = async () => {
-    try {
-      setSubmitting(true);
-      onboardingStore.setPersonality(empathy, intuition, logic);
-      const payload = onboardingStore.toApiPayload() as ProfileCreateRequest;
-      payload.empathy = empathy;
-      payload.intuition = intuition;
-      payload.logic = logic;
-
-      const result = await profileApi.createProfile(payload);
-      // 새 access_token(ob=true)으로 SecureStore 갱신
-      if (result.access_token) {
-        await setOnboarded(result.access_token);
-      }
-      onboardingStore.reset();
-      router.replace('/(tabs)');
-    } catch (e) {
-      const message = e instanceof Error ? e.message : '프로필 생성에 실패했습니다.';
-      Alert.alert('오류', message);
-    } finally {
-      setSubmitting(false);
-    }
+  const handleComplete = () => {
+    onboardingStore.setPersonality(empathy, intuition, logic);
+    router.push('/onboarding/step5-level');
   };
 
   const clamp = (v: number) => Math.max(0, Math.min(100, v));
@@ -66,7 +40,7 @@ export default function Step4Personality() {
 
   return (
     <SafeAreaView style={styles.container}>
-      <StepIndicator currentStep={4} totalSteps={4} />
+      <StepIndicator currentStep={4} totalSteps={5} />
 
       <View style={styles.content}>
         <Text style={styles.title}>어떤 성격의 친구가 좋나요?</Text>
@@ -110,14 +84,9 @@ export default function Step4Personality() {
         <TouchableOpacity
           style={styles.completeButton}
           onPress={handleComplete}
-          disabled={submitting}
           activeOpacity={0.7}
         >
-          {submitting ? (
-            <ActivityIndicator color="#FFFFFF" />
-          ) : (
-            <Text style={styles.completeButtonText}>시작하기</Text>
-          )}
+          <Text style={styles.completeButtonText}>다음</Text>
         </TouchableOpacity>
       </View>
     </SafeAreaView>
