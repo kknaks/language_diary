@@ -1,7 +1,6 @@
 """Unit tests for social auth token verification utilities."""
 import base64
 import json
-from unittest.mock import patch
 
 import pytest
 
