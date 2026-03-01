@@ -1,6 +1,7 @@
 """Unit tests for social auth token verification utilities."""
 import base64
 import json
+from unittest.mock import patch
 
 import pytest
 
@@ -13,6 +14,13 @@ def _make_fake_jwt(payload: dict) -> str:
     body = base64.urlsafe_b64encode(json.dumps(payload).encode()).rstrip(b"=").decode()
     sig = base64.urlsafe_b64encode(b"fake_signature").rstrip(b"=").decode()
     return f"{header}.{body}.{sig}"
+
+
+@pytest.fixture(autouse=True)
+def _force_dev_mode(monkeypatch):
+    """Force dev mode by clearing GOOGLE_CLIENT_IDS and APPLE_CLIENT_ID."""
+    monkeypatch.setattr("app.utils.social_auth.GOOGLE_CLIENT_IDS", [])
+    monkeypatch.delenv("APPLE_CLIENT_ID", raising=False)
 
 
 @pytest.mark.asyncio

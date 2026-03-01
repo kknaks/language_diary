@@ -22,6 +22,13 @@ def _make_fake_jwt(payload: dict) -> str:
     return f"{header}.{body}.{sig}"
 
 
+@pytest.fixture(autouse=True)
+def _force_dev_mode(monkeypatch):
+    """Force dev mode by clearing GOOGLE_CLIENT_IDS and APPLE_CLIENT_ID."""
+    monkeypatch.setattr("app.utils.social_auth.GOOGLE_CLIENT_IDS", [])
+    monkeypatch.delenv("APPLE_CLIENT_ID", raising=False)
+
+
 def _auth_header(user_id: int) -> dict:
     """Create Authorization header with a valid access token."""
     token = create_access_token(user_id)
