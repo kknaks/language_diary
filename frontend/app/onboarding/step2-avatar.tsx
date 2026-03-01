@@ -25,8 +25,10 @@ import Live2DAvatar from '../../src/components/conversation/Live2DAvatar';
 export default function Step2Avatar() {
   const [avatars, setAvatars] = useState<Avatar[]>([]);
   const [loading, setLoading] = useState(true);
-  const [selectedId, setSelectedId] = useState<number | null>(null);
-  const [characterName, setCharacterName] = useState('');
+  const storedAvatarId = useOnboardingStore((s) => s.avatar_id);
+  const storedAvatarName = useOnboardingStore((s) => s.avatar_name);
+  const [selectedId, setSelectedId] = useState<number | null>(storedAvatarId);
+  const [characterName, setCharacterName] = useState(storedAvatarName || '');
 
   const setAvatar = useOnboardingStore((s) => s.setAvatar);
   const cachedAvatars = useOnboardingPrefetch((s) => s.avatars);
@@ -34,7 +36,7 @@ export default function Step2Avatar() {
   useEffect(() => {
     if (cachedAvatars) {
       setAvatars(cachedAvatars);
-      if (cachedAvatars.length > 0) {
+      if (cachedAvatars.length > 0 && !storedAvatarId) {
         setSelectedId(cachedAvatars[0].id);
         setCharacterName(cachedAvatars[0].name);
       }
@@ -49,7 +51,9 @@ export default function Step2Avatar() {
       const res = await seedApi.getAvatars();
       const active = res.items.filter((a) => a.is_active);
       setAvatars(active);
-      if (active.length > 0) {
+      // prefetch store에도 저장 (step3에서 꺽쇠로 이동 시 사용)
+      useOnboardingPrefetch.setState({ avatars: active });
+      if (active.length > 0 && !storedAvatarId) {
         setSelectedId(active[0].id);
         setCharacterName(active[0].name);
       }
@@ -79,7 +83,11 @@ export default function Step2Avatar() {
 
   return (
     <SafeAreaView style={styles.container}>
-      <StepIndicator currentStep={2} totalSteps={5} />
+      <StepIndicator currentStep={2} totalSteps={5} onNext={() => {
+        if (selectedId != null) {
+          setAvatar(selectedId, characterName.trim() || avatars.find((a) => a.id === selectedId)?.name);
+        }
+      }} />
 
       <View style={styles.mainContent}>
         <Text style={styles.title}>어떤 친구와 함께할까요?</Text>
@@ -101,6 +109,7 @@ export default function Step2Avatar() {
               onPress={() => {
                 setSelectedId(avatar.id);
                 setCharacterName(avatar.name);
+                setAvatar(avatar.id, avatar.name);
               }}
               activeOpacity={0.7}
             >

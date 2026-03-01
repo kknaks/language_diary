@@ -39,7 +39,7 @@ export interface VoiceListResponse {
 
 export interface CefrLevel {
   code: string;       // A1, A2, B1, B2, C1, C2
-  group: string;      // 초급, 중급, 고급
+  clazz: string;      // 초급, 중급, 고급
   name: string;       // 입문, 초급, 중급, 중상급, 상급, 최상급
   description: string;
   sort_order: number;

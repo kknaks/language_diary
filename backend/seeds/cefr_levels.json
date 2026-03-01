@@ -1,8 +1,8 @@
 [
-  {"code": "A1", "group": "초급", "name": "입문", "description": "기초적인 인사, 자기소개 수준", "sort_order": 1},
-  {"code": "A2", "group": "초급", "name": "초급", "description": "간단한 일상 대화 가능", "sort_order": 2},
-  {"code": "B1", "group": "중급", "name": "중급", "description": "여행, 일상 주제로 대화 가능 (토익 약 550~780)", "sort_order": 3},
-  {"code": "B2", "group": "중급", "name": "중상급", "description": "원어민과 자연스러운 대화 가능 (토익 약 785~940)", "sort_order": 4},
-  {"code": "C1", "group": "고급", "name": "상급", "description": "학술·업무에서 유창하게 소통 (토익 약 945+)", "sort_order": 5},
-  {"code": "C2", "group": "고급", "name": "최상급", "description": "원어민에 준하는 수준", "sort_order": 6}
+  {"code": "A1", "clazz": "초급", "name": "입문", "description": "기초적인 인사, 자기소개 수준", "sort_order": 1},
+  {"code": "A2", "clazz": "초급", "name": "초급", "description": "간단한 일상 대화 가능", "sort_order": 2},
+  {"code": "B1", "clazz": "중급", "name": "중급", "description": "여행, 일상 주제로 대화 가능 (토익 약 550~780)", "sort_order": 3},
+  {"code": "B2", "clazz": "중급", "name": "중상급", "description": "원어민과 자연스러운 대화 가능 (토익 약 785~940)", "sort_order": 4},
+  {"code": "C1", "clazz": "고급", "name": "상급", "description": "학술·업무에서 유창하게 소통 (토익 약 945+)", "sort_order": 5},
+  {"code": "C2", "clazz": "고급", "name": "최상급", "description": "원어민에 준하는 수준", "sort_order": 6}
 ]

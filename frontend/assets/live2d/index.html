@@ -201,13 +201,7 @@
       }
     }
 
-    // ── Mouth (ai_speaking) ──
-    if (voiceState === 'ai_speaking') {
-      const mouthOpen = Math.min(1, volume * 1.5);
-      try { coreModel.setParameterValueById('ParamMouthOpenY', mouthOpen); } catch(_) {}
-    } else {
-      try { coreModel.setParameterValueById('ParamMouthOpenY', 0); } catch(_) {}
-    }
+    // Mouth는 PIXI ticker LOW priority에서 처리
 
     requestAnimationFrame(animateModel);
   }
@@ -243,6 +237,27 @@
 
       app.stage.addChild(model);
 
+      // Patch coreModel.update to inject mouth param right before render commit
+      var coreModel = model.internalModel.coreModel;
+      var origUpdate = coreModel.update.bind(coreModel);
+      coreModel.update = function() {
+        try {
+          var ids = this._model.parameters.ids;
+          var values = this._model.parameters.values;
+          for (var i = 0; i < ids.length; i++) {
+            if (ids[i] === 'ParamMouthOpenY') {
+              if (voiceState === 'ai_speaking') {
+                values[i] = Math.min(1, volume * 1.5);
+              } else {
+                values[i] = 0;
+              }
+              break;
+            }
+          }
+        } catch(_) {}
+        return origUpdate();
+      };
+
       // Handle resize
       window.addEventListener('resize', () => {
         if (!model || !app) return;
@@ -256,6 +271,23 @@
 
       // Start parameter animation loop
       requestAnimationFrame(animateModel);
+
+      // [DEBUG] 모델의 사용 가능한 파라미터 목록 출력
+      // try {
+      //   var paramIds = [];
+      //   var im = model.internalModel;
+      //   if (im.coreModel._model && im.coreModel._model.parameters) {
+      //     paramIds = Array.from(im.coreModel._model.parameters.ids);
+      //   }
+      //   if (paramIds.length === 0 && im.settings && im.settings.parameters) {
+      //     paramIds = im.settings.parameters.map(function(p) { return p.Id || p.id || JSON.stringify(p); });
+      //   }
+      //   var mouthParams = paramIds.filter(function(id) { return /mouth|lip/i.test(id); });
+      //   sendLog('[Live2D] All params (' + paramIds.length + '): ' + paramIds.join(', '));
+      //   sendLog('[Live2D] Mouth params: ' + (mouthParams.length > 0 ? mouthParams.join(', ') : 'NONE FOUND'));
+      // } catch(e) {
+      //   sendLog('[Live2D] Could not read params: ' + e);
+      // }
 
       console.log('[Live2D] Model loaded successfully');
     } catch (err) {

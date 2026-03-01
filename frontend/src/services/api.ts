@@ -357,7 +357,7 @@ export const seedApi = {
   },
 
   async getCefrLevels(): Promise<CefrLevel[]> {
-    const res = await fetch(`${API_BASE_URL}/api/v1/cefr-levels`);
+    const res = await fetchWithAuth(`${API_BASE_URL}/api/v1/cefr-levels`);
     if (!res.ok) throw new Error('CEFR 레벨 조회 실패');
     return res.json();
   },
@@ -384,12 +384,12 @@ export const profileApi = {
     return res.json();
   },
 
-  async updateProfile(data: ProfileUpdateRequest): Promise<UserProfileResponse> {
+  async updateProfile(data: ProfileUpdateRequest): Promise<void> {
     const res = await fetchWithAuth(`${API_BASE_URL}/api/v1/user/profile`, {
       method: 'PUT',
       body: JSON.stringify(data),
     });
-    return (await handleResponse(res)) as UserProfileResponse;
+    await handleResponse(res);
   },
 
   async updateLanguageLevel(data: LanguageLevelUpdateRequest): Promise<void> {

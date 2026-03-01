@@ -21,6 +21,7 @@ class ProfileRepository:
                 selectinload(UserProfile.target_language),
                 selectinload(UserProfile.avatar),
                 selectinload(UserProfile.voice),
+                selectinload(UserProfile.pronunciation_voice),
             )
         )
         return result.scalar_one_or_none()

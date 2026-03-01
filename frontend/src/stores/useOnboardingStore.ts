@@ -33,9 +33,9 @@ const initialState: OnboardingData = {
   avatar_name: '',
   voice_id: null,
   pronunciation_voice_id: null,
-  empathy: 34,
-  intuition: 33,
-  logic: 33,
+  empathy: 50,
+  intuition: 50,
+  logic: 50,
   app_locale: 'ko',
   cefr_level: null,
 };

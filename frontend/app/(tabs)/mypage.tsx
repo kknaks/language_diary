@@ -1,4 +1,4 @@
-import React, { useEffect, useCallback, useState, useRef } from 'react';
+import React, { useEffect, useCallback, useState, useRef, useMemo } from 'react';
 import {
   View,
   Text,
@@ -13,6 +13,7 @@ import {
   FlatList,
   PanResponder,
   LayoutChangeEvent,
+  Dimensions,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
@@ -20,86 +21,187 @@ import { useRouter } from 'expo-router';
 
 import { useProfileStore } from '../../src/stores/useProfileStore';
 import { useAuthStore } from '../../src/stores/useAuthStore';
-import { authApi, seedApi, profileApi } from '../../src/services/api';
+import { authApi, seedApi, profileApi, API_BASE_URL } from '../../src/services/api';
 import { tokenManager } from '../../src/utils/tokenManager';
 import { colors, fontSize, spacing, borderRadius, shadows } from '../../src/constants/theme';
 import { ScreenHeader } from '../../src/components/common';
 import { Language, Avatar, Voice } from '../../src/types/seed';
+import Live2DAvatar from '../../src/components/conversation/Live2DAvatar';
+import { useAudioPlayer, useAudioPlayerStatus, useAudioSampleListener } from 'expo-audio';
 
-// ─── Custom slider ────────────────────────────────────────────────────────────
+// ─── RMS volume helper ────────────────────────────────────────────────────────
+function calcRMS(frames: number[]): number {
+  if (!frames || frames.length === 0) return 0;
+  let sum = 0;
+  for (let i = 0; i < frames.length; i++) {
+    sum += frames[i] * frames[i];
+  }
+  return Math.min(1, Math.sqrt(sum / frames.length) * 3);
+}
 
-function SimpleSlider({
+// ─── Personality Row (same as onboarding step4) ──────────────────────────────
+
+function PersonalityRow({
+  label,
+  emoji,
   value,
-  onChange,
+  color,
+  onIncrement,
+  onDecrement,
+  onValueChange,
 }: {
+  label: string;
+  emoji: string;
   value: number;
-  onChange: (v: number) => void;
+  color: string;
+  onIncrement: () => void;
+  onDecrement: () => void;
+  onValueChange: (v: number) => void;
 }) {
   const trackWidth = useRef(0);
-  const [thumbLeft, setThumbLeft] = useState(0);
+  const fillWidth = `${value}%` as const;
+  const clamp = (v: number) => Math.max(0, Math.min(100, v));
 
-  const updateFromX = useCallback(
-    (x: number) => {
-      if (trackWidth.current === 0) return;
-      const pct = Math.max(0, Math.min(1, x / trackWidth.current));
-      const newVal = Math.round(pct * 100);
-      onChange(newVal);
-      setThumbLeft(pct * trackWidth.current);
-    },
-    [onChange],
-  );
+  const calcValue = (pageX: number, trackPageX: number) => {
+    const x = pageX - trackPageX;
+    const ratio = x / trackWidth.current;
+    return clamp(Math.round(ratio * 100 / 5) * 5);
+  };
+
+  const trackRef = useRef<View>(null);
+  const trackPageX = useRef(0);
 
   const panResponder = useRef(
     PanResponder.create({
       onStartShouldSetPanResponder: () => true,
       onMoveShouldSetPanResponder: () => true,
-      onPanResponderGrant: (evt) => updateFromX(evt.nativeEvent.locationX),
-      onPanResponderMove: (evt) => updateFromX(evt.nativeEvent.locationX),
+      onPanResponderGrant: (evt) => {
+        trackRef.current?.measure((_x, _y, _w, _h, pageX) => {
+          trackPageX.current = pageX;
+          onValueChange(calcValue(evt.nativeEvent.pageX, pageX));
+        });
+      },
+      onPanResponderMove: (evt) => {
+        onValueChange(calcValue(evt.nativeEvent.pageX, trackPageX.current));
+      },
     }),
   ).current;
 
-  const fillWidth = trackWidth.current > 0 ? (value / 100) * trackWidth.current : 0;
-  const effectiveThumbLeft = trackWidth.current > 0 ? thumbLeft : 0;
+  const onTrackLayout = (e: LayoutChangeEvent) => {
+    trackWidth.current = e.nativeEvent.layout.width;
+  };
 
   return (
-    <View
-      style={sliderStyles.track}
-      onLayout={(e: LayoutChangeEvent) => {
-        trackWidth.current = e.nativeEvent.layout.width;
-        setThumbLeft((value / 100) * e.nativeEvent.layout.width);
-      }}
-      {...panResponder.panHandlers}
-    >
-      <View style={[sliderStyles.fill, { width: fillWidth }]} />
-      <View style={[sliderStyles.thumb, { left: effectiveThumbLeft - 10 }]} />
+    <View style={personalityRowStyles.container}>
+      <View style={personalityRowStyles.header}>
+        <Text style={personalityRowStyles.label}>
+          {emoji} {label}
+        </Text>
+        <Text style={[personalityRowStyles.value, { color }]}>{value}</Text>
+      </View>
+      <View style={personalityRowStyles.barRow}>
+        <TouchableOpacity
+          style={personalityRowStyles.adjustButton}
+          onPress={onDecrement}
+          activeOpacity={0.6}
+        >
+          <Text style={personalityRowStyles.adjustText}>−</Text>
+        </TouchableOpacity>
+        <View
+          ref={trackRef}
+          style={personalityRowStyles.barTrack}
+          onLayout={onTrackLayout}
+          {...panResponder.panHandlers}
+        >
+          <View
+            style={[
+              personalityRowStyles.barFill,
+              { width: fillWidth, backgroundColor: color },
+            ]}
+          />
+          <View
+            style={[
+              personalityRowStyles.thumb,
+              { left: fillWidth, borderColor: color },
+            ]}
+          />
+        </View>
+        <TouchableOpacity
+          style={personalityRowStyles.adjustButton}
+          onPress={onIncrement}
+          activeOpacity={0.6}
+        >
+          <Text style={personalityRowStyles.adjustText}>+</Text>
+        </TouchableOpacity>
+      </View>
     </View>
   );
 }
 
-const sliderStyles = StyleSheet.create({
-  track: {
-    height: 4,
-    backgroundColor: colors.border,
-    borderRadius: 2,
-    marginVertical: spacing.md,
-    position: 'relative',
-    justifyContent: 'center',
+const personalityRowStyles = StyleSheet.create({
+  container: {
+    backgroundColor: colors.surface,
+    borderRadius: borderRadius.md,
+    padding: spacing.md,
+    ...shadows.sm,
   },
-  fill: {
-    height: 4,
-    backgroundColor: colors.primary,
-    borderRadius: 2,
-    position: 'absolute',
-    left: 0,
+  header: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: spacing.sm,
+  },
+  label: {
+    fontSize: fontSize.sm,
+    fontWeight: '600',
+    color: colors.text,
+  },
+  value: {
+    fontSize: fontSize.lg,
+    fontWeight: '700',
+  },
+  barRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.sm,
+  },
+  adjustButton: {
+    width: 36,
+    height: 36,
+    borderRadius: 18,
+    backgroundColor: colors.background,
+    justifyContent: 'center',
+    alignItems: 'center',
+    borderWidth: 1,
+    borderColor: colors.border,
+  },
+  adjustText: {
+    fontSize: fontSize.lg,
+    fontWeight: '600',
+    color: colors.text,
+  },
+  barTrack: {
+    flex: 1,
+    height: 12,
+    backgroundColor: colors.border,
+    borderRadius: 6,
+    overflow: 'visible',
+    position: 'relative',
+  },
+  barFill: {
+    height: '100%',
+    borderRadius: 6,
   },
   thumb: {
-    width: 20,
-    height: 20,
-    borderRadius: 10,
-    backgroundColor: colors.primary,
     position: 'absolute',
-    top: -8,
-    marginLeft: -10,
+    top: -6,
+    width: 24,
+    height: 24,
+    borderRadius: 12,
+    backgroundColor: '#FFFFFF',
+    borderWidth: 3,
+    marginLeft: -12,
+    ...shadows.sm,
   },
 });
 
@@ -123,14 +225,19 @@ type Screen =
   | 'termsPrivacy'
   | 'termsService';
 
-const APP_LOCALES = [
-  { code: 'ko', label: '한국어' },
-  { code: 'en', label: 'English' },
-  { code: 'ja', label: '日本語' },
-  { code: 'zh', label: '中文' },
-];
 
 const CEFR_LEVELS = ['A1', 'A2', 'B1', 'B2', 'C1', 'C2'];
+
+const { width: SCREEN_WIDTH } = Dimensions.get('window');
+const AVATAR_GAP = 8;
+const AVATAR_HORIZONTAL_PADDING = 8;
+const VISIBLE_COUNT = 4.5;
+const AVATAR_CARD_WIDTH = (SCREEN_WIDTH - AVATAR_HORIZONTAL_PADDING * 2 - AVATAR_GAP * (VISIBLE_COUNT - 0.5)) / VISIBLE_COUNT;
+
+const VOICE_GAP = 8;
+const VOICE_HORIZONTAL_PADDING = 8;
+const VOICE_VISIBLE_COUNT = 3;
+const VOICE_CARD_WIDTH = (SCREEN_WIDTH - VOICE_HORIZONTAL_PADDING * 2 - VOICE_GAP * (VOICE_VISIBLE_COUNT - 0.5)) / VOICE_VISIBLE_COUNT;
 
 // ─── Helper: row item ─────────────────────────────────────────────────────────
 
@@ -188,11 +295,46 @@ export default function MyPageScreen() {
   const [voices, setVoices] = useState<Voice[]>([]);
   const [seedLoading, setSeedLoading] = useState(false);
 
+  // Avatar character edit
+  const [selectedAvatarId, setSelectedAvatarId] = useState<number | null>(null);
+  const [avatarCharName, setAvatarCharName] = useState('');
+
   // Personality sliders
   const [empathy, setEmpathy] = useState(50);
   const [intuition, setIntuition] = useState(50);
   const [logic, setLogic] = useState(50);
   const personalityLoaded = useRef(false);
+
+  // Voice preview audio
+  const [audioSource, setAudioSource] = useState<string | null>(null);
+  const [voiceVolume, setVoiceVolume] = useState(0);
+  const [selectedVoiceId, setSelectedVoiceId] = useState<number | null>(null);
+
+  const player = useAudioPlayer(audioSource ?? undefined);
+  const playerStatus = useAudioPlayerStatus(player);
+  const isPlaying = playerStatus.playing;
+  const isPlayingRef = useRef(false);
+  isPlayingRef.current = isPlaying;
+
+  useAudioSampleListener(player, useCallback((sample: { channels?: { frames: number[] }[] }) => {
+    if (!isPlayingRef.current) return;
+    if (sample.channels && sample.channels.length > 0) {
+      const rms = calcRMS(sample.channels[0].frames);
+      setVoiceVolume(rms);
+    }
+  }, []));
+
+  useEffect(() => {
+    if (!isPlaying) setVoiceVolume(0);
+  }, [isPlaying]);
+
+  // audioSource 변경 시 자동 재생
+  useEffect(() => {
+    if (audioSource && player) {
+      player.seekTo(0);
+      player.play();
+    }
+  }, [audioSource]);
 
   useEffect(() => {
     fetchProfile();
@@ -225,7 +367,7 @@ export default function MyPageScreen() {
         const res = await seedApi.getAvatars();
         setAvatars(res.items);
       } else if (type === 'voices') {
-        const langId = profile?.profile?.target_language?.id;
+        const langId = profile?.profile?.native_language?.id;
         const res = await seedApi.getVoices(langId);
         setVoices(res.items);
       }
@@ -375,26 +517,31 @@ export default function MyPageScreen() {
     return (
       <SafeAreaView style={styles.container} edges={['top']}>
         <ScreenHeader
-          title="화면 출력 언어"
+          title="앱 언어"
           left={<TouchableOpacity onPress={() => goBack('account')}><Ionicons name="chevron-back" size={24} color={colors.text} /></TouchableOpacity>}
         />
-        <ScrollView>
-          {APP_LOCALES.map((loc) => (
-            <TouchableOpacity
-              key={loc.code}
-              style={styles.row}
-              onPress={async () => {
-                await saveProfile({ app_locale: loc.code });
-                goBack('account');
-              }}
-            >
-              <Text style={styles.rowLabel}>{loc.label}</Text>
-              {currentLocale === loc.code && (
-                <Ionicons name="checkmark" size={20} color={colors.primary} />
-              )}
-            </TouchableOpacity>
-          ))}
-        </ScrollView>
+        {seedLoading ? (
+          <View style={styles.center}><ActivityIndicator size="large" color={colors.primary} /></View>
+        ) : (
+          <FlatList
+            data={languages}
+            keyExtractor={(item) => String(item.id)}
+            renderItem={({ item }) => (
+              <TouchableOpacity
+                style={styles.row}
+                onPress={async () => {
+                  await saveProfile({ app_locale: item.code });
+                  goBack('account');
+                }}
+              >
+                <Text style={styles.rowLabel}>{item.name_native}</Text>
+                {currentLocale === item.code && (
+                  <Ionicons name="checkmark" size={20} color={colors.primary} />
+                )}
+              </TouchableOpacity>
+            )}
+          />
+        )}
       </SafeAreaView>
     );
   }
@@ -435,6 +582,8 @@ export default function MyPageScreen() {
 
   // ── 3depth: Avatar character ──────────────────────────────────────────────
   if (screen === 'avatarCharacter') {
+    const currentSelectedId = selectedAvatarId ?? avatarData?.id ?? null;
+    const selectedAvatar = avatars.find((a) => a.id === currentSelectedId);
     return (
       <SafeAreaView style={styles.container} edges={['top']}>
         <ScreenHeader
@@ -444,37 +593,105 @@ export default function MyPageScreen() {
         {seedLoading ? (
           <View style={styles.center}><ActivityIndicator size="large" color={colors.primary} /></View>
         ) : (
-          <FlatList
-            data={avatars}
-            keyExtractor={(item) => String(item.id)}
-            numColumns={2}
-            contentContainerStyle={styles.gridContainer}
-            renderItem={({ item }) => {
-              const selected = avatarData?.id === item.id;
-              return (
+          <View style={styles.avatarEditContent}>
+            <ScrollView
+              horizontal
+              showsHorizontalScrollIndicator={false}
+              contentContainerStyle={styles.avatarScrollContent}
+              style={styles.avatarScroll}
+            >
+              {avatars.map((avatar) => (
                 <TouchableOpacity
-                  style={[styles.avatarGridItem, selected && styles.avatarGridSelected]}
-                  onPress={async () => {
-                    await saveProfile({ avatar_id: item.id });
-                    goBack('avatar');
+                  key={avatar.id}
+                  style={[
+                    styles.avatarCard,
+                    { borderColor: currentSelectedId === avatar.id ? colors.primary : colors.border },
+                    currentSelectedId === avatar.id && styles.avatarCardSelected,
+                  ]}
+                  onPress={() => {
+                    setSelectedAvatarId(avatar.id);
+                    setAvatarCharName(avatar.name);
                   }}
                   activeOpacity={0.7}
                 >
-                  <View style={[styles.avatarThumb, { backgroundColor: item.primary_color }]}>
-                    {item.thumbnail_url ? (
-                      <Image source={{ uri: item.thumbnail_url }} style={styles.avatarThumbImg} />
+                  <View
+                    style={[
+                      styles.avatarImageContainer,
+                      { backgroundColor: avatar.primary_color + '20' },
+                    ]}
+                  >
+                    {avatar.thumbnail_url ? (
+                      <Image
+                        source={{ uri: `${API_BASE_URL}/${avatar.thumbnail_url.replace(/^\//, '')}` }}
+                        style={styles.avatarCardImage}
+                        resizeMode="cover"
+                      />
                     ) : (
-                      <Ionicons name="person" size={32} color="#fff" />
+                      <Ionicons name="person" size={28} color={avatar.primary_color} />
                     )}
                   </View>
-                  <Text style={styles.avatarGridName}>{item.name}</Text>
-                  {selected && (
-                    <Ionicons name="checkmark-circle" size={20} color={colors.primary} style={styles.avatarCheck} />
+                  <Text style={styles.avatarCardName}>{avatar.name}</Text>
+                  {currentSelectedId === avatar.id && (
+                    <View style={[styles.checkBadge, { backgroundColor: colors.primary }]}>
+                      <Ionicons name="checkmark" size={10} color="#FFFFFF" />
+                    </View>
                   )}
                 </TouchableOpacity>
-              );
-            }}
-          />
+              ))}
+            </ScrollView>
+
+            <View style={styles.modelPreview}>
+              <View style={styles.nameInputRow}>
+                <Ionicons name="pencil" size={20} color={colors.textSecondary} />
+                <TextInput
+                  style={styles.nameInput}
+                  value={avatarCharName}
+                  onChangeText={setAvatarCharName}
+                  onBlur={() => {
+                    if (!avatarCharName.trim()) {
+                      setAvatarCharName(selectedAvatar?.name ?? '');
+                    }
+                  }}
+                  placeholder={selectedAvatar?.name ?? '이름 입력'}
+                  placeholderTextColor={colors.textTertiary}
+                  maxLength={20}
+                />
+              </View>
+              {currentSelectedId ? (
+                <Live2DAvatar
+                  voiceState="idle"
+                  volume={0}
+                  color={selectedAvatar?.primary_color}
+                  modelUrl={selectedAvatar?.model_url ?? undefined}
+                />
+              ) : (
+                <Text style={styles.modelPreviewPlaceholder}>
+                  아바타를 선택해주세요
+                </Text>
+              )}
+            </View>
+
+            <View style={styles.avatarFooter}>
+              <TouchableOpacity
+                style={[styles.primaryBtn, saving && styles.disabledBtn]}
+                onPress={async () => {
+                  if (!currentSelectedId) return;
+                  const name = avatarCharName.trim() || selectedAvatar?.name;
+                  await saveProfile({ avatar_id: currentSelectedId, avatar_name: name });
+                  setSelectedAvatarId(null);
+                  setAvatarCharName('');
+                  goBack('avatar');
+                }}
+                disabled={saving || !currentSelectedId}
+              >
+                {saving ? (
+                  <ActivityIndicator size="small" color="#fff" />
+                ) : (
+                  <Text style={styles.primaryBtnText}>저장</Text>
+                )}
+              </TouchableOpacity>
+            </View>
+          </View>
         )}
       </SafeAreaView>
     );
@@ -482,43 +699,138 @@ export default function MyPageScreen() {
 
   // ── 3depth: Avatar voice ──────────────────────────────────────────────────
   if (screen === 'avatarVoice') {
+    const currentVoiceId = selectedVoiceId ?? voiceData?.id ?? null;
+    const selectedVoice = voices.find((v) => v.id === currentVoiceId) ?? null;
+    const genderLabel = (g: string) => (g === 'male' ? '남성' : g === 'female' ? '여성' : g);
+
+    const handleVoiceSelect = (voice: Voice) => {
+      setSelectedVoiceId(voice.id);
+      if (voice.sample_url) {
+        setAudioSource(`${API_BASE_URL}${voice.sample_url}`);
+      }
+    };
+
+    const handleVoiceReplay = () => {
+      if (player) {
+        player.seekTo(0);
+        player.play();
+      }
+    };
+
     return (
       <SafeAreaView style={styles.container} edges={['top']}>
         <ScreenHeader
           title="목소리 설정"
-          left={<TouchableOpacity onPress={() => goBack('avatar')}><Ionicons name="chevron-back" size={24} color={colors.text} /></TouchableOpacity>}
+          left={<TouchableOpacity onPress={() => {
+            player?.pause();
+            setSelectedVoiceId(null);
+            setAudioSource(null);
+            goBack('avatar');
+          }}><Ionicons name="chevron-back" size={24} color={colors.text} /></TouchableOpacity>}
         />
         {seedLoading ? (
           <View style={styles.center}><ActivityIndicator size="large" color={colors.primary} /></View>
         ) : (
-          <FlatList
-            data={voices}
-            keyExtractor={(item) => String(item.id)}
-            renderItem={({ item }) => {
-              const selected = voiceData?.id === item.id;
-              return (
+          <View style={styles.voiceEditContent}>
+            {/* 가로 스크롤 카드 */}
+            <ScrollView
+              horizontal
+              showsHorizontalScrollIndicator={false}
+              contentContainerStyle={styles.voiceScrollContent}
+              style={styles.voiceScroll}
+            >
+              {voices.map((voice) => (
                 <TouchableOpacity
-                  style={[styles.row, selected && styles.selectedRow]}
-                  onPress={async () => {
-                    await saveProfile({ voice_id: item.id });
-                    goBack('avatar');
-                  }}
+                  key={voice.id}
+                  style={[
+                    styles.voiceCard,
+                    { borderColor: currentVoiceId === voice.id ? colors.primary : colors.border },
+                    currentVoiceId === voice.id && styles.voiceCardSelected,
+                  ]}
+                  onPress={() => handleVoiceSelect(voice)}
+                  activeOpacity={0.7}
                 >
-                  <View style={styles.rowLeft}>
-                    <Ionicons name="musical-note-outline" size={20} color={colors.textSecondary} />
-                    <View>
-                      <Text style={styles.rowLabel}>{item.name}</Text>
-                      <Text style={styles.rowSubtext}>
-                        {item.gender === 'male' ? '남성' : '여성'}
-                        {item.tone ? ` · ${item.tone}` : ''}
-                      </Text>
-                    </View>
+                  <View style={[
+                    styles.voiceIconContainer,
+                    { backgroundColor: voice.gender === 'male' ? '#E3F2FD' : '#FCE4EC' },
+                  ]}>
+                    <Ionicons
+                      name={voice.gender === 'male' ? 'man' : 'woman'}
+                      size={20}
+                      color={voice.gender === 'male' ? '#1976D2' : '#E91E63'}
+                    />
                   </View>
-                  {selected && <Ionicons name="checkmark" size={20} color={colors.primary} />}
+                  <View style={styles.voiceTextContainer}>
+                    <Text style={styles.voiceName}>{voice.name}</Text>
+                    {voice.tone && <Text style={styles.voiceTone}>{voice.tone}</Text>}
+                  </View>
+                  {currentVoiceId === voice.id && (
+                    <View style={[styles.checkBadge, { backgroundColor: colors.primary }]}>
+                      <Ionicons name="checkmark" size={10} color="#FFFFFF" />
+                    </View>
+                  )}
                 </TouchableOpacity>
-              );
-            }}
-          />
+              ))}
+            </ScrollView>
+
+            {/* 미리보기 영역 */}
+            <View style={styles.voicePreviewArea}>
+              {selectedVoice && (
+                <View style={styles.voiceInfoRow}>
+                  <Text style={styles.voiceInfoName}>{selectedVoice.name}</Text>
+                  <View style={styles.genderBadge}>
+                    <Text style={styles.genderText}>{genderLabel(selectedVoice.gender)}</Text>
+                  </View>
+                  {selectedVoice.sample_url && (
+                    <TouchableOpacity
+                      style={styles.replayButton}
+                      onPress={handleVoiceReplay}
+                      activeOpacity={0.7}
+                    >
+                      <Ionicons
+                        name={isPlaying ? 'stop' : 'volume-high'}
+                        size={18}
+                        color={colors.primary}
+                      />
+                    </TouchableOpacity>
+                  )}
+                </View>
+              )}
+              {selectedVoice?.description && (
+                <Text style={styles.voiceDescriptionText}>{selectedVoice.description}</Text>
+              )}
+              <View style={styles.voiceAvatarContainer}>
+                <Live2DAvatar
+                  voiceState={isPlaying ? 'ai_speaking' : 'idle'}
+                  volume={voiceVolume}
+                  color={avatarData?.primary_color}
+                  modelUrl={avatarData?.model_url ?? undefined}
+                />
+              </View>
+            </View>
+
+            {/* 저장 버튼 */}
+            <View style={styles.avatarFooter}>
+              <TouchableOpacity
+                style={[styles.primaryBtn, (saving || !currentVoiceId) && styles.disabledBtn]}
+                onPress={async () => {
+                  if (!currentVoiceId) return;
+                  player?.pause();
+                  await saveProfile({ voice_id: currentVoiceId });
+                  setSelectedVoiceId(null);
+                  setAudioSource(null);
+                  goBack('avatar');
+                }}
+                disabled={saving || !currentVoiceId}
+              >
+                {saving ? (
+                  <ActivityIndicator size="small" color="#fff" />
+                ) : (
+                  <Text style={styles.primaryBtnText}>저장</Text>
+                )}
+              </TouchableOpacity>
+            </View>
+          </View>
         )}
       </SafeAreaView>
     );
@@ -526,26 +838,48 @@ export default function MyPageScreen() {
 
   // ── 3depth: Personality sliders ───────────────────────────────────────────
   if (screen === 'avatarPersonality') {
+    const clampVal = (v: number) => Math.max(0, Math.min(100, v));
     return (
       <SafeAreaView style={styles.container} edges={['top']}>
         <ScreenHeader
           title="성격 설정"
           left={<TouchableOpacity onPress={() => goBack('avatar')}><Ionicons name="chevron-back" size={24} color={colors.text} /></TouchableOpacity>}
         />
-        <ScrollView contentContainerStyle={styles.formContainer}>
-          {[
-            { label: '공감', value: empathy, set: setEmpathy },
-            { label: '직관', value: intuition, set: setIntuition },
-            { label: '논리', value: logic, set: setLogic },
-          ].map(({ label, value, set }) => (
-            <View key={label} style={styles.sliderBlock}>
-              <View style={styles.sliderHeader}>
-                <Text style={styles.fieldLabel}>{label}</Text>
-                <Text style={styles.sliderValue}>{value}</Text>
-              </View>
-              <SimpleSlider value={value} onChange={set} />
-            </View>
-          ))}
+        <View style={styles.personalityContent}>
+          <Text style={styles.personalityDescription}>
+            슬라이더를 드래그하여 AI 친구의 성격을 조절하세요.
+          </Text>
+          <View style={styles.personalitySlidersContainer}>
+            <PersonalityRow
+              label="공감"
+              emoji="❤️"
+              value={empathy}
+              color="#FF6B6B"
+              onIncrement={() => setEmpathy((v) => clampVal(v + 5))}
+              onDecrement={() => setEmpathy((v) => clampVal(v - 5))}
+              onValueChange={setEmpathy}
+            />
+            <PersonalityRow
+              label="직관"
+              emoji="💡"
+              value={intuition}
+              color="#FFD93D"
+              onIncrement={() => setIntuition((v) => clampVal(v + 5))}
+              onDecrement={() => setIntuition((v) => clampVal(v - 5))}
+              onValueChange={setIntuition}
+            />
+            <PersonalityRow
+              label="논리"
+              emoji="🧠"
+              value={logic}
+              color="#6BCB77"
+              onIncrement={() => setLogic((v) => clampVal(v + 5))}
+              onDecrement={() => setLogic((v) => clampVal(v - 5))}
+              onValueChange={setLogic}
+            />
+          </View>
+        </View>
+        <View style={styles.avatarFooter}>
           <TouchableOpacity
             style={[styles.primaryBtn, saving && styles.disabledBtn]}
             onPress={async () => {
@@ -560,7 +894,7 @@ export default function MyPageScreen() {
               <Text style={styles.primaryBtnText}>저장</Text>
             )}
           </TouchableOpacity>
-        </ScrollView>
+        </View>
       </SafeAreaView>
     );
   }
@@ -571,7 +905,7 @@ export default function MyPageScreen() {
       <SafeAreaView style={styles.container} edges={['top']}>
         <ScreenHeader
           title="학습 언어"
-          left={<TouchableOpacity onPress={() => goBack('learning')}><Ionicons name="chevron-back" size={24} color={colors.text} /></TouchableOpacity>}
+          left={<TouchableOpacity onPress={() => goBack('account')}><Ionicons name="chevron-back" size={24} color={colors.text} /></TouchableOpacity>}
         />
         {seedLoading ? (
           <View style={styles.center}><ActivityIndicator size="large" color={colors.primary} /></View>
@@ -584,7 +918,7 @@ export default function MyPageScreen() {
                 style={styles.row}
                 onPress={async () => {
                   await saveProfile({ target_language_id: item.id });
-                  goBack('learning');
+                  goBack('account');
                 }}
               >
                 <Text style={styles.rowLabel}>{item.name_native}</Text>
@@ -734,29 +1068,31 @@ export default function MyPageScreen() {
               value={profile?.email ?? '-'}
             />
             <RowItem
-              icon="logo-google"
+              icon="key-outline"
               label="로그인 방식"
               value={profile?.social_provider ?? '-'}
             />
           </View>
 
           <View style={styles.section}>
-            <Text style={styles.sectionTitle}>앱 설정</Text>
+            <Text style={styles.sectionTitle}>언어 설정</Text>
             <RowItem
               icon="globe-outline"
-              label="화면 출력 언어"
-              value={
-                APP_LOCALES.find((l) => l.code === profile?.profile?.app_locale)?.label ??
-                profile?.profile?.app_locale ??
-                '-'
-              }
-              onPress={() => goTo('appLocale')}
+              label="앱 언어"
+              value={profile?.profile?.app_locale ?? '-'}
+              onPress={() => goTo('appLocale', 'languages')}
             />
             <RowItem
               icon="language-outline"
               label="모국어"
               value={nativeLang?.name_native ?? '-'}
               onPress={() => goTo('nativeLanguage', 'languages')}
+            />
+            <RowItem
+              icon="book-outline"
+              label="학습 언어"
+              value={targetLang?.name_native ?? '-'}
+              onPress={() => goTo('learningLanguage', 'languages')}
             />
           </View>
 
@@ -793,8 +1129,12 @@ export default function MyPageScreen() {
             <RowItem
               icon="happy-outline"
               label="캐릭터 변경"
-              value={avatarData?.name ?? profile?.profile?.avatar_name ?? '-'}
-              onPress={() => goTo('avatarCharacter', 'avatars')}
+              value={profile?.profile?.avatar_name ?? avatarData?.name ?? '-'}
+              onPress={() => {
+                setSelectedAvatarId(avatarData?.id ?? null);
+                setAvatarCharName(profile?.profile?.avatar_name ?? avatarData?.name ?? '');
+                goTo('avatarCharacter', 'avatars');
+              }}
             />
             <RowItem
               icon="mic-outline"
@@ -828,7 +1168,6 @@ export default function MyPageScreen() {
               icon="language-outline"
               label="학습 언어"
               value={targetLang?.name_native ?? '-'}
-              onPress={() => goTo('learningLanguage', 'languages')}
             />
             <RowItem
               icon="school-outline"
@@ -839,9 +1178,7 @@ export default function MyPageScreen() {
             <RowItem
               icon="mic-circle-outline"
               label="발음 목소리"
-              value={
-                voices.find((v) => v.id === profile?.profile?.pronunciation_voice_id)?.name ?? '-'
-              }
+              value={profile?.profile?.pronunciation_voice?.name ?? '-'}
               onPress={() => goTo('learningPronunciation', 'voices')}
             />
           </View>
@@ -1069,62 +1406,213 @@ const styles = StyleSheet.create({
     fontSize: fontSize.md,
     fontWeight: '600',
   },
-  // Avatar grid
-  gridContainer: {
-    padding: spacing.md,
-    gap: spacing.md,
-  },
-  avatarGridItem: {
+  // Personality (step4 style)
+  personalityContent: {
     flex: 1,
-    margin: spacing.xs,
-    borderRadius: borderRadius.md,
-    alignItems: 'center',
-    padding: spacing.md,
+    paddingHorizontal: spacing.lg,
+  },
+  personalityDescription: {
+    fontSize: fontSize.sm,
+    color: colors.textSecondary,
+    textAlign: 'center',
+    marginBottom: spacing.xl,
+    lineHeight: 20,
+  },
+  personalitySlidersContainer: {
+    gap: spacing.lg,
+  },
+  // Avatar character edit (step2 style)
+  avatarEditContent: {
+    flex: 1,
+    paddingHorizontal: spacing.lg,
+  },
+  avatarScroll: {
+    flexGrow: 0,
+    marginBottom: spacing.lg,
+  },
+  avatarScrollContent: {
+    paddingHorizontal: 8,
+    gap: 8,
+    flexGrow: 1,
+    justifyContent: 'center',
+  },
+  avatarCard: {
     backgroundColor: colors.surface,
-    ...shadows.sm,
-    position: 'relative',
-  },
-  avatarGridSelected: {
     borderWidth: 2,
-    borderColor: colors.primary,
+    borderColor: colors.border,
+    borderRadius: borderRadius.md,
+    padding: spacing.sm,
+    alignItems: 'center',
+    width: AVATAR_CARD_WIDTH,
+    position: 'relative',
+    ...shadows.sm,
   },
-  avatarThumb: {
-    width: 72,
-    height: 72,
-    borderRadius: 36,
+  avatarCardSelected: {
+    ...shadows.md,
+  },
+  avatarImageContainer: {
+    width: 48,
+    height: 48,
+    borderRadius: 24,
     justifyContent: 'center',
     alignItems: 'center',
-    marginBottom: spacing.sm,
     overflow: 'hidden',
+    marginBottom: 4,
   },
-  avatarThumbImg: {
-    width: 72,
-    height: 72,
+  avatarCardImage: {
+    width: 48,
+    height: 48,
   },
-  avatarGridName: {
-    fontSize: fontSize.sm,
-    color: colors.text,
+  avatarCardName: {
+    fontSize: 11,
     fontWeight: '600',
+    color: colors.text,
     textAlign: 'center',
   },
-  avatarCheck: {
+  checkBadge: {
     position: 'absolute',
-    top: spacing.sm,
-    right: spacing.sm,
+    top: 4,
+    right: 4,
+    width: 16,
+    height: 16,
+    borderRadius: 8,
+    justifyContent: 'center',
+    alignItems: 'center',
   },
-  // Sliders
-  sliderBlock: {
-    marginBottom: spacing.md,
+  modelPreview: {
+    flex: 1,
+    backgroundColor: colors.surface,
+    borderRadius: borderRadius.lg,
+    overflow: 'hidden',
+    borderWidth: 1,
+    borderColor: colors.border,
   },
-  sliderHeader: {
+  modelPreviewPlaceholder: {
+    fontSize: fontSize.md,
+    color: colors.textSecondary,
+    textAlign: 'center',
+    marginTop: spacing.xl,
+  },
+  nameInputRow: {
     flexDirection: 'row',
-    justifyContent: 'space-between',
-    marginBottom: spacing.xs,
+    alignItems: 'center',
+    alignSelf: 'center',
+    marginTop: spacing.sm,
+    borderBottomWidth: 3,
+    borderBottomColor: colors.border,
+    paddingBottom: 4,
   },
-  sliderValue: {
-    fontSize: fontSize.sm,
-    color: colors.primary,
+  nameInput: {
+    fontSize: fontSize.md,
     fontWeight: '600',
+    color: colors.text,
+    textAlign: 'center',
+    paddingHorizontal: 2,
+    paddingLeft: 0,
+    paddingVertical: 4,
+    minWidth: 80,
+    maxWidth: 160,
+  },
+  avatarFooter: {
+    paddingVertical: spacing.md,
+  },
+  // Voice edit (step3 style)
+  voiceEditContent: {
+    flex: 1,
+    paddingHorizontal: spacing.lg,
+  },
+  voiceScroll: {
+    flexGrow: 0,
+    marginBottom: spacing.lg,
+  },
+  voiceScrollContent: {
+    paddingHorizontal: VOICE_HORIZONTAL_PADDING,
+    gap: VOICE_GAP,
+  },
+  voiceCard: {
+    backgroundColor: colors.surface,
+    borderWidth: 2,
+    borderColor: colors.border,
+    borderRadius: borderRadius.md,
+    padding: spacing.sm,
+    flexDirection: 'row',
+    alignItems: 'center',
+    width: VOICE_CARD_WIDTH,
+    position: 'relative',
+    gap: 6,
+    ...shadows.sm,
+  },
+  voiceCardSelected: {
+    ...shadows.md,
+  },
+  voiceIconContainer: {
+    width: 36,
+    height: 36,
+    borderRadius: 18,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  voiceTextContainer: {
+    flex: 1,
+  },
+  voiceName: {
+    fontSize: 11,
+    fontWeight: '600',
+    color: colors.text,
+  },
+  voiceTone: {
+    fontSize: 9,
+    color: colors.textSecondary,
+    marginTop: 1,
+  },
+  voicePreviewArea: {
+    flex: 1,
+    backgroundColor: colors.surface,
+    borderRadius: borderRadius.lg,
+    overflow: 'hidden',
+    borderWidth: 1,
+    borderColor: colors.border,
+  },
+  voiceInfoRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    alignSelf: 'center',
+    marginTop: spacing.sm,
+    gap: spacing.sm,
+  },
+  voiceInfoName: {
+    fontSize: fontSize.md,
+    fontWeight: '600',
+    color: colors.text,
+  },
+  genderBadge: {
+    backgroundColor: colors.primaryLight + '30',
+    paddingHorizontal: spacing.sm,
+    paddingVertical: 2,
+    borderRadius: borderRadius.sm,
+  },
+  genderText: {
+    fontSize: fontSize.xs,
+    color: colors.primaryDark,
+    fontWeight: '500',
+  },
+  replayButton: {
+    width: 32,
+    height: 32,
+    borderRadius: 16,
+    backgroundColor: colors.primary + '15',
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  voiceDescriptionText: {
+    fontSize: fontSize.xs,
+    color: colors.textSecondary,
+    textAlign: 'center',
+    marginTop: 4,
+    paddingHorizontal: spacing.md,
+  },
+  voiceAvatarContainer: {
+    flex: 1,
   },
   // Terms
   termsContainer: {

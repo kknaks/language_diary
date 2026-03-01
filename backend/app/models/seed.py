@@ -8,7 +8,7 @@ class CefrLevel(Base):
     __tablename__ = "cefr_levels"
 
     code: Mapped[str] = mapped_column(String(10), primary_key=True)   # A1, A2, ...
-    group: Mapped[str] = mapped_column(String(20), nullable=False)     # 초급, 중급, 고급
+    clazz: Mapped[str] = mapped_column(String(20), nullable=False)     # 초급, 중급, 고급
     name: Mapped[str] = mapped_column(String(30), nullable=False)      # 입문, 초급, ...
     description: Mapped[str] = mapped_column(String(200), nullable=False)
     sort_order: Mapped[int] = mapped_column(Integer, nullable=False)

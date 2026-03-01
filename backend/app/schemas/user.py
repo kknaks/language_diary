@@ -30,6 +30,7 @@ class AvatarInfo(BaseModel):
     name: str
     thumbnail_url: str
     primary_color: str
+    model_url: Optional[str] = None
 
     class Config:
         from_attributes = True
@@ -65,6 +66,7 @@ class ProfileResponse(BaseModel):
     avatar_name: Optional[str]
     voice: Optional[VoiceInfo]
     pronunciation_voice_id: Optional[int] = None
+    pronunciation_voice: Optional[VoiceInfo] = None
     empathy: int
     intuition: int
     logic: int
@@ -97,8 +99,8 @@ class ProfileCreateRequest(BaseModel):
     avatar_name: Optional[str] = None
     voice_id: Optional[int] = None
     pronunciation_voice_id: Optional[int] = None
-    empathy: int = 34
-    intuition: int = 33
-    logic: int = 33
+    empathy: int = 50
+    intuition: int = 50
+    logic: int = 50
     app_locale: str = "ko"
     cefr_level: Optional[str] = None

@@ -15,7 +15,7 @@ from app.database import async_session
 from app.exceptions import AppError, app_error_handler, generic_error_handler, validation_error_handler
 from app.middleware.logging import RequestLoggingMiddleware
 from app.middleware.rate_limit import RateLimitMiddleware
-from app.models.seed import Avatar, Language, Voice
+from app.models.seed import Avatar, CefrLevel, Language, Voice
 
 logger = logging.getLogger(__name__)
 
@@ -28,10 +28,12 @@ async def lifespan(app: FastAPI):
             r_lang = await session.execute(select(Language).limit(1))
             r_avatar = await session.execute(select(Avatar).limit(1))
             r_voice = await session.execute(select(Voice).limit(1))
+            r_cefr = await session.execute(select(CefrLevel).limit(1))
             has_seed = all([
                 r_lang.scalar_one_or_none(),
                 r_avatar.scalar_one_or_none(),
                 r_voice.scalar_one_or_none(),
+                r_cefr.scalar_one_or_none(),
             ])
 
         if not has_seed:

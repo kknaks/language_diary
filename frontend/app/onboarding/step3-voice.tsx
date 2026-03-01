@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef } from 'react';
+import { useState, useEffect, useRef, useCallback } from 'react';
 import {
   View,
   Text,
@@ -7,10 +7,11 @@ import {
   ScrollView,
   ActivityIndicator,
   Alert,
+  Dimensions,
 } from 'react-native';
 import { router } from 'expo-router';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { createAudioPlayer, AudioPlayer } from 'expo-audio';
+import { useAudioPlayer, useAudioPlayerStatus, useAudioSampleListener } from 'expo-audio';
 import { Ionicons } from '@expo/vector-icons';
 import { colors, spacing, fontSize, borderRadius, shadows } from '../../src/constants/theme';
 import { seedApi, API_BASE_URL } from '../../src/services/api';
@@ -18,18 +19,57 @@ import { useOnboardingStore } from '../../src/stores/useOnboardingStore';
 import { useOnboardingPrefetch } from '../../src/stores/useOnboardingPrefetch';
 import { Voice } from '../../src/types/seed';
 import StepIndicator from '../../src/components/onboarding/StepIndicator';
+import Live2DAvatar from '../../src/components/conversation/Live2DAvatar';
+
+// PCM frames → RMS 볼륨 (0~1)
+function calcRMS(frames: number[]): number {
+  if (!frames || frames.length === 0) return 0;
+  let sum = 0;
+  for (let i = 0; i < frames.length; i++) {
+    sum += frames[i] * frames[i];
+  }
+  return Math.min(1, Math.sqrt(sum / frames.length) * 3);
+}
 
 export default function Step3Voice() {
   const [voices, setVoices] = useState<Voice[]>([]);
   const [loading, setLoading] = useState(true);
-  const [selectedId, setSelectedId] = useState<number | null>(null);
-  const [playingId, setPlayingId] = useState<number | null>(null);
-  const playerRef = useRef<AudioPlayer | null>(null);
-  const subscriptionRef = useRef<{ remove: () => void } | null>(null);
+  const storedVoiceId = useOnboardingStore((s) => s.voice_id);
+  const [selectedId, setSelectedId] = useState<number | null>(storedVoiceId);
+  const [audioSource, setAudioSource] = useState<string | null>(null);
+  const [volume, setVolume] = useState(0);
 
   const nativeLanguageId = useOnboardingStore((s) => s.native_language_id);
-  const setVoice = useOnboardingStore((s) => s.setVoice);
+  const avatarId = useOnboardingStore((s) => s.avatar_id);
+  const setVoiceStore = useOnboardingStore((s) => s.setVoice);
   const cachedVoices = useOnboardingPrefetch((s) => s.voices);
+  const cachedAvatars = useOnboardingPrefetch((s) => s.avatars);
+
+  const selectedAvatar = cachedAvatars?.find((a) => a.id === avatarId) ?? null;
+
+  // expo-audio hook 기반 플레이어
+  const player = useAudioPlayer(audioSource ?? undefined);
+  const status = useAudioPlayerStatus(player);
+
+  const isPlaying = status.playing;
+  const isPlayingRef = useRef(false);
+  isPlayingRef.current = isPlaying;
+
+  // 실시간 오디오 샘플 → 볼륨 계산
+  useAudioSampleListener(player, useCallback((sample) => {
+    if (!isPlayingRef.current) return;
+    if (sample.channels && sample.channels.length > 0) {
+      const rms = calcRMS(sample.channels[0].frames);
+      setVolume(rms);
+    }
+  }, []));
+
+  // 재생 끝나면 볼륨 리셋
+  useEffect(() => {
+    if (!isPlaying) {
+      setVolume(0);
+    }
+  }, [isPlaying]);
 
   useEffect(() => {
     if (cachedVoices) {
@@ -38,10 +78,6 @@ export default function Step3Voice() {
     } else {
       loadVoices();
     }
-    return () => {
-      subscriptionRef.current?.remove();
-      playerRef.current?.release();
-    };
   }, [cachedVoices]);
 
   const loadVoices = async () => {
@@ -55,40 +91,26 @@ export default function Step3Voice() {
     }
   };
 
-  const handlePreview = (voice: Voice) => {
-    if (!voice.sample_url) {
-      Alert.alert('미리듣기 불가', '이 목소리의 샘플이 없습니다.');
-      return;
+  const handleSelect = (voice: Voice) => {
+    setSelectedId(voice.id);
+    setVoiceStore(voice.id);
+    if (voice.sample_url) {
+      setAudioSource(`${API_BASE_URL}${voice.sample_url}`);
     }
+  };
 
-    // 이전 플레이어 정리
-    subscriptionRef.current?.remove();
-    playerRef.current?.release();
-    subscriptionRef.current = null;
-    playerRef.current = null;
-
-    if (playingId === voice.id) {
-      setPlayingId(null);
-      return;
-    }
-
-    try {
-      setPlayingId(voice.id);
-      const player = createAudioPlayer(`${API_BASE_URL}${voice.sample_url}`);
-      playerRef.current = player;
-
-      const sub = player.addListener('playbackStatusUpdate', (status) => {
-        if (status.didJustFinish) {
-          setPlayingId(null);
-        }
-      });
-      subscriptionRef.current = sub;
-
+  // audioSource가 바뀌면 자동 재생
+  useEffect(() => {
+    if (audioSource && player) {
+      player.seekTo(0);
       player.play();
-    } catch (err) {
-      console.error('Audio playback error:', err);
-      setPlayingId(null);
-      Alert.alert('재생 실패', '오디오를 재생할 수 없습니다.');
+    }
+  }, [audioSource]);
+
+  const handleReplay = () => {
+    if (player) {
+      player.seekTo(0);
+      player.play();
     }
   };
 
@@ -97,9 +119,12 @@ export default function Step3Voice() {
       Alert.alert('선택 필요', '목소리를 선택해주세요.');
       return;
     }
-    setVoice(selectedId);
+    player?.pause();
+    setVoiceStore(selectedId);
     router.push('/onboarding/step4-personality');
   };
+
+  const selectedVoice = voices.find((v) => v.id === selectedId) ?? null;
 
   const genderLabel = (gender: string) => {
     switch (gender) {
@@ -124,65 +149,97 @@ export default function Step3Voice() {
     <SafeAreaView style={styles.container}>
       <StepIndicator currentStep={3} totalSteps={5} />
 
-      <ScrollView
-        style={styles.scrollView}
-        contentContainerStyle={styles.content}
-        showsVerticalScrollIndicator={false}
-      >
+      <View style={styles.mainContent}>
         <Text style={styles.title}>어떤 목소리가 좋나요?</Text>
 
-        {voices.map((voice) => (
-          <TouchableOpacity
-            key={voice.id}
-            style={[
-              styles.voiceCard,
-              selectedId === voice.id && styles.voiceCardSelected,
-            ]}
-            onPress={() => setSelectedId(voice.id)}
-            activeOpacity={0.7}
-          >
-            <View style={styles.voiceInfo}>
-              <View style={styles.voiceHeader}>
-                <Text style={styles.voiceName}>{voice.name}</Text>
-                <View style={styles.genderBadge}>
-                  <Text style={styles.genderText}>{genderLabel(voice.gender)}</Text>
-                </View>
+        {/* 목소리 좌우 스크롤 */}
+        <ScrollView
+          horizontal
+          showsHorizontalScrollIndicator={false}
+          contentContainerStyle={styles.voiceScrollContent}
+          style={styles.voiceScroll}
+        >
+          {voices.map((voice) => (
+            <TouchableOpacity
+              key={voice.id}
+              style={[
+                styles.voiceCard,
+                { borderColor: selectedId === voice.id ? colors.primary : colors.border },
+                selectedId === voice.id && styles.voiceCardSelected,
+              ]}
+              onPress={() => handleSelect(voice)}
+              activeOpacity={0.7}
+            >
+              <View style={[
+                styles.voiceIconContainer,
+                { backgroundColor: voice.gender === 'male' ? '#E3F2FD' : '#FCE4EC' },
+              ]}>
+                <Ionicons
+                  name={voice.gender === 'male' ? 'man' : 'woman'}
+                  size={20}
+                  color={voice.gender === 'male' ? '#1976D2' : '#E91E63'}
+                />
               </View>
-              {voice.tone && (
-                <Text style={styles.voiceTone}>{voice.tone}</Text>
+              <View style={styles.voiceTextContainer}>
+                <Text style={styles.voiceName}>{voice.name}</Text>
+                {voice.tone && (
+                  <Text style={styles.voiceTone}>{voice.tone}</Text>
+                )}
+              </View>
+              {selectedId === voice.id && (
+                <View style={[styles.checkBadge, { backgroundColor: colors.primary }]}>
+                  <Ionicons name="checkmark" size={10} color="#FFFFFF" />
+                </View>
               )}
-              {voice.description && (
-                <Text style={styles.voiceDescription} numberOfLines={2}>
-                  {voice.description}
-                </Text>
-              )}
-            </View>
+            </TouchableOpacity>
+          ))}
+        </ScrollView>
 
-            <View style={styles.voiceActions}>
-              {voice.sample_url && (
+        {/* 아바타 미리보기 + 목소리 재생 영역 */}
+        <View style={styles.previewArea}>
+          {selectedVoice && (
+            <View style={styles.voiceInfoRow}>
+              <Text style={styles.voiceInfoName}>{selectedVoice.name}</Text>
+              <View style={styles.genderBadge}>
+                <Text style={styles.genderText}>{genderLabel(selectedVoice.gender)}</Text>
+              </View>
+              {selectedVoice.sample_url && (
                 <TouchableOpacity
-                  style={styles.previewButton}
-                  onPress={() => handlePreview(voice)}
+                  style={styles.replayButton}
+                  onPress={handleReplay}
                   activeOpacity={0.7}
                 >
                   <Ionicons
-                    name={playingId === voice.id ? 'stop' : 'play'}
-                    size={20}
+                    name={isPlaying ? 'stop' : 'volume-high'}
+                    size={18}
                     color={colors.primary}
                   />
                 </TouchableOpacity>
               )}
-              {selectedId === voice.id && (
-                <Ionicons name="checkmark-circle" size={24} color={colors.primary} />
-              )}
             </View>
-          </TouchableOpacity>
-        ))}
+          )}
 
-        {voices.length === 0 && (
-          <Text style={styles.emptyText}>사용 가능한 목소리가 없습니다.</Text>
-        )}
-      </ScrollView>
+          {selectedVoice?.description && (
+            <Text style={styles.voiceDescriptionText}>{selectedVoice.description}</Text>
+          )}
+
+          <View style={styles.avatarContainer}>
+            {selectedAvatar ? (
+              <Live2DAvatar
+                voiceState={isPlaying ? 'ai_speaking' : 'idle'}
+                volume={volume}
+                color={selectedAvatar.primary_color}
+                modelUrl={selectedAvatar.model_url ?? undefined}
+              />
+            ) : (
+              <View style={styles.avatarPlaceholder}>
+                <Ionicons name="person" size={64} color={colors.textTertiary} />
+                <Text style={styles.placeholderText}>목소리를 선택해주세요</Text>
+              </View>
+            )}
+          </View>
+        </View>
+      </View>
 
       <View style={styles.footer}>
         <TouchableOpacity
@@ -198,49 +255,98 @@ export default function Step3Voice() {
   );
 }
 
+const { width: SCREEN_WIDTH } = Dimensions.get('window');
+const VOICE_GAP = 8;
+const VOICE_HORIZONTAL_PADDING = 8;
+const VISIBLE_COUNT = 3;
+const VOICE_CARD_WIDTH = (SCREEN_WIDTH - VOICE_HORIZONTAL_PADDING * 2 - VOICE_GAP * (VISIBLE_COUNT - 0.5)) / VISIBLE_COUNT;
+
 const styles = StyleSheet.create({
   container: {
     flex: 1,
     backgroundColor: colors.background,
   },
-  scrollView: {
+  mainContent: {
     flex: 1,
-  },
-  content: {
     paddingHorizontal: spacing.lg,
-    paddingBottom: spacing.xl,
   },
   title: {
     fontSize: fontSize.xl,
     fontWeight: '700',
     color: colors.text,
     textAlign: 'center',
-    marginBottom: spacing.xl,
+    marginBottom: spacing.md,
+  },
+  voiceScroll: {
+    flexGrow: 0,
+    marginBottom: spacing.lg,
+  },
+  voiceScrollContent: {
+    paddingHorizontal: VOICE_HORIZONTAL_PADDING,
+    gap: VOICE_GAP,
   },
   voiceCard: {
     backgroundColor: colors.surface,
     borderWidth: 2,
     borderColor: colors.border,
     borderRadius: borderRadius.md,
-    padding: spacing.md,
-    marginBottom: spacing.sm,
+    padding: spacing.sm,
     flexDirection: 'row',
     alignItems: 'center',
+    width: VOICE_CARD_WIDTH,
+    position: 'relative',
+    gap: 6,
     ...shadows.sm,
   },
   voiceCardSelected: {
-    borderColor: colors.primary,
-    backgroundColor: colors.primary + '08',
+    ...shadows.md,
   },
-  voiceInfo: {
+  voiceIconContainer: {
+    width: 36,
+    height: 36,
+    borderRadius: 18,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  voiceTextContainer: {
     flex: 1,
   },
-  voiceHeader: {
+  voiceName: {
+    fontSize: 11,
+    fontWeight: '600',
+    color: colors.text,
+  },
+  voiceTone: {
+    fontSize: 9,
+    color: colors.textSecondary,
+    marginTop: 1,
+  },
+  checkBadge: {
+    position: 'absolute',
+    top: 4,
+    right: 4,
+    width: 16,
+    height: 16,
+    borderRadius: 8,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  previewArea: {
+    flex: 1,
+    backgroundColor: colors.surface,
+    borderRadius: borderRadius.lg,
+    overflow: 'hidden',
+    borderWidth: 1,
+    borderColor: colors.border,
+  },
+  voiceInfoRow: {
     flexDirection: 'row',
     alignItems: 'center',
+    alignSelf: 'center',
+    marginTop: spacing.sm,
     gap: spacing.sm,
   },
-  voiceName: {
+  voiceInfoName: {
     fontSize: fontSize.md,
     fontWeight: '600',
     color: colors.text,
@@ -256,36 +362,33 @@ const styles = StyleSheet.create({
     color: colors.primaryDark,
     fontWeight: '500',
   },
-  voiceTone: {
-    fontSize: fontSize.sm,
-    color: colors.textSecondary,
-    marginTop: 2,
-  },
-  voiceDescription: {
-    fontSize: fontSize.xs,
-    color: colors.textTertiary,
-    marginTop: 4,
-    lineHeight: 16,
-  },
-  voiceActions: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: spacing.sm,
-    marginLeft: spacing.sm,
-  },
-  previewButton: {
-    width: 40,
-    height: 40,
-    borderRadius: 20,
+  replayButton: {
+    width: 32,
+    height: 32,
+    borderRadius: 16,
     backgroundColor: colors.primary + '15',
     justifyContent: 'center',
     alignItems: 'center',
   },
-  emptyText: {
-    fontSize: fontSize.md,
-    color: colors.textTertiary,
+  voiceDescriptionText: {
+    fontSize: fontSize.xs,
+    color: colors.textSecondary,
     textAlign: 'center',
-    marginTop: spacing.xxl,
+    marginTop: 4,
+    paddingHorizontal: spacing.md,
+  },
+  avatarContainer: {
+    flex: 1,
+  },
+  avatarPlaceholder: {
+    flex: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  placeholderText: {
+    fontSize: fontSize.md,
+    color: colors.textSecondary,
+    marginTop: spacing.sm,
   },
   footer: {
     paddingHorizontal: spacing.lg,

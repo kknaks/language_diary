@@ -50,7 +50,7 @@ class VoiceListResponse(BaseModel):
 
 class CefrLevelResponse(BaseModel):
     code: str
-    group: str
+    clazz: str
     name: str
     description: str
     sort_order: int

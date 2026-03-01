@@ -363,9 +363,9 @@ def build_conversation_prompt(
     base = CONVERSATION_PROMPTS[lang]
 
     if personality:
-        empathy = personality.get("empathy", 34)
-        intuition = personality.get("intuition", 33)
-        logic = personality.get("logic", 33)
+        empathy = personality.get("empathy", 50)
+        intuition = personality.get("intuition", 50)
+        logic = personality.get("logic", 50)
         template = _PERSONALITY_TEMPLATES.get(lang, _PERSONALITY_TEMPLATES[_DEFAULT_LANG])
         base += template % (empathy, intuition, logic)
 

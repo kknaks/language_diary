@@ -20,8 +20,10 @@ import StepIndicator from '../../src/components/onboarding/StepIndicator';
 export default function Step1Language() {
   const [languages, setLanguages] = useState<Language[]>([]);
   const [loading, setLoading] = useState(true);
-  const [nativeId, setNativeId] = useState<number | null>(null);
-  const [targetId, setTargetId] = useState<number | null>(null);
+  const storedNativeId = useOnboardingStore((s) => s.native_language_id);
+  const storedTargetId = useOnboardingStore((s) => s.target_language_id);
+  const [nativeId, setNativeId] = useState<number | null>(storedNativeId);
+  const [targetId, setTargetId] = useState<number | null>(storedTargetId);
 
   const setLanguages_ = useOnboardingStore((s) => s.setLanguages);
   const prefetchAvatars = useOnboardingPrefetch((s) => s.prefetchAvatars);
@@ -67,7 +69,12 @@ export default function Step1Language() {
 
   return (
     <SafeAreaView style={styles.container}>
-      <StepIndicator currentStep={1} totalSteps={5} />
+      <StepIndicator currentStep={1} totalSteps={5} onNext={() => {
+        if (nativeId != null && targetId != null) {
+          setLanguages_(nativeId, targetId);
+          prefetchVoices(nativeId);
+        }
+      }} />
 
       <ScrollView
         style={styles.scrollView}

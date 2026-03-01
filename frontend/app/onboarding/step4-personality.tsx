@@ -1,4 +1,4 @@
-import { useRef, useState } from 'react';
+import { useRef, useState, useEffect } from 'react';
 import {
   View,
   Text,
@@ -16,11 +16,15 @@ import StepIndicator from '../../src/components/onboarding/StepIndicator';
 
 
 export default function Step4Personality() {
-  const [empathy, setEmpathy] = useState(50);
-  const [intuition, setIntuition] = useState(50);
-  const [logic, setLogic] = useState(50);
-
   const onboardingStore = useOnboardingStore();
+  const [empathy, setEmpathy] = useState(onboardingStore.empathy);
+  const [intuition, setIntuition] = useState(onboardingStore.intuition);
+  const [logic, setLogic] = useState(onboardingStore.logic);
+
+  // 슬라이더 값이 바뀔 때마다 store에 저장 (꺽쇠로 이동해도 유지)
+  useEffect(() => {
+    onboardingStore.setPersonality(empathy, intuition, logic);
+  }, [empathy, intuition, logic]);
 
   const handleComplete = () => {
     onboardingStore.setPersonality(empathy, intuition, logic);
@@ -199,7 +203,6 @@ const styles = StyleSheet.create({
   content: {
     flex: 1,
     paddingHorizontal: spacing.lg,
-    justifyContent: 'center',
   },
   title: {
     fontSize: fontSize.xl,

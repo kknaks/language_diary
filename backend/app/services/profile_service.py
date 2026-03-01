@@ -1,5 +1,3 @@
-import random
-
 from sqlalchemy import select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -32,15 +30,6 @@ class ProfileService:
                 code="PROFILE_ALREADY_EXISTS",
                 message="이미 프로필이 존재합니다. PUT으로 수정해주세요.",
             )
-
-        # pronunciation_voice_id 자동 배정
-        if not data.pronunciation_voice_id:
-            result = await db.execute(
-                select(Voice).where(Voice.language_id == data.target_language_id)
-            )
-            voices = result.scalars().all()
-            if voices:
-                data.pronunciation_voice_id = random.choice(voices).id
 
         await repo.create(
             user_id=user_id,
@@ -138,9 +127,9 @@ class ProfileService:
 
         voice_reset = False
 
-        # voice_id validation
+        # voice_id validation (voice belongs to native language)
         if "voice_id" in update_data and update_data["voice_id"] is not None:
-            target_lang_id = update_data.get("target_language_id", profile.target_language_id)
+            native_lang_id = update_data.get("native_language_id", profile.native_language_id)
             result = await db.execute(
                 select(Voice).where(Voice.id == update_data["voice_id"])
             )
@@ -150,23 +139,22 @@ class ProfileService:
                     code="VOICE_NOT_FOUND",
                     message="음성을 찾을 수 없습니다.",
                 )
-            if voice.language_id != target_lang_id:
+            if voice.language_id != native_lang_id:
                 raise BadRequestError(
                     code="VOICE_LANGUAGE_MISMATCH",
-                    message="음성과 학습 언어가 일치하지 않습니다.",
+                    message="음성과 모국어가 일치하지 않습니다.",
                 )
 
-        # target_language_id change → check voice compatibility
-        if "target_language_id" in update_data and update_data["target_language_id"] is not None:
-            new_target_lang = update_data["target_language_id"]
+        # native_language_id change → check voice compatibility
+        if "native_language_id" in update_data and update_data["native_language_id"] is not None:
+            new_native_lang = update_data["native_language_id"]
             current_voice_id = update_data.get("voice_id", profile.voice_id)
             if current_voice_id and "voice_id" not in update_data:
-                # Check if existing voice matches new target language
                 result = await db.execute(
                     select(Voice).where(Voice.id == current_voice_id)
                 )
                 voice = result.scalar_one_or_none()
-                if voice and voice.language_id != new_target_lang:
+                if voice and voice.language_id != new_native_lang:
                     update_data["voice_id"] = None
                     voice_reset = True
 

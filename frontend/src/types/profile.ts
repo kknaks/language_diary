@@ -48,10 +48,11 @@ export interface ProfileData {
   app_locale: string;
   native_language: { id: number; code: string; name_native: string } | null;
   target_language: { id: number; code: string; name_native: string } | null;
-  avatar: { id: number; name: string; thumbnail_url: string; primary_color: string } | null;
+  avatar: { id: number; name: string; thumbnail_url: string; primary_color: string; model_url?: string | null } | null;
   avatar_name: string | null;
   voice: { id: number; name: string; gender: string; tone: string | null; sample_url: string | null } | null;
   pronunciation_voice_id?: number | null;
+  pronunciation_voice?: { id: number; name: string; gender: string; tone: string | null; sample_url: string | null } | null;
   empathy: number;
   intuition: number;
   logic: number;

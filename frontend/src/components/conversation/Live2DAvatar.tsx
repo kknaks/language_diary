@@ -34,12 +34,14 @@ export default function Live2DAvatar({ voiceState, volume, color, modelUrl }: Li
   }, [sendInit]);
 
   useEffect(() => {
+    // console.log('[Live2D] voiceState changed:', voiceState, 'isLoaded:', isLoadedRef.current);
     if (!isLoadedRef.current) return;
     webViewRef.current?.postMessage(JSON.stringify({ type: 'voiceState', data: voiceState }));
   }, [voiceState]);
 
   useEffect(() => {
     if (!isLoadedRef.current) return;
+    // if (volume > 0.01) console.log('[Live2D] sending volume:', volume);
     webViewRef.current?.postMessage(JSON.stringify({ type: 'volume', data: volume }));
   }, [volume]);
 
@@ -71,7 +73,11 @@ export default function Live2DAvatar({ voiceState, volume, color, modelUrl }: Li
           try {
             const msg = JSON.parse(event.nativeEvent.data);
             if (msg.type === 'error') {
-              console.error('[Live2DAvatar] WebView error:', msg.data);
+              if (msg.data && msg.data.startsWith('[Live2D]')) {
+                console.log('[Live2DAvatar]', msg.data);
+              } else {
+                console.error('[Live2DAvatar] WebView error:', msg.data);
+              }
             }
           } catch {}
         }}

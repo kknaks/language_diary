@@ -31,8 +31,9 @@ export const useProfileStore = create<ProfileState>((set) => ({
   updateProfile: async (data: Partial<ProfileUpdateRequest>) => {
     set({ isLoading: true, error: null });
     try {
-      const updated = await profileApi.updateProfile(data as ProfileUpdateRequest);
-      set({ profile: updated, isLoading: false });
+      await profileApi.updateProfile(data as ProfileUpdateRequest);
+      const profile = await profileApi.getProfile();
+      set({ profile, isLoading: false });
     } catch (e: unknown) {
       const msg = e instanceof Error ? e.message : '프로필 수정에 실패했습니다';
       set({ error: msg, isLoading: false });
