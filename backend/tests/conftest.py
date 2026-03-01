@@ -53,12 +53,19 @@ async def setup_db():
 
     # Ensure clean state: dispose stale connections from previous tests
     await engine.dispose()
-    await asyncio.sleep(0.05)
-    for suffix in ("", "-wal", "-shm"):
+    # Allow extra time for aiosqlite background threads to finish
+    # (prevents disk I/O errors after sync TestClient WebSocket tests)
+    for _ in range(5):
+        await asyncio.sleep(0.05)
         try:
-            os.unlink(TEST_DB_PATH + suffix)
-        except FileNotFoundError:
-            pass
+            for suffix in ("", "-wal", "-shm"):
+                try:
+                    os.unlink(TEST_DB_PATH + suffix)
+                except FileNotFoundError:
+                    pass
+            break
+        except OSError:
+            continue
 
     async with engine.begin() as conn:
         await conn.run_sync(Base.metadata.create_all)
