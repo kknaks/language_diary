@@ -4,6 +4,7 @@ import asyncio
 import base64
 import json
 import logging
+import re
 from typing import AsyncIterator, Optional
 
 import websockets
@@ -212,17 +213,22 @@ class STTSession:
                     if text.strip() in _HALLUCINATION_PATTERNS:
                         logger.info("STT hallucination filtered: '%s'", text.strip())
                         continue
-                    # Send stt_final directly to client
+                    # Remove inline emotion tags like (뿌듯), (웃음), (laughing) etc.
+                    clean_text = re.sub(r'\s*\([^)]*\)', '', text).strip()
+                    if not clean_text:
+                        logger.info("STT empty after emotion tag removal: '%s'", text.strip())
+                        continue
+                    # Send stt_final directly to client (emotion tags removed)
                     if self.client_ws:
                         try:
                             await self.client_ws.send_json({
                                 "type": "stt_final",
-                                "text": text,
+                                "text": clean_text,
                             })
                         except Exception:
                             pass
-                    # Queue for backend AI pipeline
-                    await self._commit_queue.put(text)
+                    # Queue for backend AI pipeline (emotion tags removed)
+                    await self._commit_queue.put(clean_text)
 
                 elif msg_type == "input_error":
                     logger.warning("STT input_error: %s", data.get("error", "unknown"))
