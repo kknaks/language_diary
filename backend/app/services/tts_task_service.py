@@ -18,7 +18,10 @@ async def create_tts_task(
     diary_id: int,
     card_ids: List[int],
 ) -> str:
-    """Create a background task record and return task_id."""
+    """Create a background task record and return task_id.
+
+    total = len(card_ids) * 2 (content_en + example_en per card)
+    """
     task_id = str(uuid.uuid4())
     task = BackgroundTask(
         id=task_id,
@@ -26,7 +29,7 @@ async def create_tts_task(
         status="pending",
         diary_id=diary_id,
         progress=0,
-        total=len(card_ids),
+        total=len(card_ids) * 2,  # content + example per card
     )
     db.add(task)
     await db.commit()
@@ -68,11 +71,22 @@ async def run_tts_generation(
                         filename=f"card_{card_id}_content.mp3",
                     )
                     card.audio_url = audio_url
-                    task.progress = i + 1
+                    task.progress += 1
                     await db.commit()
+
+                    # Generate TTS for example_en (예문 발음)
+                    if card.example_en:
+                        example_audio_url = await tts_service.generate_and_save(
+                            text=card.example_en,
+                            filename=f"card_{card_id}_example.mp3",
+                        )
+                        card.example_audio_url = example_audio_url
+                    task.progress += 1
+                    await db.commit()
+
                 except Exception as e:
                     logger.warning("TTS failed for card %d: %s", card_id, e)
-                    task.progress = i + 1
+                    task.progress += 2  # count both as done even on failure
                     await db.commit()
 
             task.status = "completed"

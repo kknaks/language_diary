@@ -15,6 +15,7 @@ class LearningCardResponse(BaseModel):
     example_en: Optional[str] = None
     example_ko: Optional[str] = None
     audio_url: Optional[str] = None
+    example_audio_url: Optional[str] = None
     card_order: int
 
     model_config = {"from_attributes": True}
