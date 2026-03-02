@@ -16,6 +16,14 @@ ELEVENLABS_STT_MODEL = "scribe_v2_realtime"
 DEFAULT_LANGUAGE = "ko"
 DEFAULT_SAMPLE_RATE = 16000
 
+# Whisper hallucination 패턴 — 이런 텍스트만 단독으로 들어오면 무시
+_HALLUCINATION_PATTERNS = {
+    "(끝)", "(웃음)", "(박수)", "(침묵)", "(음악)", "(노이즈)", "(잡음)",
+    "[끝]", "[웃음]", "[박수]", "[침묵]", "[음악]",
+    "끝.", "끝", ".", "..", "...",
+    "(end)", "(silence)", "(music)", "(applause)", "(noise)",
+}
+
 # PCM 16-bit mono: each sample = 2 bytes
 EXPECTED_SAMPLE_WIDTH = 2
 
@@ -199,6 +207,10 @@ class STTSession:
                     )
                     # Skip empty commits — don't queue or notify client
                     if not text.strip():
+                        continue
+                    # Skip Whisper hallucination patterns
+                    if text.strip() in _HALLUCINATION_PATTERNS:
+                        logger.info("STT hallucination filtered: '%s'", text.strip())
                         continue
                     # Send stt_final directly to client
                     if self.client_ws:
