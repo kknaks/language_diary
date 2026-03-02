@@ -1,12 +1,12 @@
 name: Deploy
 
 on:
-  # push:
-  #   branches: [main]
-  #   paths:
-  #     - "backend/**"
-  #     - "docker-compose.prod.yml"
-  #     - ".github/workflows/deploy.yml"
+  push:
+    branches: [main]
+    paths:
+      - "backend/**"
+      - "docker-compose.prod.yml"
+      - ".github/workflows/deploy.yml"
   workflow_dispatch:  # 수동 실행만 가능
 
 env:
