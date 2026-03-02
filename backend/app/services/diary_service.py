@@ -1,8 +1,10 @@
 from typing import Optional
 
+from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.exceptions import BadRequestError, ConflictError, NotFoundError
+from app.models.background_task import BackgroundTask
 from app.repositories.diary_repo import DiaryRepository
 from app.schemas.diary import (
     DiaryDetailResponse,
@@ -40,7 +42,25 @@ class DiaryService:
                 message="일기를 찾을 수 없습니다.",
                 detail="diary_id=%d" % diary_id,
             )
-        return DiaryDetailResponse.model_validate(diary)
+        resp = DiaryDetailResponse.model_validate(diary)
+
+        # background_tasks 테이블에서 가장 최근 pending/processing 태스크 조회
+        stmt = (
+            select(BackgroundTask)
+            .where(
+                BackgroundTask.diary_id == diary_id,
+                BackgroundTask.task_type == "tts_generation",
+                BackgroundTask.status.in_(["pending", "processing"]),
+            )
+            .order_by(BackgroundTask.created_at.desc())
+            .limit(1)
+        )
+        result = await self.db.execute(stmt)
+        task = result.scalar_one_or_none()
+        if task:
+            resp.task_id = task.id
+
+        return resp
 
     async def update(self, diary_id: int, data: DiaryUpdate, user_id: int) -> DiaryResponse:
         diary = await self.repo.get_by_id(diary_id, user_id)
