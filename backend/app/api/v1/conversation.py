@@ -28,30 +28,48 @@ router = APIRouter(prefix="/conversation", tags=["conversation"])
 
 async def _resolve_user_lang_personality(
     db: AsyncSession, user_id: int,
-) -> "tuple[str, Optional[dict]]":
-    """Look up user profile and return (native_lang, personality).
+) -> "tuple[str, Optional[dict], Optional[str], str]":
+    """Look up user profile and return (native_lang, personality, cefr_level, target_lang).
 
-    Returns defaults ("ko", None) if profile not found.
+    Returns defaults ("ko", None, None, "en") if profile not found.
     """
     from sqlalchemy import select
     from sqlalchemy.orm import selectinload
     from app.models.profile import UserProfile
+    from app.models.auth import UserLanguageLevel
 
     result = await db.execute(
         select(UserProfile)
         .where(UserProfile.user_id == user_id)
-        .options(selectinload(UserProfile.native_language))
+        .options(
+            selectinload(UserProfile.native_language),
+            selectinload(UserProfile.target_language),
+        )
     )
     profile = result.scalar_one_or_none()
     if not profile:
-        return "ko", None
+        return "ko", None, None, "en"
     native_lang = profile.native_language.code if profile.native_language else "ko"
+    target_lang = profile.target_language.code if profile.target_language else "en"
     personality = {
         "empathy": profile.empathy,
         "intuition": profile.intuition,
         "logic": profile.logic,
     }
-    return native_lang, personality
+
+    # Look up CEFR level for the target language
+    cefr_level = None
+    if profile.target_language_id:
+        lang_level_result = await db.execute(
+            select(UserLanguageLevel)
+            .where(UserLanguageLevel.user_id == user_id)
+            .where(UserLanguageLevel.language_id == profile.target_language_id)
+        )
+        lang_level = lang_level_result.scalar_one_or_none()
+        if lang_level:
+            cefr_level = lang_level.cefr_level
+
+    return native_lang, personality, cefr_level, target_lang
 
 
 def _ms_since(t0: float) -> float:
@@ -135,12 +153,14 @@ async def create_conversation(
     db: AsyncSession = Depends(get_db),
 ):
     """Create a new conversation session. Returns AI's first question."""
-    native_lang, personality = await _resolve_user_lang_personality(db, current_user.id)
+    native_lang, personality, cefr_level, target_lang = await _resolve_user_lang_personality(db, current_user.id)
     service = ConversationService(db)
     return await service.create_session(
         user_id=current_user.id,
         native_lang=native_lang,
         personality=personality,
+        cefr_level=cefr_level,
+        target_lang=target_lang,
     )
 
 
@@ -170,6 +190,7 @@ async def _handle_ai_reply_streaming(
     target_lang: str = "en",
     personality: Optional[dict] = None,
     volume_gain_db: float = 0.0,
+    cefr_level: Optional[str] = None,
 ):
     """Handle user message with streaming AI reply + TTS WebSocket streaming.
 
@@ -249,6 +270,7 @@ async def _handle_ai_reply_streaming(
             async for sentence in service.handle_user_message_streaming(
                 session_id, user_text,
                 native_lang=native_lang, personality=personality,
+                cefr_level=cefr_level, target_lang=target_lang,
             ):
                 if t_first_sentence is None:
                     t_first_sentence = time.monotonic()
@@ -423,6 +445,7 @@ async def conversation_websocket(
     native_lang = "ko"
     target_lang = "en"
     personality = None  # type: Optional[dict]
+    cefr_level = None  # type: Optional[str]
     volume_gain_db = 0.0
 
     async with async_session() as db:
@@ -431,6 +454,7 @@ async def conversation_websocket(
             from sqlalchemy import select
             from sqlalchemy.orm import selectinload
             from app.models.profile import UserProfile
+            from app.models.auth import UserLanguageLevel
             from app.models.seed import Language, Voice  # noqa: F401
             profile_result = await db.execute(
                 select(UserProfile)
@@ -455,6 +479,16 @@ async def conversation_websocket(
                     "intuition": user_profile.intuition,
                     "logic": user_profile.logic,
                 }
+                # Look up CEFR level for the target language
+                if user_profile.target_language_id:
+                    lang_level_result = await db.execute(
+                        select(UserLanguageLevel)
+                        .where(UserLanguageLevel.user_id == user_id)
+                        .where(UserLanguageLevel.language_id == user_profile.target_language_id)
+                    )
+                    lang_level = lang_level_result.scalar_one_or_none()
+                    if lang_level:
+                        cefr_level = lang_level.cefr_level
         except Exception:
             logger.warning("Failed to resolve user profile, using defaults")
 
@@ -499,6 +533,7 @@ async def conversation_websocket(
             # --- AI greeting ---
             greeting = await service.generate_greeting(
                 session_id, native_lang=native_lang, personality=personality,
+                cefr_level=cefr_level, target_lang=target_lang,
             )
             await websocket.send_json({
                 "type": "ai_message",
@@ -560,6 +595,7 @@ async def conversation_websocket(
                             target_lang=target_lang,
                             personality=personality,
                             volume_gain_db=volume_gain_db,
+                            cefr_level=cefr_level,
                         )
                     )
                     try:
@@ -636,6 +672,7 @@ async def conversation_websocket(
                         target_lang=target_lang,
                         personality=personality,
                         volume_gain_db=volume_gain_db,
+                        cefr_level=cefr_level,
                     )
                     if not cont:
                         break
@@ -656,6 +693,7 @@ async def conversation_websocket(
                         target_lang=target_lang,
                         personality=personality,
                         volume_gain_db=volume_gain_db,
+                        cefr_level=cefr_level,
                     )
                     if not cont:
                         break

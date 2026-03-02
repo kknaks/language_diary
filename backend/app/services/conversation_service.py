@@ -40,6 +40,8 @@ class ConversationService:
         user_id: int = 1,
         native_lang: str = "ko",
         personality: Optional[Dict] = None,
+        cefr_level: Optional[str] = None,
+        target_lang: Optional[str] = None,
     ) -> ConversationCreateResponse:
         """Create a new conversation session and return AI's first question."""
         session_id = _generate_session_id()
@@ -49,6 +51,7 @@ class ConversationService:
         try:
             first_message = await self.ai.get_first_message(
                 native_lang=native_lang, personality=personality,
+                cefr_level=cefr_level, target_lang=target_lang,
             )
         except AIServiceError as e:
             raise TranslationFailedError(detail=str(e))
@@ -81,6 +84,8 @@ class ConversationService:
         session_id: str,
         native_lang: str = "ko",
         personality: Optional[Dict] = None,
+        cefr_level: Optional[str] = None,
+        target_lang: Optional[str] = None,
     ) -> str:
         """Generate AI first greeting message and save to DB.
 
@@ -89,6 +94,7 @@ class ConversationService:
         try:
             first_message = await self.ai.get_first_message(
                 native_lang=native_lang, personality=personality,
+                cefr_level=cefr_level, target_lang=target_lang,
             )
         except AIServiceError as e:
             raise TranslationFailedError(detail=str(e))
@@ -132,6 +138,8 @@ class ConversationService:
         self, session_id: str, text: str,
         native_lang: str = "ko",
         personality: Optional[Dict] = None,
+        cefr_level: Optional[str] = None,
+        target_lang: Optional[str] = None,
     ) -> str:
         """Process user message and return AI reply.
 
@@ -172,6 +180,7 @@ class ConversationService:
         try:
             ai_reply = await self.ai.get_reply(
                 history, native_lang=native_lang, personality=personality,
+                cefr_level=cefr_level, target_lang=target_lang,
             )
         except AIServiceError as e:
             raise TranslationFailedError(detail=str(e))
@@ -186,6 +195,8 @@ class ConversationService:
         self, session_id: str, text: str,
         native_lang: str = "ko",
         personality: Optional[Dict] = None,
+        cefr_level: Optional[str] = None,
+        target_lang: Optional[str] = None,
     ) -> AsyncGenerator[str, None]:
         """Process user message and stream AI reply sentence by sentence.
 
@@ -226,6 +237,7 @@ class ConversationService:
         try:
             async for sentence in self.ai.get_reply_streaming(
                 history, native_lang=native_lang, personality=personality,
+                cefr_level=cefr_level, target_lang=target_lang,
             ):
                 full_reply_parts.append(sentence)
                 yield sentence

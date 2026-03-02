@@ -45,9 +45,13 @@ class AIService:
         self,
         native_lang: str = "ko",
         personality: Optional[Dict[str, int]] = None,
+        cefr_level: Optional[str] = None,
+        target_lang: Optional[str] = None,
     ) -> str:
         """Generate the AI's opening question to start the conversation."""
-        system_prompt = build_conversation_prompt(native_lang, personality)
+        system_prompt = build_conversation_prompt(
+            native_lang, personality, cefr_level=cefr_level, target_lang=target_lang,
+        )
         user_prompt = build_first_message_user_prompt(native_lang)
         return await self._chat(
             messages=[
@@ -62,9 +66,13 @@ class AIService:
         self, conversation_history: List[Dict[str, str]],
         native_lang: str = "ko",
         personality: Optional[Dict[str, int]] = None,
+        cefr_level: Optional[str] = None,
+        target_lang: Optional[str] = None,
     ) -> str:
         """Generate AI follow-up question based on conversation history."""
-        system_prompt = build_conversation_prompt(native_lang, personality)
+        system_prompt = build_conversation_prompt(
+            native_lang, personality, cefr_level=cefr_level, target_lang=target_lang,
+        )
         messages = [{"role": "system", "content": system_prompt}]
         messages.extend(conversation_history)
         return await self._chat(messages=messages, max_tokens=200, temperature=0.8)
@@ -73,12 +81,16 @@ class AIService:
         self, conversation_history: List[Dict[str, str]],
         native_lang: str = "ko",
         personality: Optional[Dict[str, int]] = None,
+        cefr_level: Optional[str] = None,
+        target_lang: Optional[str] = None,
     ) -> AsyncGenerator[str, None]:
         """Generate AI reply with streaming, yielding complete sentences.
 
         Yields sentences as they are detected (split on .!? and Korean endings).
         """
-        system_prompt = build_conversation_prompt(native_lang, personality)
+        system_prompt = build_conversation_prompt(
+            native_lang, personality, cefr_level=cefr_level, target_lang=target_lang,
+        )
         messages = [{"role": "system", "content": system_prompt}]
         messages.extend(conversation_history)
 

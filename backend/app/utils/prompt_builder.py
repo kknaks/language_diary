@@ -123,6 +123,52 @@ _PERSONALITY_TEMPLATES: Dict[str, str] = {
 }
 
 # ---------------------------------------------------------------------------
+# CEFR level descriptions per native language
+# ---------------------------------------------------------------------------
+_CEFR_TEMPLATES: Dict[str, Dict[str, str]] = {
+    "ko": {
+        "A1": "11. 사용자의 {target_language} 수준은 A1(입문)이야. 아주 쉬운 단어와 짧은 문장만 써. 어려운 표현은 즉시 한국어로 설명해줘.",
+        "A2": "11. 사용자의 {target_language} 수준은 A2(초급)이야. 기초 어휘와 짧은 문장 위주로 써. 새 표현은 바로 설명해줘.",
+        "B1": "11. 사용자의 {target_language} 수준은 B1(중급)이야. 일상 어휘를 자연스럽게 써. 가끔 새 표현을 섞되 맥락으로 이해할 수 있게 해줘.",
+        "B2": "11. 사용자의 {target_language} 수준은 B2(중상급)이야. 자연스러운 어휘와 표현을 써. 다양한 표현을 활용해줘.",
+        "C1": "11. 사용자의 {target_language} 수준은 C1(고급)이야. 원어민 수준의 자연스러운 표현과 관용구를 써도 돼.",
+        "C2": "11. 사용자의 {target_language} 수준은 C2(최고급)이야. 완전한 원어민 표현, 숙어, 복잡한 문장을 자유롭게 써.",
+    },
+    "en": {
+        "A1": "11. The user's {target_language} level is A1 (beginner). Use only very simple words and short sentences. Immediately explain any difficult expressions in English.",
+        "A2": "11. The user's {target_language} level is A2 (elementary). Use basic vocabulary and short sentences. Explain new expressions right away.",
+        "B1": "11. The user's {target_language} level is B1 (intermediate). Use everyday vocabulary naturally. Occasionally mix in new expressions that can be understood from context.",
+        "B2": "11. The user's {target_language} level is B2 (upper-intermediate). Use natural vocabulary and expressions. Feel free to use a variety of expressions.",
+        "C1": "11. The user's {target_language} level is C1 (advanced). You can use native-level natural expressions and idioms.",
+        "C2": "11. The user's {target_language} level is C2 (mastery). Use full native-speaker expressions, idioms, and complex sentences freely.",
+    },
+    "ja": {
+        "A1": "11. ユーザーの{target_language}レベルはA1（入門）です。とても簡単な単語と短い文だけ使ってください。難しい表現はすぐに日本語で説明してください。",
+        "A2": "11. ユーザーの{target_language}レベルはA2（初級）です。基礎語彙と短い文を中心に使ってください。新しい表現はすぐに説明してください。",
+        "B1": "11. ユーザーの{target_language}レベルはB1（中級）です。日常語彙を自然に使ってください。新しい表現を時々混ぜて、文脈から理解できるようにしてください。",
+        "B2": "11. ユーザーの{target_language}レベルはB2（中上級）です。自然な語彙と表現を使ってください。さまざまな表現を活用してください。",
+        "C1": "11. ユーザーの{target_language}レベルはC1（上級）です。ネイティブレベルの自然な表現や慣用句を使っても大丈夫です。",
+        "C2": "11. ユーザーの{target_language}レベルはC2（最上級）です。完全なネイティブ表現、慣用句、複雑な文を自由に使ってください。",
+    },
+    "zh": {
+        "A1": "11. 用户的{target_language}水平是A1（入门）。只使用非常简单的词汇和短句。遇到难词立即用中文解释。",
+        "A2": "11. 用户的{target_language}水平是A2（初级）。使用基础词汇和短句为主。新表达请立即解释。",
+        "B1": "11. 用户的{target_language}水平是B1（中级）。自然地使用日常词汇。偶尔加入新表达，让用户能从上下文理解。",
+        "B2": "11. 用户的{target_language}水平是B2（中高级）。使用自然的词汇和表达。可以灵活运用各种表达方式。",
+        "C1": "11. 用户的{target_language}水平是C1（高级）。可以使用母语级别的自然表达和惯用语。",
+        "C2": "11. 用户的{target_language}水平是C2（精通）。可以自由使用完整的母语表达、惯用语和复杂句型。",
+    },
+    "es": {
+        "A1": "11. El nivel de {target_language} del usuario es A1 (principiante). Usa solo palabras muy simples y frases cortas. Explica inmediatamente cualquier expresión difícil en español.",
+        "A2": "11. El nivel de {target_language} del usuario es A2 (elemental). Usa vocabulario básico y frases cortas. Explica las nuevas expresiones de inmediato.",
+        "B1": "11. El nivel de {target_language} del usuario es B1 (intermedio). Usa vocabulario cotidiano de forma natural. Mezcla expresiones nuevas ocasionalmente para que se entiendan por el contexto.",
+        "B2": "11. El nivel de {target_language} del usuario es B2 (intermedio-alto). Usa vocabulario y expresiones naturales. Siente libre de usar una variedad de expresiones.",
+        "C1": "11. El nivel de {target_language} del usuario es C1 (avanzado). Puedes usar expresiones naturales y modismos a nivel nativo.",
+        "C2": "11. El nivel de {target_language} del usuario es C2 (maestría). Usa libremente expresiones nativas completas, modismos y oraciones complejas.",
+    },
+}
+
+# ---------------------------------------------------------------------------
 # First-message user prompts (the "kick-off" instruction sent as user role)
 # ---------------------------------------------------------------------------
 FIRST_MESSAGE_PROMPTS: Dict[str, str] = {
@@ -378,11 +424,15 @@ def _get_target_name(native_lang: str, target_lang: str) -> str:
 def build_conversation_prompt(
     native_lang: str,
     personality: Optional[Dict[str, int]] = None,
+    cefr_level: Optional[str] = None,
+    target_lang: Optional[str] = None,
 ) -> str:
     """Build conversation system prompt in the user's native language.
 
     If personality dict is provided (empathy/intuition/logic), appends
     a personality instruction line.
+    If cefr_level and target_lang are provided, appends a CEFR level
+    instruction to adjust language difficulty.
     """
     lang = _resolve_lang(native_lang)
     base = CONVERSATION_PROMPTS[lang]
@@ -393,6 +443,13 @@ def build_conversation_prompt(
         logic = personality.get("logic", 50)
         template = _PERSONALITY_TEMPLATES.get(lang, _PERSONALITY_TEMPLATES[_DEFAULT_LANG])
         base += template % (empathy, intuition, logic)
+
+    if cefr_level and target_lang:
+        cefr_map = _CEFR_TEMPLATES.get(lang, _CEFR_TEMPLATES[_DEFAULT_LANG])
+        cefr_template = cefr_map.get(cefr_level.upper())
+        if cefr_template:
+            target_name = _get_target_name(native_lang, target_lang)
+            base += "\n" + cefr_template.format(target_language=target_name)
 
     return base
 
