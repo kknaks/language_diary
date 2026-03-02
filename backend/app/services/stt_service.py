@@ -214,7 +214,10 @@ class STTSession:
                         logger.info("STT hallucination filtered: '%s'", text.strip())
                         continue
                     # Remove inline emotion tags like (뿌듯), (웃음), (laughing) etc.
-                    clean_text = re.sub(r'\s*\([^)]*\)', '', text).strip()
+                    # Only remove CLOSED parentheses — ignore unclosed ones to preserve partial speech
+                    clean_text = re.sub(r'\s*\([^)]*\)', '', text)
+                    # Remove any trailing unclosed parenthesis
+                    clean_text = re.sub(r'\s*\([^)]*$', '', clean_text).strip()
                     if not clean_text:
                         logger.info("STT empty after emotion tag removal: '%s'", text.strip())
                         continue
