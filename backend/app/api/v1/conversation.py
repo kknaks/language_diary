@@ -714,7 +714,16 @@ async def conversation_websocket(
 
                 # ── finish ───────────────────────────────────────
                 elif msg_type == "finish":
-                    # Cancel commit listener + pipeline before finishing
+                    # 1. Cancel ai_pipeline_task first (unblocks commit_listener's await)
+                    if ai_pipeline_task and not ai_pipeline_task.done():
+                        ai_pipeline_task.cancel()
+                        try:
+                            await ai_pipeline_task
+                        except (asyncio.CancelledError, Exception):
+                            pass
+                        ai_pipeline_task = None
+
+                    # 2. Then cancel commit_listener
                     if commit_listener_task and not commit_listener_task.done():
                         commit_listener_task.cancel()
                         try:
@@ -722,6 +731,8 @@ async def conversation_websocket(
                         except (asyncio.CancelledError, Exception):
                             pass
                         commit_listener_task = None
+
+                    # 3. Cancel remaining pipeline tasks (TTS relay etc.)
                     await _cancel_pipeline()
                     if stt_session:
                         await stt_session.close()
