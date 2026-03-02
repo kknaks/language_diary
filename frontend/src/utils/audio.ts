@@ -5,8 +5,10 @@ import { toByteArray, fromByteArray } from 'base64-js';
 let audioModeConfigured = false;
 
 /**
- * Configure iOS audio session for simultaneous recording + playback.
- * Must be called before any audio playback while recording.
+ * Configure audio session for simultaneous recording + playback.
+ * iOS: expo-audio-studio의 startRecording이 AVAudioSession을 덮어씀
+ * → useRealtimeRecorder.ts의 ios.audioSession 설정이 실제 적용됨
+ * → 이 함수는 Android 및 플레이백 전용으로 유지
  */
 export async function ensureAudioMode(): Promise<void> {
   if (audioModeConfigured) return;

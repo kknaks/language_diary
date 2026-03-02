@@ -191,6 +191,20 @@ export function useRealtimeRecorder() {
       encoding: 'pcm_16bit',
       interval: 100,
       enableProcessing: false,
+      // iOS: VoiceChat mode로 하드웨어 AEC 활성화 (AGC, Noise Suppression 포함)
+      ...(Platform.OS === 'ios' && {
+        ios: {
+          audioSession: {
+            category: 'PlayAndRecord',
+            mode: 'VoiceChat',
+            categoryOptions: [
+              'DefaultToSpeaker',
+              'AllowBluetooth',
+              'DuckOthers',
+            ],
+          },
+        },
+      }),
       // Android: use communication audio focus to enable system AEC
       ...(Platform.OS === 'android' && {
         android: { audioFocusStrategy: 'communication' as const },
