@@ -357,7 +357,7 @@ export default function MyPageScreen() {
     setRefreshing(false);
   }, [fetchProfile]);
 
-  const loadSeedData = useCallback(async (type: 'languages' | 'avatars' | 'voices') => {
+  const loadSeedData = useCallback(async (type: 'languages' | 'avatars' | 'voices' | 'pronunciationVoices') => {
     setSeedLoading(true);
     try {
       if (type === 'languages') {
@@ -370,6 +370,10 @@ export default function MyPageScreen() {
         const langId = profile?.profile?.native_language?.id;
         const res = await seedApi.getVoices(langId);
         setVoices(res.items);
+      } else if (type === 'pronunciationVoices') {
+        const langId = profile?.profile?.target_language?.id;
+        const res = await seedApi.getVoices(langId);
+        setVoices(res.items);
       }
     } catch {
       // ignore
@@ -380,7 +384,7 @@ export default function MyPageScreen() {
 
   // ── Navigation helpers ─────────────────────────────────────────────────────
 
-  const goTo = useCallback((s: Screen, preload?: 'languages' | 'avatars' | 'voices') => {
+  const goTo = useCallback((s: Screen, preload?: 'languages' | 'avatars' | 'voices' | 'pronunciationVoices') => {
     if (preload) loadSeedData(preload);
     setScreen(s);
   }, [loadSeedData]);
@@ -1179,7 +1183,7 @@ export default function MyPageScreen() {
               icon="mic-circle-outline"
               label="발음 목소리"
               value={profile?.profile?.pronunciation_voice?.name ?? '-'}
-              onPress={() => goTo('learningPronunciation', 'voices')}
+              onPress={() => goTo('learningPronunciation', 'pronunciationVoices')}
             />
           </View>
         </ScrollView>

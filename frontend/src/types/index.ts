@@ -21,6 +21,8 @@ export interface User {
 export interface Diary {
   id: number;
   user_id: number;
+  title_original: string | null;
+  title_translated: string | null;
   original_text: string;
   translated_text: string | null;
   status: string;

@@ -5,7 +5,7 @@ import { Ionicons } from '@expo/vector-icons';
 
 import { colors, fontSize, spacing, borderRadius, shadows } from '../../src/constants/theme';
 import { Button, Loading, ErrorState } from '../../src/components/common';
-import { DiaryEditor, LanguageToggle } from '../../src/components/diary';
+import { DiaryEditor, HighlightedText, LanguageToggle } from '../../src/components/diary';
 import { CefrBadge } from '../../src/components/learning';
 import { getDiary, updateDiary, getConversationMessages } from '../../src/services/api';
 import { useDiaryStore } from '../../src/stores/useDiaryStore';
@@ -29,6 +29,7 @@ export default function DiaryDetailScreen() {
   // Conversation messages
   const [conversationMessages, setConversationMessages] = useState<Message[]>([]);
   const [showConversation, setShowConversation] = useState(false);
+
 
   const fetchDiary = useCallback(async () => {
     if (!id) return;
@@ -101,8 +102,8 @@ export default function DiaryDetailScreen() {
 
   const currentText = language === 'ko' ? diary.original_text : (diary.translated_text ?? '');
   const currentTitle = language === 'ko'
-    ? (diary.original_text?.split('\n')[0]?.slice(0, 30) ?? '')
-    : (diary.translated_text?.split('\n')[0]?.slice(0, 30) ?? '');
+    ? (diary.title_original ?? diary.original_text?.split('\n')[0]?.slice(0, 30) ?? '')
+    : (diary.title_translated ?? diary.translated_text?.split('\n')[0]?.slice(0, 30) ?? '');
 
   return (
     <ScrollView style={styles.container} contentContainerStyle={styles.content}>
@@ -125,7 +126,15 @@ export default function DiaryDetailScreen() {
         />
       ) : (
         <View style={styles.contentCard}>
-          <Text style={styles.contentText}>{currentText}</Text>
+          {language === 'en' && diary.learning_cards.length > 0 ? (
+            <HighlightedText
+              text={currentText}
+              highlights={diary.learning_cards.map((c) => c.content_en)}
+              textStyle={styles.contentText}
+            />
+          ) : (
+            <Text style={styles.contentText}>{currentText}</Text>
+          )}
           <Button
             title="수정하기"
             onPress={() => setIsEditing(true)}

@@ -44,7 +44,6 @@ export default function WriteScreen() {
 
   const isActive = !!sessionId && !createdDiary;
   const volumeIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
-  const currentAiMsgIdRef = useRef<string | null>(null);
 
   const { isStreaming, startStreaming, stopStreaming, forceRestart } = useRealtimeRecorder();
 
@@ -159,9 +158,6 @@ export default function WriteScreen() {
     } else if (voiceState === 'ai_speaking') {
       // AI is speaking — clear silence timer
       clearSilenceTimer();
-      // 지금 막 시작된 AI 메시지 id 저장
-      const lastAi = [...messages].reverse().find(m => m.role === 'assistant');
-      currentAiMsgIdRef.current = lastAi?.id ?? null;
     } else if (voiceState === 'idle') {
       micStartedRef.current = false;
       clearSilenceTimer();
@@ -280,11 +276,11 @@ export default function WriteScreen() {
   // 현재 voiceState 기준으로 표시할 메시지 필터링
   const visibleMessages = (() => {
     if (voiceState === 'ai_speaking') {
-      // 지금 말하고 있는 AI 메시지만
-      const current = messages.find(m => m.id === currentAiMsgIdRef.current);
-      return current ? [current] : [];
+      // 가장 최근 AI 메시지만 표시 (ref 없이 직접 찾아서 리렌더 보장)
+      const lastAi = [...messages].reverse().find(m => m.role === 'assistant');
+      return lastAi ? [lastAi] : [];
     }
-    // listening / idle: 말풍선 히스토리 표시 안 함
+    // listening / idle: 말풍선 표시 안 함
     return [];
   })();
 
@@ -305,13 +301,14 @@ export default function WriteScreen() {
         right={<VoiceOrb volume={volume} state={voiceState} size="mini" />}
       />
 
-      {/* Live2D Avatar area */}
-      <View style={styles.avatarArea}>
-        <Live2DAvatar voiceState={voiceState} volume={volume} color={selectedAvatar?.primaryColor} modelUrl={selectedAvatar?.modelUrl} />
-      </View>
+      {/* Avatar + message area: flex container so proportions scale on all screens */}
+      <View style={styles.middleContent}>
+        <View style={styles.avatarArea}>
+          <Live2DAvatar voiceState={voiceState} volume={volume} color={selectedAvatar?.primaryColor} modelUrl={selectedAvatar?.modelUrl} />
+        </View>
 
-      {/* Message bubbles (dev) */}
-      <ScrollView style={styles.messageArea} contentContainerStyle={styles.messageContent}>
+        {/* Message bubbles — max ~3 lines visible, scrollable if longer */}
+        <ScrollView style={styles.messageArea} contentContainerStyle={styles.messageContent}>
         {visibleMessages.map((msg) => (
           <View
             key={msg.id}
@@ -329,7 +326,8 @@ export default function WriteScreen() {
             </Text>
           </View>
         ) : null}
-      </ScrollView>
+        </ScrollView>
+      </View>
 
       {/* Voice status */}
       <View style={styles.statusArea}>
@@ -337,30 +335,36 @@ export default function WriteScreen() {
       </View>
 
       {/* Bottom controls */}
-      <View style={styles.controls}>
-        {isActive && (
-          <Button
-            title="끼어들기"
-            onPress={() => sendBargeIn()}
-            variant="secondary"
-            size="lg"
-            disabled={voiceState === 'listening'}
-            icon={<Ionicons name="mic" size={16} color={voiceState === 'listening' ? '#999999' : '#ffffff'} />}
-            style={{ flex: 1 }}
-          />
-        )}
-        {isActive && (
+      {isActive && (
+        <View style={styles.controls}>
+          {/* 왼쪽 빈 공간 — 대화 완료를 시각적 가운데에 맞추기 위한 균형용 */}
+          <View style={styles.controlsSide} />
+
+          {/* 대화 완료 — 가운데 */}
           <Button
             title="대화 완료"
             onPress={handleFinish}
             variant="outline"
-            size="lg"
+            size="md"
             disabled={!canFinish}
             icon={<Ionicons name="checkmark-done" size={16} color={canFinish ? colors.primary : colors.textTertiary} />}
-            style={{ flex: 1 }}
+            style={styles.finishBtn}
           />
-        )}
-      </View>
+
+          {/* 끼어들기 — 오른쪽 끝 원형 버튼 */}
+          <View style={styles.controlsSide}>
+            <TouchableOpacity
+              style={[styles.bargeInBtn, voiceState === 'listening' && styles.bargeInBtnDisabled]}
+              onPress={() => sendBargeIn()}
+              disabled={voiceState === 'listening'}
+              activeOpacity={0.7}
+              accessibilityLabel="끼어들기"
+            >
+              <Text style={styles.bargeInText}>{'끼어\n들기'}</Text>
+            </TouchableOpacity>
+          </View>
+        </View>
+      )}
 
       {/* Diary creation overlay */}
       {isCreatingDiary && <DiaryCreatingOverlay />}
@@ -425,13 +429,17 @@ const styles = StyleSheet.create({
     paddingHorizontal: spacing.md,
     marginTop: spacing.sm,
   },
-  // Live2D Avatar
-  avatarArea: {
+  // Avatar + message wrapper — takes all space between header and status bar
+  middleContent: {
     flex: 1,
   },
-  // Messages (dev)
+  // Live2D Avatar — takes most of the middle space
+  avatarArea: {
+    flex: 3,
+  },
+  // Messages — takes remaining proportional space; ScrollView provides scroll when content overflows
   messageArea: {
-    maxHeight: 160,
+    flex: 1,
     paddingHorizontal: spacing.md,
   },
   messageContent: {
@@ -479,11 +487,34 @@ const styles = StyleSheet.create({
   controls: {
     flexDirection: 'row',
     alignItems: 'center',
-    justifyContent: 'center',
-    gap: 8,
     paddingHorizontal: 16,
     paddingVertical: spacing.md,
     paddingBottom: spacing.xl,
     backgroundColor: colors.background,
+  },
+  bargeInBtn: {
+    width: 45,
+    height: 45,
+    borderRadius: 22.5,
+    backgroundColor: colors.primaryLight,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  bargeInBtnDisabled: {
+    opacity: 0.5,
+  },
+  finishBtn: {
+    width: 160,
+  },
+  controlsSide: {
+    flex: 1,
+    alignItems: 'flex-end',
+  },
+  bargeInText: {
+    fontSize: 9,
+    fontWeight: '600',
+    color: '#ffffff',
+    textAlign: 'center',
+    lineHeight: 12,
   },
 });

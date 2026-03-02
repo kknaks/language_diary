@@ -1,5 +1,5 @@
 import React, { useEffect, useMemo, useRef } from 'react';
-import { View, Animated } from 'react-native';
+import { View, Animated, Text } from 'react-native';
 import { colors } from '../../constants/theme';
 import type { VoiceState } from '../../stores/useConversationStore';
 
@@ -98,6 +98,8 @@ export default function VoiceOrb({ volume, state, size = 'normal' }: VoiceOrbPro
 
   const containerSize = size === 'mini' ? ORB_SIZE * 2 : ORB_SIZE * 2.8;
 
+  const speakerLabel = state === 'ai_speaking' ? 'AI' : state === 'listening' ? '나' : null;
+
   return (
     <View style={{ width: containerSize, height: containerSize, alignItems: 'center', justifyContent: 'center' }}>
       {/* Outer glow */}
@@ -140,8 +142,21 @@ export default function VoiceOrb({ volume, state, size = 'normal' }: VoiceOrbPro
           shadowOpacity: 0.25,
           shadowRadius: size === 'mini' ? 6 : 16,
           elevation: size === 'mini' ? 4 : 10,
+          alignItems: 'center',
+          justifyContent: 'center',
         }}
-      />
+      >
+        {speakerLabel && (
+          <Text style={{
+            color: '#fff',
+            fontWeight: '700',
+            fontSize: size === 'mini' ? 11 : 18,
+            textAlign: 'center',
+          }}>
+            {speakerLabel}
+          </Text>
+        )}
+      </Animated.View>
     </View>
   );
 }
