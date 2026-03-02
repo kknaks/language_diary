@@ -44,6 +44,7 @@ export default function WriteScreen() {
 
   const isActive = !!sessionId && !createdDiary;
   const volumeIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const currentAiMsgIdRef = useRef<string | null>(null);
 
   const { isStreaming, startStreaming, stopStreaming, forceRestart } = useRealtimeRecorder();
 
@@ -158,6 +159,9 @@ export default function WriteScreen() {
     } else if (voiceState === 'ai_speaking') {
       // AI is speaking — clear silence timer
       clearSilenceTimer();
+      // 지금 막 시작된 AI 메시지 id 저장
+      const lastAi = [...messages].reverse().find(m => m.role === 'assistant');
+      currentAiMsgIdRef.current = lastAi?.id ?? null;
     } else if (voiceState === 'idle') {
       micStartedRef.current = false;
       clearSilenceTimer();
@@ -276,17 +280,12 @@ export default function WriteScreen() {
   // 현재 voiceState 기준으로 표시할 메시지 필터링
   const visibleMessages = (() => {
     if (voiceState === 'ai_speaking') {
-      // AI 말할 때: 마지막 AI 메시지만
-      const lastAi = [...messages].reverse().find(m => m.role === 'assistant');
-      return lastAi ? [lastAi] : [];
-    } else if (voiceState === 'listening') {
-      // 내가 말할 때: 마지막 user 메시지만 (없으면 마지막 AI 메시지)
-      const lastUser = [...messages].reverse().find(m => m.role === 'user');
-      return lastUser ? [lastUser] : [];
-    } else {
-      // idle 등: 마지막 메시지만
-      return messages.length > 0 ? [messages[messages.length - 1]] : [];
+      // 지금 말하고 있는 AI 메시지만
+      const current = messages.find(m => m.id === currentAiMsgIdRef.current);
+      return current ? [current] : [];
     }
+    // listening / idle: 말풍선 히스토리 표시 안 함
+    return [];
   })();
 
   return (
