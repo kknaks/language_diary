@@ -68,29 +68,34 @@ export default function DiaryDetailScreen() {
   // Task polling: track TTS background generation progress
   const startTaskPolling = useCallback((taskId: string) => {
     if (taskPollingRef.current) clearInterval(taskPollingRef.current);
+    console.log(`[TTS Polling] Starting polling for taskId=${taskId}`);
 
     taskPollingRef.current = setInterval(async () => {
       try {
         const task = await getTaskStatus(taskId);
+        console.log(`[TTS Polling] taskId=${taskId} status=${task.status} progress=${task.progress}/${task.total}`);
         setTtsProgress({ progress: task.progress, total: task.total });
 
         if (task.status === 'completed') {
+          console.log(`[TTS Polling] Task completed! Refreshing diary...`);
           if (taskPollingRef.current) clearInterval(taskPollingRef.current);
           taskPollingRef.current = null;
           setTtsReady(true);
           setTtsProgress(null);
           // Refresh diary to get updated audio_url on each card
           const refreshed = await getDiary(id);
+          console.log(`[TTS Polling] Diary refreshed. Cards with audio: ${refreshed.learning_cards.filter(c => c.audio_url).length}/${refreshed.learning_cards.length}`);
           setDiary(refreshed);
         } else if (task.status === 'failed') {
+          console.warn(`[TTS Polling] Task failed! error=${task.error ?? 'unknown'}`);
           if (taskPollingRef.current) clearInterval(taskPollingRef.current);
           taskPollingRef.current = null;
           setTtsProgress(null);
           // Still allow learning even if TTS fails
           setTtsReady(true);
         }
-      } catch {
-        // polling error — keep trying
+      } catch (err) {
+        console.error(`[TTS Polling] Polling error:`, err);
       }
     }, 2000);
   }, [id]);
@@ -105,14 +110,21 @@ export default function DiaryDetailScreen() {
     const allReady = diary.learning_cards.length > 0 &&
       diary.learning_cards.every((c) => c.audio_url !== null && c.audio_url !== undefined);
     if (allReady) {
+      console.log(`[TTS Polling] All ${diary.learning_cards.length} cards already have audio. Skipping polling.`);
       setTtsReady(true);
       return;
     }
     if (diary.task_id && !ttsReady) {
+      console.log(`[TTS Polling] Diary loaded with task_id=${diary.task_id}, cards=${diary.learning_cards.length}, starting poll...`);
       startTaskPolling(diary.task_id);
+    } else {
+      console.log(`[TTS Polling] No polling needed. task_id=${diary.task_id ?? 'none'}, ttsReady=${ttsReady}`);
     }
     return () => {
-      if (taskPollingRef.current) clearInterval(taskPollingRef.current);
+      if (taskPollingRef.current) {
+        console.log(`[TTS Polling] Cleanup: stopping polling`);
+        clearInterval(taskPollingRef.current);
+      }
     };
   }, [diary?.task_id]); // eslint-disable-line react-hooks/exhaustive-deps
 
@@ -155,6 +167,16 @@ export default function DiaryDetailScreen() {
     );
   }, [id, removeDiary, router]);
 
+  // Debug: highlight data
+  useEffect(() => {
+    if (diary && language === 'en' && diary.learning_cards.length > 0) {
+      console.log('[Highlight] text:', (diary.translated_text ?? '').slice(0, 80));
+      console.log('[Highlight] origin_from values:', diary.learning_cards.map((c) => c.origin_from));
+      console.log('[Highlight] content_en values:', diary.learning_cards.map((c) => c.content_en));
+      console.log('[Highlight] final highlights:', diary.learning_cards.map((c) => c.origin_from ?? c.content_en));
+    }
+  }, [language, diary]);
+
   if (isLoading) return <Loading message="일기를 불러오는 중..." />;
   if (error || !diary) return <ErrorState message={error ?? '일기를 찾을 수 없습니다'} onRetry={fetchDiary} />;
 
@@ -187,7 +209,7 @@ export default function DiaryDetailScreen() {
           {language === 'en' && diary.learning_cards.length > 0 ? (
             <HighlightedText
               text={currentText}
-              highlights={diary.learning_cards.map((c) => c.origin_from ?? c.content_en)}
+              highlights={diary.learning_cards.map((c) => c.content_en)}
               textStyle={styles.contentText}
             />
           ) : (
