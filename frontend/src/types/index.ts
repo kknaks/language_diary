@@ -44,7 +44,8 @@ export interface LearningCard {
   cefr_level: string | null;
   example_en: string | null;
   example_ko: string | null;
-  audio_url: string | null;       // TTS 생성 후 채워짐
+  audio_url: string | null;           // TTS 생성 후 채워짐
+  example_audio_url: string | null;   // 예문 TTS
   card_order: number;
 }
 

@@ -380,7 +380,7 @@ async def _handle_ai_reply_streaming(
             card_ids = [c.id for c in diary_resp.learning_cards]
             if card_ids:
                 task_id = await create_tts_task(db, diary_resp.id, card_ids)
-                asyncio.create_task(run_tts_generation(task_id, card_ids, async_session))
+                asyncio.create_task(run_tts_generation(task_id, card_ids, async_session, user_id=user_id))
                 diary_resp.task_id = task_id
             await websocket.send_json(
                 {"type": "diary_created", "diary": diary_resp.model_dump(mode="json")}
@@ -747,7 +747,7 @@ async def conversation_websocket(
                         card_ids = [c.id for c in diary_resp.learning_cards]
                         if card_ids:
                             task_id = await create_tts_task(db, diary_resp.id, card_ids)
-                            asyncio.create_task(run_tts_generation(task_id, card_ids, async_session))
+                            asyncio.create_task(run_tts_generation(task_id, card_ids, async_session, user_id=user_id))
                             diary_resp.task_id = task_id
                         await websocket.send_json(
                             {"type": "diary_created", "diary": diary_resp.model_dump(mode="json")}

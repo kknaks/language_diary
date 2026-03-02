@@ -111,6 +111,6 @@ async def finish_convai_session(
     card_ids = [c.id for c in diary.learning_cards]
     if card_ids:
         task_id = await create_tts_task(db, diary.id, card_ids)
-        background_tasks.add_task(run_tts_generation, task_id, card_ids, async_session)
+        background_tasks.add_task(run_tts_generation, task_id, card_ids, async_session, user_id=current_user.id)
         diary.task_id = task_id
     return diary

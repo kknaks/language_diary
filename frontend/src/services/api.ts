@@ -154,6 +154,7 @@ function normalizeLearningCard(raw: any): LearningCard {
     example_en: raw.example_en ?? null,
     example_ko: raw.example_ko ?? null,
     audio_url: raw.audio_url ?? null,
+    example_audio_url: raw.example_audio_url ?? null,
     card_order: raw.card_order ?? 0,
   };
 }

@@ -21,24 +21,35 @@ interface LearningCardProps {
 
 export default function LearningCard({ card }: LearningCardProps) {
   const config = typeConfig[card.card_type] ?? typeConfig.word;
-  const audio = useAudioPlayer();
+  const contentAudio = useAudioPlayer();
+  const exampleAudio = useAudioPlayer();
   const pronunciation = usePronunciation();
   const [showPronunciation, setShowPronunciation] = useState(false);
 
-  const handleTts = () => {
-    if (audio.state === 'playing') {
-      audio.pause();
-    } else if (audio.state === 'paused') {
-      audio.resume();
+  const resolveUrl = (url: string) =>
+    url.startsWith('http') ? url : `${API_BASE_URL}${url}`;
+
+  const handleContentTts = () => {
+    if (contentAudio.state === 'playing') {
+      contentAudio.pause();
+    } else if (contentAudio.state === 'paused') {
+      contentAudio.resume();
     } else if (card.audio_url) {
-      // 백그라운드 TTS 생성 완료 → 캐시된 파일 바로 재생 (API 호출 없음)
-      const url = card.audio_url.startsWith('http')
-        ? card.audio_url
-        : `${API_BASE_URL}${card.audio_url}`;
-      audio.playFromUrl(url);
+      contentAudio.playFromUrl(resolveUrl(card.audio_url));
     } else {
-      // fallback: 실시간 TTS API 호출
-      audio.play(card.content_en);
+      contentAudio.play(card.content_en);
+    }
+  };
+
+  const handleExampleTts = () => {
+    if (exampleAudio.state === 'playing') {
+      exampleAudio.pause();
+    } else if (exampleAudio.state === 'paused') {
+      exampleAudio.resume();
+    } else if (card.example_audio_url) {
+      exampleAudio.playFromUrl(resolveUrl(card.example_audio_url));
+    } else if (card.example_en) {
+      exampleAudio.play(card.example_en);
     }
   };
 
@@ -51,8 +62,6 @@ export default function LearningCard({ card }: LearningCardProps) {
       pronunciation.stopRecording();
     }
   };
-
-  const ttsIcon = audio.state === 'playing' ? 'pause-circle' : 'volume-high';
 
   return (
     <View style={styles.container}>
@@ -70,39 +79,46 @@ export default function LearningCard({ card }: LearningCardProps) {
         </View>
       </View>
 
-      {/* English */}
-      <Text style={[styles.english, { color: config.color }]}>{card.content_en}</Text>
+      {/* English + sound icon */}
+      <View style={styles.englishRow}>
+        <Text style={[styles.english, { color: config.color }]}>{card.content_en}</Text>
+        <TouchableOpacity onPress={handleContentTts} activeOpacity={0.7} disabled={contentAudio.state === 'loading'} hitSlop={8}>
+          {contentAudio.state === 'loading' ? (
+            <ActivityIndicator size="small" color={colors.primary} />
+          ) : (
+            <Ionicons
+              name={contentAudio.state === 'playing' ? 'pause-circle' : 'volume-high'}
+              size={22}
+              color={colors.primary}
+            />
+          )}
+        </TouchableOpacity>
+      </View>
 
       {/* Korean */}
       <Text style={styles.korean}>{card.content_ko}</Text>
 
-      {/* Example */}
+      {/* Example + sound icon */}
       {card.example_en && (
         <View style={styles.exampleContainer}>
-          <Ionicons name="chatbox-outline" size={14} color={colors.textTertiary} />
+          <Ionicons name="chatbox-outline" size={14} color={colors.textTertiary} style={{ marginTop: 2 }} />
           <Text style={styles.example}>{card.example_en}</Text>
+          <TouchableOpacity onPress={handleExampleTts} activeOpacity={0.7} disabled={exampleAudio.state === 'loading'} hitSlop={8}>
+            {exampleAudio.state === 'loading' ? (
+              <ActivityIndicator size="small" color={colors.primary} />
+            ) : (
+              <Ionicons
+                name={exampleAudio.state === 'playing' ? 'pause-circle' : 'volume-high'}
+                size={18}
+                color={colors.textSecondary}
+              />
+            )}
+          </TouchableOpacity>
         </View>
       )}
 
       {/* Action buttons */}
       <View style={styles.actions}>
-        {/* TTS Button */}
-        <TouchableOpacity
-          style={styles.actionButton}
-          onPress={handleTts}
-          activeOpacity={0.7}
-          disabled={audio.state === 'loading'}
-        >
-          {audio.state === 'loading' ? (
-            <ActivityIndicator size="small" color={colors.primary} />
-          ) : (
-            <Ionicons name={ttsIcon} size={22} color={colors.primary} />
-          )}
-          <Text style={styles.actionText}>
-            {audio.state === 'loading' ? '로딩 중...' : audio.state === 'playing' ? '일시정지' : '발음 듣기'}
-          </Text>
-        </TouchableOpacity>
-
         {/* Pronunciation Button */}
         <TouchableOpacity
           style={styles.actionButton}
@@ -172,7 +188,13 @@ const styles = StyleSheet.create({
     color: colors.textTertiary,
     fontStyle: 'italic',
   },
+  englishRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.sm,
+  },
   english: {
+    flex: 1,
     fontSize: fontSize.xl,
     fontWeight: '700',
     lineHeight: fontSize.xl * 1.3,
@@ -184,6 +206,7 @@ const styles = StyleSheet.create({
   },
   exampleContainer: {
     flexDirection: 'row',
+    alignItems: 'flex-start',
     gap: spacing.sm,
     paddingTop: spacing.sm,
     borderTopWidth: StyleSheet.hairlineWidth,

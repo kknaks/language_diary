@@ -240,7 +240,7 @@ export default function DiaryDetailView({ diaryId, onBack, onStartLearning }: Di
               </View>
             ) : null}
             <Button
-              title={!ttsReady && diary.task_id ? '오디오 준비 중...' : '학습 시작'}
+              title={!ttsReady && diary.task_id ? '오디오 준비 중...' : '학습 하기'}
               onPress={handleStartLearning}
               size="lg"
               disabled={!ttsReady && !!diary.task_id}

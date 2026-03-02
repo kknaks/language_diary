@@ -79,7 +79,7 @@ export default function LearningView({ diaryId, onBack, onGoHome }: LearningView
     return (
       <SafeAreaView style={styles.container} edges={['top']}>
         <ScreenHeader
-          title="학습"
+          title="학습 하기"
           left={
             <TouchableOpacity onPress={onBack} hitSlop={8}>
               <Ionicons name="chevron-back" size={24} color={colors.text} />
@@ -100,7 +100,7 @@ export default function LearningView({ diaryId, onBack, onGoHome }: LearningView
   return (
     <SafeAreaView style={styles.container} edges={['top']}>
       <ScreenHeader
-        title="학습"
+        title="학습 하기"
         left={
           <TouchableOpacity onPress={onBack} hitSlop={8}>
             <Ionicons name="chevron-back" size={24} color={colors.text} />
