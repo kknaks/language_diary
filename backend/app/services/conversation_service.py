@@ -297,17 +297,15 @@ class ConversationService:
         except AIServiceError as e:
             raise TranslationFailedError(detail=str(e))
 
-        diary_data = {
-            "original_text": result.get("original_text", ""),
-            "translated_text": result.get("translated_text", ""),
-        }
         learning_points_raw = result.get("learning_points", [])
 
         # Create diary in DB — use the session owner's user_id
         diary = Diary(
             user_id=session.user_id,
-            original_text=diary_data.get("original_text", ""),
-            translated_text=diary_data.get("translated_text", ""),
+            title_original=result.get("title_original", ""),
+            title_translated=result.get("title_translated", ""),
+            original_text=result.get("original_text", ""),
+            translated_text=result.get("translated_text", ""),
             status="translated",
         )
         self.db.add(diary)
@@ -343,6 +341,8 @@ class ConversationService:
         return DiaryDetailResponse(
             id=diary.id,
             user_id=diary.user_id,
+            title_original=diary.title_original,
+            title_translated=diary.title_translated,
             original_text=diary.original_text,
             translated_text=diary.translated_text,
             status=diary.status,

@@ -407,6 +407,8 @@ DIARY_WITH_LEARNING_PROMPTS: Dict[str, str] = {
 
 주어진 대화를 종합하여 아래 형식의 JSON을 반환해:
 {{
+  "title_original": "한국어 제목 (10자 이내, 대화 내용 요약)",
+  "title_translated": "{target_language} 제목 (title_original 번역)",
   "original_text": "한국어 일기 (자연스러운 일기체, 1~3문단)",
   "translated_text": "{target_language} 번역 (자연스러운 {target_language} 일기체)",
   "learning_points": [
@@ -425,18 +427,21 @@ DIARY_WITH_LEARNING_PROMPTS: Dict[str, str] = {
 
 규칙:
 1. 대화에서 언급된 사건, 감정, 사람, 장소를 포함해.
-2. 한국어 일기는 자연스러운 일기체로 작성해. (~했다, ~였다 체)
-3. {target_language} 번역은 자연스러운 {target_language} 일기체로 작성해.
-4. 학습 포인트: 단어(word) 3~5개 + 구문(phrase) 2~3개 추출.
-5. 학습 포인트 난이도: 사용자 레벨은 {cefr_level}이야. {cefr_range} 범위의 단어/구문을 우선 추출해.
-6. 예문은 일기 본문에서 가져와.
-7. origin_from은 일기 translated_text에서 실제 등장한 단어/구문 형태를 그대로 써.
-8. JSON만 반환해. 다른 텍스트는 포함하지 마.""",
+2. 제목은 대화 내용을 함축하는 자연스러운 표현으로, 10자 이내로 작성해.
+3. 한국어 일기는 자연스러운 일기체로 작성해. (~했다, ~였다 체)
+4. {target_language} 번역은 자연스러운 {target_language} 일기체로 작성해.
+5. 학습 포인트: 단어(word) 3~5개 + 구문(phrase) 2~3개 추출.
+6. 학습 포인트 난이도: 사용자 레벨은 {cefr_level}이야. {cefr_range} 범위의 단어/구문을 우선 추출해.
+7. 예문은 일기 본문에서 가져와.
+8. origin_from은 일기 translated_text에서 실제 등장한 단어/구문 형태를 그대로 써.
+9. JSON만 반환해. 다른 텍스트는 포함하지 마.""",
 
     "en": """You are an AI that writes diary entries and extracts learning points from conversations.
 
 Summarize the given conversation and return JSON in this format:
 {{
+  "title_original": "English title (within 10 words, summarizing the conversation)",
+  "title_translated": "{target_language} title (translation of title_original)",
   "original_text": "English diary (natural diary style, 1-3 paragraphs)",
   "translated_text": "{target_language} translation (natural {target_language} diary style)",
   "learning_points": [
@@ -455,18 +460,21 @@ Summarize the given conversation and return JSON in this format:
 
 Rules:
 1. Include events, emotions, people, and places mentioned in the conversation.
-2. Write the English diary in a natural diary style.
-3. Write the {target_language} translation in a natural {target_language} diary style.
-4. Learning points: extract 3-5 words + 2-3 phrases.
-5. Learning point difficulty: the user's level is {cefr_level}. Prioritize words/phrases in the {cefr_range} range.
-6. Use example sentences from the diary text.
-7. origin_from must be the exact word/phrase form as it appears in the translated_text of the diary.
-8. Return only JSON. Do not include any other text.""",
+2. The title should be a natural expression summarizing the conversation, within 10 words.
+3. Write the English diary in a natural diary style.
+4. Write the {target_language} translation in a natural {target_language} diary style.
+5. Learning points: extract 3-5 words + 2-3 phrases.
+6. Learning point difficulty: the user's level is {cefr_level}. Prioritize words/phrases in the {cefr_range} range.
+7. Use example sentences from the diary text.
+8. origin_from must be the exact word/phrase form as it appears in the translated_text of the diary.
+9. Return only JSON. Do not include any other text.""",
 
     "ja": """あなたは会話内容を元に日記を書き、学習ポイントを抽出するAIです。
 
 与えられた会話をまとめて、以下の形式のJSONを返してください：
 {{
+  "title_original": "日本語のタイトル（10文字以内、会話内容の要約）",
+  "title_translated": "{target_language}のタイトル（title_originalの翻訳）",
   "original_text": "日本語の日記（自然な日記体、1〜3段落）",
   "translated_text": "{target_language}翻訳（自然な{target_language}日記体）",
   "learning_points": [
@@ -485,18 +493,21 @@ Rules:
 
 ルール：
 1. 会話で言及された出来事、感情、人物、場所を含めてください。
-2. 日本語の日記は自然な日記体で書いてください。
-3. {target_language}翻訳は自然な{target_language}日記体で書いてください。
-4. 学習ポイント：単語（word）3〜5個 + フレーズ（phrase）2〜3個を抽出してください。
-5. 学習ポイントの難易度：ユーザーのレベルは{cefr_level}です。{cefr_range}範囲の単語/フレーズを優先してください。
-6. 例文は日記本文から取ってください。
-7. origin_fromは日記のtranslated_textに実際に登場した単語/フレーズの形をそのまま書いてください。
-8. JSONのみ返してください。他のテキストは含めないでください。""",
+2. タイトルは会話内容を要約する自然な表現で、10文字以内で書いてください。
+3. 日本語の日記は自然な日記体で書いてください。
+4. {target_language}翻訳は自然な{target_language}日記体で書いてください。
+5. 学習ポイント：単語（word）3〜5個 + フレーズ（phrase）2〜3個を抽出してください。
+6. 学習ポイントの難易度：ユーザーのレベルは{cefr_level}です。{cefr_range}範囲の単語/フレーズを優先してください。
+7. 例文は日記本文から取ってください。
+8. origin_fromは日記のtranslated_textに実際に登場した単語/フレーズの形をそのまま書いてください。
+9. JSONのみ返してください。他のテキストは含めないでください。""",
 
     "zh": """你是一个根据对话内容写日记并提取学习要点的AI。
 
 综合给定的对话，返回以下格式的JSON：
 {{
+  "title_original": "中文标题（10字以内，对话内容概括）",
+  "title_translated": "{target_language}标题（title_original的翻译）",
   "original_text": "中文日记（自然的日记体，1-3段）",
   "translated_text": "{target_language}翻译（自然的{target_language}日记体）",
   "learning_points": [
@@ -515,18 +526,21 @@ Rules:
 
 规则：
 1. 包含对话中提到的事件、情感、人物、地点。
-2. 中文日记用自然的日记体写。
-3. {target_language}翻译用自然的{target_language}日记体写。
-4. 学习要点：提取3-5个单词（word）+ 2-3个短语（phrase）。
-5. 学习要点难度：用户水平是{cefr_level}。优先提取{cefr_range}范围的单词/短语。
-6. 例句从日记正文中取。
-7. origin_from必须是日记translated_text中实际出现的单词/短语形态，原样填写。
-8. 只返回JSON。不要包含其他文字。""",
+2. 标题应是概括对话内容的自然表达，10字以内。
+3. 中文日记用自然的日记体写。
+4. {target_language}翻译用自然的{target_language}日记体写。
+5. 学习要点：提取3-5个单词（word）+ 2-3个短语（phrase）。
+6. 学习要点难度：用户水平是{cefr_level}。优先提取{cefr_range}范围的单词/短语。
+7. 例句从日记正文中取。
+8. origin_from必须是日记translated_text中实际出现的单词/短语形态，原样填写。
+9. 只返回JSON。不要包含其他文字。""",
 
     "es": """Eres una IA que escribe entradas de diario y extrae puntos de aprendizaje de conversaciones.
 
 Resume la conversación dada y devuelve JSON en este formato:
 {{
+  "title_original": "Título en español (máximo 10 palabras, resumen de la conversación)",
+  "title_translated": "Título en {target_language} (traducción de title_original)",
   "original_text": "Diario en español (estilo natural de diario, 1-3 párrafos)",
   "translated_text": "Traducción en {target_language} (estilo natural de diario en {target_language})",
   "learning_points": [
@@ -545,13 +559,14 @@ Resume la conversación dada y devuelve JSON en este formato:
 
 Reglas:
 1. Incluye eventos, emociones, personas y lugares mencionados en la conversación.
-2. Escribe el diario en español con un estilo natural de diario.
-3. Escribe la traducción en {target_language} con un estilo natural de diario.
-4. Puntos de aprendizaje: extrae 3-5 palabras (word) + 2-3 frases (phrase).
-5. Dificultad: el nivel del usuario es {cefr_level}. Prioriza palabras/frases en el rango {cefr_range}.
-6. Usa oraciones de ejemplo del texto del diario.
-7. origin_from debe ser la forma exacta de la palabra/frase tal como aparece en el translated_text del diario.
-8. Devuelve solo JSON. No incluyas ningún otro texto.""",
+2. El título debe ser una expresión natural que resuma la conversación, en máximo 10 palabras.
+3. Escribe el diario en español con un estilo natural de diario.
+4. Escribe la traducción en {target_language} con un estilo natural de diario.
+5. Puntos de aprendizaje: extrae 3-5 palabras (word) + 2-3 frases (phrase).
+6. Dificultad: el nivel del usuario es {cefr_level}. Prioriza palabras/frases en el rango {cefr_range}.
+7. Usa oraciones de ejemplo del texto del diario.
+8. origin_from debe ser la forma exacta de la palabra/frase tal como aparece en el translated_text del diario.
+9. Devuelve solo JSON. No incluyas ningún otro texto.""",
 }
 
 # ---------------------------------------------------------------------------

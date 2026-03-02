@@ -16,6 +16,8 @@ class Diary(Base):
 
     id: Mapped[int] = mapped_column(primary_key=True)
     user_id: Mapped[int] = mapped_column(ForeignKey("users.id"), nullable=False)
+    title_original: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    title_translated: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
     original_text: Mapped[str] = mapped_column(Text, nullable=False)
     translated_text: Mapped[Optional[str]] = mapped_column(Text)
     status: Mapped[str] = mapped_column(String(20), server_default="draft", nullable=False)

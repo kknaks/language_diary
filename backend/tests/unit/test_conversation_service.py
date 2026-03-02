@@ -84,6 +84,8 @@ async def test_handle_user_message_expired_session(db_session, seed_conversation
 async def test_finish_conversation(db_session, seed_conversation):
     mock_ai = AsyncMock()
     mock_ai.generate_diary_with_learning = AsyncMock(return_value={
+        "title_original": "회의한 하루",
+        "title_translated": "A Day of Meetings",
         "original_text": "오늘 회의를 했다.",
         "translated_text": "I had a meeting today.",
         "learning_points": [

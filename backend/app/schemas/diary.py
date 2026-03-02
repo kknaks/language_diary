@@ -27,6 +27,8 @@ class DiaryUpdate(BaseModel):
 class DiaryResponse(BaseModel):
     id: int
     user_id: int
+    title_original: Optional[str] = None
+    title_translated: Optional[str] = None
     original_text: str
     translated_text: Optional[str] = None
     status: str

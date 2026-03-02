@@ -204,7 +204,13 @@ class AIService:
             max_tokens=2500,
             temperature=0.7,
         )
-        default: Dict[str, Any] = {"original_text": "", "translated_text": "", "learning_points": []}
+        default: Dict[str, Any] = {
+            "title_original": "",
+            "title_translated": "",
+            "original_text": "",
+            "translated_text": "",
+            "learning_points": [],
+        }
         return self._parse_json(content, default)
 
     async def _chat(self, messages: list, max_tokens: int, temperature: float) -> str:

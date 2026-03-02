@@ -25,7 +25,12 @@ def _make_mock_ai(
         mock.extract_learning_points = AsyncMock(return_value=learning_points)
     # Combined diary+learning method
     if diary or learning_points is not None:
-        combined = dict(diary or {"original_text": "", "translated_text": ""})
+        combined = dict(diary or {
+            "title_original": "",
+            "title_translated": "",
+            "original_text": "",
+            "translated_text": "",
+        })
         combined["learning_points"] = learning_points or []
         mock.generate_diary_with_learning = AsyncMock(return_value=combined)
     return mock
@@ -183,6 +188,8 @@ async def test_websocket_finish_conversation(client, seed_user, auth_token):
     """Send finish message and receive diary_created response."""
     mock_ai = _make_mock_ai()
     mock_ai.generate_diary_with_learning = AsyncMock(return_value={
+        "title_original": "팀장님과 회의",
+        "title_translated": "Meeting with Team Leader",
         "original_text": "오늘 회사에서 팀장님과 회의를 했다.",
         "translated_text": "I had a meeting with my team leader at work today.",
         "learning_points": [

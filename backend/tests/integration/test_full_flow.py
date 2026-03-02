@@ -52,6 +52,8 @@ def _get_ws_url():
 
 
 MOCK_DIARY = {
+    "title_original": "프로젝트 회의",
+    "title_translated": "Project Meeting",
     "original_text": "오늘 회사에서 팀장님과 프로젝트 일정 회의를 했다. 다음 주까지 마감이라 좀 빡셌다.",
     "translated_text": (
         "I had a project schedule meeting with my team leader at work today. "
@@ -256,6 +258,8 @@ async def test_diary_edit_after_creation(client, seed_user):
     mock_ai = AsyncMock()
     mock_ai.get_first_message = AsyncMock(return_value="오늘 어땠어?")
     mock_ai.generate_diary_with_learning = AsyncMock(return_value={
+        "title_original": "원래 일기",
+        "title_translated": "Original Diary",
         "original_text": "원래 일기 내용",
         "translated_text": "Original diary content",
         "learning_points": [],
@@ -300,6 +304,8 @@ async def test_diary_complete_and_delete_flow(client, seed_user):
     mock_ai = AsyncMock()
     mock_ai.get_first_message = AsyncMock(return_value="오늘 어땠어?")
     mock_ai.generate_diary_with_learning = AsyncMock(return_value={
+        "title_original": "삭제 일기",
+        "title_translated": "Diary to Delete",
         "original_text": "삭제할 일기",
         "translated_text": "Diary to delete",
         "learning_points": [],
