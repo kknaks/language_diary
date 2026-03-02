@@ -11,7 +11,7 @@ from app.database import get_db
 from app.dependencies import get_current_user, get_onboarded_user
 from app.main import app
 from app.models import (  # noqa: F401
-    ConversationMessage, ConversationSession, Diary, LearningCard, User,
+    BackgroundTask, ConversationMessage, ConversationSession, Diary, LearningCard, User,
 )
 from app.models.base import Base
 from app.models.profile import UserProfile

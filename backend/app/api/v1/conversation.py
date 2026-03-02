@@ -19,6 +19,7 @@ from app.schemas.conversation import ConversationCreateResponse, ConversationDet
 from app.services.conversation_service import ConversationService
 from app.services.stt_service import STTError, STTSession
 from app.services.tts_service import TTSError, TTSService, TTSStreamSession
+from app.services.tts_task_service import create_tts_task, run_tts_generation
 from app.utils.jwt import verify_access_token
 
 logger = logging.getLogger(__name__)
@@ -375,6 +376,12 @@ async def _handle_ai_reply_streaming(
                 native_lang=native_lang, target_lang=target_lang,
                 cefr_level=cefr_level,
             )
+            # Launch background TTS generation for learning cards
+            card_ids = [c.id for c in diary_resp.learning_cards]
+            if card_ids:
+                task_id = await create_tts_task(db, diary_resp.id, card_ids)
+                asyncio.create_task(run_tts_generation(task_id, card_ids, async_session))
+                diary_resp.task_id = task_id
             await websocket.send_json(
                 {"type": "diary_created", "diary": diary_resp.model_dump(mode="json")}
             )
@@ -725,6 +732,12 @@ async def conversation_websocket(
                             native_lang=native_lang, target_lang=target_lang,
                             cefr_level=cefr_level,
                         )
+                        # Launch background TTS generation for learning cards
+                        card_ids = [c.id for c in diary_resp.learning_cards]
+                        if card_ids:
+                            task_id = await create_tts_task(db, diary_resp.id, card_ids)
+                            asyncio.create_task(run_tts_generation(task_id, card_ids, async_session))
+                            diary_resp.task_id = task_id
                         await websocket.send_json(
                             {"type": "diary_created", "diary": diary_resp.model_dump(mode="json")}
                         )

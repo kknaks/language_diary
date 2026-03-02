@@ -217,6 +217,51 @@ class TTSService:
             "duration_ms": cache_entry.duration_ms,
         }
 
+    async def generate_and_save(
+        self,
+        text: str,
+        filename: str,
+        voice_id: Optional[str] = None,
+    ) -> str:
+        """Generate TTS audio and save to file. Returns relative URL.
+
+        Uses tts_cache for deduplication based on text hash.
+        """
+        voice = voice_id or DEFAULT_VOICE_ID
+        text_h = _text_hash(text, voice)
+
+        # Check cache first
+        cached = await self.cache_repo.get_by_hash(text_h)
+        if cached:
+            return cached.audio_url
+
+        # Generate TTS audio
+        audio_bytes = await self._generate_with_fallback(text, voice)
+
+        # Volume normalization
+        gain_db = await self._get_volume_gain(voice)
+        if gain_db != 0:
+            audio_bytes = _normalize_volume(audio_bytes, gain_db)
+
+        # Save to file
+        save_dir = Path("static/voice_previews")
+        save_dir.mkdir(parents=True, exist_ok=True)
+        file_path = save_dir / filename
+        file_path.write_bytes(audio_bytes)
+
+        audio_url = f"/static/voice_previews/{filename}"
+
+        # Save to cache DB
+        await self.cache_repo.create(
+            text_hash=text_h,
+            text=text,
+            audio_url=audio_url,
+            voice_id=voice,
+        )
+        await self.db.commit()
+
+        return audio_url
+
     async def generate_bytes(
         self,
         text: str,

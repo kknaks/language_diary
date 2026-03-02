@@ -2,15 +2,16 @@
 
 from typing import List, Optional, Tuple
 
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, BackgroundTasks, Depends
 from pydantic import BaseModel
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.database import get_db
+from app.database import async_session, get_db
 from app.dependencies import get_onboarded_user
 from app.models.user import User
 from app.services.convai_service import ConvAIService
 from app.services.conversation_service import ConversationService
+from app.services.tts_task_service import create_tts_task, run_tts_generation
 
 
 async def _resolve_user_langs(
@@ -93,6 +94,7 @@ async def create_convai_session(
 async def finish_convai_session(
     session_id: str,
     body: ConvAIFinishRequest,
+    background_tasks: BackgroundTasks,
     current_user: User = Depends(get_onboarded_user),
     db: AsyncSession = Depends(get_db),
 ):
@@ -105,4 +107,10 @@ async def finish_convai_session(
         native_lang=native_lang, target_lang=target_lang,
         cefr_level=cefr_level,
     )
+    # Launch background TTS generation for learning cards
+    card_ids = [c.id for c in diary.learning_cards]
+    if card_ids:
+        task_id = await create_tts_task(db, diary.id, card_ids)
+        background_tasks.add_task(run_tts_generation, task_id, card_ids, async_session)
+        diary.task_id = task_id
     return diary

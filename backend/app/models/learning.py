@@ -24,6 +24,7 @@ class LearningCard(Base):
     cefr_level: Mapped[Optional[str]] = mapped_column(String(5))
     example_en: Mapped[Optional[str]] = mapped_column(Text)
     example_ko: Mapped[Optional[str]] = mapped_column(Text)
+    audio_url: Mapped[Optional[str]] = mapped_column(String(500), nullable=True)
     card_order: Mapped[int] = mapped_column(Integer, server_default="0", nullable=False)
     created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now(), nullable=False)
 
