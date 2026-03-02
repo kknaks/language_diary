@@ -94,8 +94,7 @@ export const useConversationStore = create<ConversationState>((set, get) => ({
 
         switch (message.type) {
           case 'session_created': {
-            // AI가 먼저 인사말을 하므로 tts_audio 올 때까지 idle 유지
-            set({ sessionId: message.session_id, isLoading: false, voiceState: 'idle' });
+            set({ sessionId: message.session_id, isLoading: false, voiceState: 'listening' });
             console.log('[WS] Session created:', message.session_id);
             break;
           }
