@@ -1,4 +1,4 @@
-import { Diary, LearningCard, Message, PaginatedResponse, ConversationSession, TtsResponse, PronunciationResult } from '../types';
+import { Diary, LearningCard, Message, PaginatedResponse, ConversationSession, TtsResponse, PronunciationResult, TaskStatus } from '../types';
 import { AuthTokens, SocialLoginResponse } from '../types/auth';
 import { LanguageListResponse, AvatarListResponse, VoiceListResponse, CefrLevel } from '../types/seed';
 import { ProfileCreateRequest, ProfileUpdateRequest, LanguageLevelUpdateRequest, UserProfileResponse } from '../types/profile';
@@ -125,12 +125,16 @@ function normalizeDiary(raw: any): Diary {
   return {
     id: raw.id,
     user_id: raw.user_id,
+    title_original: raw.title_original ?? null,
+    title_translated: raw.title_translated ?? null,
     original_text: raw.original_text ?? '',
     translated_text: raw.translated_text ?? null,
     status: raw.status ?? 'draft',
     created_at: raw.created_at ?? new Date().toISOString(),
     updated_at: raw.updated_at ?? new Date().toISOString(),
     completed_at: raw.completed_at ?? null,
+    conversation_id: raw.conversation_id ?? null,
+    task_id: raw.task_id ?? null,
     learning_cards: Array.isArray(raw.learning_cards)
       ? raw.learning_cards.map(normalizeLearningCard)
       : [],
@@ -143,11 +147,13 @@ function normalizeLearningCard(raw: any): LearningCard {
     id: raw.id,
     card_type: raw.card_type ?? 'word',
     content_en: raw.content_en ?? '',
+    origin_from: raw.origin_from ?? null,
     content_ko: raw.content_ko ?? '',
     part_of_speech: raw.part_of_speech ?? null,
     cefr_level: raw.cefr_level ?? null,
     example_en: raw.example_en ?? null,
     example_ko: raw.example_ko ?? null,
+    audio_url: raw.audio_url ?? null,
     card_order: raw.card_order ?? 0,
   };
 }
@@ -408,3 +414,10 @@ export const homeApi = {
     return (await handleResponse(res)) as HomeResponse;
   },
 };
+
+// ===== Task API =====
+
+export async function getTaskStatus(taskId: string): Promise<TaskStatus> {
+  const res = await fetchWithAuth(`${API_BASE_URL}/api/v1/tasks/${taskId}`);
+  return (await handleResponse(res)) as TaskStatus;
+}

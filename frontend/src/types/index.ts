@@ -30,6 +30,7 @@ export interface Diary {
   updated_at: string;
   completed_at: string | null;
   conversation_id?: number | null;
+  task_id?: string | null;        // 백그라운드 TTS 태스크 ID
   learning_cards: LearningCard[];
 }
 
@@ -37,12 +38,22 @@ export interface LearningCard {
   id: number;
   card_type: string;
   content_en: string;
+  origin_from: string | null;     // 일기 원문에 실제 등장한 형태 (하이라이트용)
   content_ko: string;
   part_of_speech: string | null;
   cefr_level: string | null;
   example_en: string | null;
   example_ko: string | null;
+  audio_url: string | null;       // TTS 생성 후 채워짐
   card_order: number;
+}
+
+// ===== 백그라운드 태스크 =====
+export interface TaskStatus {
+  status: 'pending' | 'processing' | 'completed' | 'failed';
+  progress: number;
+  total: number;
+  error?: string | null;
 }
 
 // ===== 대화 =====

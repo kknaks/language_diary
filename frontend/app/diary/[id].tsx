@@ -1,4 +1,4 @@
-import React, { useEffect, useState, useCallback } from 'react';
+import React, { useEffect, useState, useCallback, useRef } from 'react';
 import { View, Text, ScrollView, StyleSheet, Alert } from 'react-native';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
@@ -7,7 +7,7 @@ import { colors, fontSize, spacing, borderRadius, shadows } from '../../src/cons
 import { Button, Loading, ErrorState } from '../../src/components/common';
 import { DiaryEditor, HighlightedText, LanguageToggle } from '../../src/components/diary';
 import { CefrBadge } from '../../src/components/learning';
-import { getDiary, updateDiary, getConversationMessages } from '../../src/services/api';
+import { getDiary, updateDiary, getConversationMessages, getTaskStatus } from '../../src/services/api';
 import { useDiaryStore } from '../../src/stores/useDiaryStore';
 import { Diary, Message } from '../../src/types';
 
@@ -30,6 +30,11 @@ export default function DiaryDetailScreen() {
   const [conversationMessages, setConversationMessages] = useState<Message[]>([]);
   const [showConversation, setShowConversation] = useState(false);
 
+  // TTS task polling
+  const [ttsReady, setTtsReady] = useState(false);
+  const [ttsProgress, setTtsProgress] = useState<{ progress: number; total: number } | null>(null);
+  const taskPollingRef = useRef<ReturnType<typeof setInterval> | null>(null);
+
 
   const fetchDiary = useCallback(async () => {
     if (!id) return;
@@ -47,6 +52,12 @@ export default function DiaryDetailScreen() {
           // Non-critical: conversation messages are optional
         }
       }
+      // Check if TTS is already done (audio_url populated)
+      const allReady = data.learning_cards.length > 0 &&
+        data.learning_cards.every((c) => c.audio_url !== null && c.audio_url !== undefined);
+      if (allReady) {
+        setTtsReady(true);
+      }
     } catch {
       setError('일기를 불러올 수 없습니다');
     } finally {
@@ -54,9 +65,56 @@ export default function DiaryDetailScreen() {
     }
   }, [id]);
 
+  // Task polling: track TTS background generation progress
+  const startTaskPolling = useCallback((taskId: string) => {
+    if (taskPollingRef.current) clearInterval(taskPollingRef.current);
+
+    taskPollingRef.current = setInterval(async () => {
+      try {
+        const task = await getTaskStatus(taskId);
+        setTtsProgress({ progress: task.progress, total: task.total });
+
+        if (task.status === 'completed') {
+          if (taskPollingRef.current) clearInterval(taskPollingRef.current);
+          taskPollingRef.current = null;
+          setTtsReady(true);
+          setTtsProgress(null);
+          // Refresh diary to get updated audio_url on each card
+          const refreshed = await getDiary(id);
+          setDiary(refreshed);
+        } else if (task.status === 'failed') {
+          if (taskPollingRef.current) clearInterval(taskPollingRef.current);
+          taskPollingRef.current = null;
+          setTtsProgress(null);
+          // Still allow learning even if TTS fails
+          setTtsReady(true);
+        }
+      } catch {
+        // polling error — keep trying
+      }
+    }, 2000);
+  }, [id]);
+
   useEffect(() => {
     fetchDiary();
   }, [fetchDiary]);
+
+  // Start polling when diary loads and task_id is present
+  useEffect(() => {
+    if (!diary) return;
+    const allReady = diary.learning_cards.length > 0 &&
+      diary.learning_cards.every((c) => c.audio_url !== null && c.audio_url !== undefined);
+    if (allReady) {
+      setTtsReady(true);
+      return;
+    }
+    if (diary.task_id && !ttsReady) {
+      startTaskPolling(diary.task_id);
+    }
+    return () => {
+      if (taskPollingRef.current) clearInterval(taskPollingRef.current);
+    };
+  }, [diary?.task_id]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const handleSave = useCallback(async (text: string) => {
     if (!diary || !id) return;
@@ -129,7 +187,7 @@ export default function DiaryDetailScreen() {
           {language === 'en' && diary.learning_cards.length > 0 ? (
             <HighlightedText
               text={currentText}
-              highlights={diary.learning_cards.map((c) => c.content_en)}
+              highlights={diary.learning_cards.map((c) => c.origin_from ?? c.content_en)}
               textStyle={styles.contentText}
             />
           ) : (
@@ -200,6 +258,14 @@ export default function DiaryDetailScreen() {
             </View>
           ))}
 
+          {ttsProgress && !ttsReady ? (
+            <View style={styles.ttsProgressContainer}>
+              <Ionicons name="hourglass-outline" size={16} color={colors.textSecondary} />
+              <Text style={styles.ttsProgressText}>
+                학습 오디오 준비 중... ({ttsProgress.progress}/{ttsProgress.total})
+              </Text>
+            </View>
+          ) : null}
           <Button
             title="학습 시작"
             onPress={handleStartLearning}
@@ -387,5 +453,17 @@ const styles = StyleSheet.create({
   deleteButton: {
     alignSelf: 'center',
     marginTop: spacing.md,
+  },
+  // TTS progress
+  ttsProgressContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: spacing.xs,
+    paddingVertical: spacing.sm,
+  },
+  ttsProgressText: {
+    fontSize: fontSize.sm,
+    color: colors.textSecondary,
   },
 });
