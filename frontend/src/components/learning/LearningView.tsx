@@ -108,13 +108,6 @@ export default function LearningView({ diaryId, onBack, onGoHome }: LearningView
         }
       />
 
-      {/* English diary text at top */}
-      <View style={styles.diarySection}>
-        <Text style={styles.diaryText} numberOfLines={3}>
-          {diary.translated_text}
-        </Text>
-      </View>
-
       {/* Progress indicator */}
       <View style={styles.progressRow}>
         <Text style={styles.progressText}>
@@ -154,19 +147,6 @@ const styles = StyleSheet.create({
   container: {
     flex: 1,
     backgroundColor: colors.background,
-  },
-  diarySection: {
-    paddingHorizontal: spacing.lg,
-    paddingVertical: spacing.md,
-    backgroundColor: colors.surface,
-    borderBottomWidth: 1,
-    borderBottomColor: colors.border,
-  },
-  diaryText: {
-    fontSize: fontSize.sm,
-    color: colors.textSecondary,
-    lineHeight: fontSize.sm * 1.6,
-    fontStyle: 'italic',
   },
   progressRow: {
     flexDirection: 'row',
