@@ -29,7 +29,11 @@ export default function LearningCard({ card }: LearningCardProps) {
       audio.pause();
     } else if (audio.state === 'paused') {
       audio.resume();
+    } else if (card.audio_url) {
+      // 백그라운드 TTS 생성 완료 → 캐시된 파일 바로 재생 (API 호출 없음)
+      audio.playFromUrl(card.audio_url);
     } else {
+      // fallback: 실시간 TTS API 호출
       audio.play(card.content_en);
     }
   };

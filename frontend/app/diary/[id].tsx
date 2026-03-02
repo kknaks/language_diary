@@ -1,5 +1,5 @@
 import React, { useEffect, useState, useCallback, useRef } from 'react';
-import { View, Text, ScrollView, StyleSheet, Alert } from 'react-native';
+import { View, Text, ScrollView, StyleSheet, Alert, ViewStyle } from 'react-native';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 
@@ -267,11 +267,16 @@ export default function DiaryDetailScreen() {
             </View>
           ) : null}
           <Button
-            title="학습 시작"
+            title={!ttsReady && diary.task_id ? '오디오 준비 중...' : '학습 시작'}
             onPress={handleStartLearning}
             size="lg"
-            icon={<Ionicons name="school" size={20} color="#fff" />}
-            style={styles.learningButton}
+            disabled={!ttsReady && !!diary.task_id}
+            icon={
+              !ttsReady && diary.task_id
+                ? <Ionicons name="hourglass-outline" size={20} color="#fff" />
+                : <Ionicons name="school" size={20} color="#fff" />
+            }
+            style={StyleSheet.flatten([styles.learningButton, (!ttsReady && !!diary.task_id) ? styles.learningButtonDisabled : undefined]) as ViewStyle}
           />
         </View>
       )}
@@ -465,5 +470,8 @@ const styles = StyleSheet.create({
   ttsProgressText: {
     fontSize: fontSize.sm,
     color: colors.textSecondary,
+  },
+  learningButtonDisabled: {
+    opacity: 0.6,
   },
 });
