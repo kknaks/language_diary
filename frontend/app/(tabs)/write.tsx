@@ -52,8 +52,6 @@ export default function WriteScreen() {
   stopStreamingRef.current = stopStreaming;
   const sendAudioChunkRef = useRef(sendAudioChunk);
   sendAudioChunkRef.current = sendAudioChunk;
-  const sendBargeInRef = useRef(sendBargeIn);
-  sendBargeInRef.current = sendBargeIn;
   const sendNudgeRef = useRef(sendNudge);
   sendNudgeRef.current = sendNudge;
   const finishConversationRef = useRef(finishConversation);
@@ -91,10 +89,6 @@ export default function WriteScreen() {
     }, SILENCE_TIMEOUT_MS);
   }, [clearSilenceTimer]);
 
-  // Minimum speech duration before triggering barge-in — filters out noise spikes
-  const MIN_SPEECH_DURATION_MS = 300;
-  const speechStartTimeRef = useRef(0);
-  const deferredBargeTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   // Track voiceState in a ref for VAD callbacks
   const voiceStateRef = useRef(voiceState);
   voiceStateRef.current = voiceState;
@@ -104,14 +98,8 @@ export default function WriteScreen() {
     onSpeechStart: () => {
       const currentVoiceState = voiceStateRef.current;
 
-      if (currentVoiceState === 'ai_speaking') {
-        // Barge-in: defer until MIN_SPEECH_DURATION to filter noise
-        speechStartTimeRef.current = Date.now();
-        deferredBargeTimerRef.current = setTimeout(() => {
-          console.log('[VAD] Barge-in confirmed');
-          sendBargeInRef.current();
-        }, MIN_SPEECH_DURATION_MS);
-      } else if (currentVoiceState === 'listening') {
+      // ai_speaking 중 barge-in 제거 (끼어들기 버튼으로 대체)
+      if (currentVoiceState === 'listening') {
         // User spoke — reset silence nudge counter and timer
         nudgeCountRef.current = 0;
         clearSilenceTimer();
@@ -119,12 +107,6 @@ export default function WriteScreen() {
     },
     onSpeechEnd: () => {
       const currentVoiceState = voiceStateRef.current;
-
-      // Cancel deferred barge-in if speech was too short
-      if (deferredBargeTimerRef.current) {
-        clearTimeout(deferredBargeTimerRef.current);
-        deferredBargeTimerRef.current = null;
-      }
 
       if (currentVoiceState === 'listening') {
         // Speech ended while listening — start silence timer
@@ -152,7 +134,10 @@ export default function WriteScreen() {
       console.log('[Write] Starting mic stream with VAD, voiceState:', voiceState);
       startStreamingRef.current(
         (base64) => {
-          sendAudioChunkRef.current(base64);
+          // AI 말하는 중에는 오디오 전송 차단 (에코 게이트)
+          if (voiceStateRef.current !== 'ai_speaking') {
+            sendAudioChunkRef.current(base64);
+          }
         },
         vadCallbacksRef.current,
       ).catch((err) => {
@@ -338,6 +323,15 @@ export default function WriteScreen() {
 
       {/* Bottom controls */}
       <View style={styles.controls}>
+        {isActive && voiceState === 'ai_speaking' && (
+          <Button
+            title="끼어들기"
+            onPress={() => sendBargeIn()}
+            variant="secondary"
+            size="lg"
+            icon={<Ionicons name="mic" size={16} color="#ffffff" />}
+          />
+        )}
         {isActive && (
           <Button
             title="대화 완료"
