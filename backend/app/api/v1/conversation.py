@@ -373,6 +373,7 @@ async def _handle_ai_reply_streaming(
             diary_resp = await service.finish_conversation(
                 session_id, user_id=user_id,
                 native_lang=native_lang, target_lang=target_lang,
+                cefr_level=cefr_level,
             )
             await websocket.send_json(
                 {"type": "diary_created", "diary": diary_resp.model_dump(mode="json")}
@@ -722,6 +723,7 @@ async def conversation_websocket(
                         diary_resp = await service.finish_conversation(
                             session_id, user_id=user_id,
                             native_lang=native_lang, target_lang=target_lang,
+                            cefr_level=cefr_level,
                         )
                         await websocket.send_json(
                             {"type": "diary_created", "diary": diary_resp.model_dump(mode="json")}

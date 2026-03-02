@@ -23,6 +23,11 @@ def _make_mock_ai(
         mock.generate_diary = AsyncMock(return_value=diary)
     if learning_points is not None:
         mock.extract_learning_points = AsyncMock(return_value=learning_points)
+    # Combined diary+learning method
+    if diary or learning_points is not None:
+        combined = dict(diary or {"original_text": "", "translated_text": ""})
+        combined["learning_points"] = learning_points or []
+        mock.generate_diary_with_learning = AsyncMock(return_value=combined)
     return mock
 
 
@@ -177,30 +182,30 @@ async def test_websocket_send_message_streaming(client, seed_user, auth_token):
 async def test_websocket_finish_conversation(client, seed_user, auth_token):
     """Send finish message and receive diary_created response."""
     mock_ai = _make_mock_ai()
-    mock_ai.generate_diary = AsyncMock(return_value={
+    mock_ai.generate_diary_with_learning = AsyncMock(return_value={
         "original_text": "오늘 회사에서 팀장님과 회의를 했다.",
         "translated_text": "I had a meeting with my team leader at work today.",
+        "learning_points": [
+            {
+                "card_type": "word",
+                "content_en": "meeting",
+                "content_ko": "회의",
+                "part_of_speech": "noun",
+                "cefr_level": "A2",
+                "example_en": "I had a meeting at work today.",
+                "example_ko": "오늘 회사에서 회의했어.",
+            },
+            {
+                "card_type": "phrase",
+                "content_en": "team leader",
+                "content_ko": "팀장",
+                "part_of_speech": None,
+                "cefr_level": "A2",
+                "example_en": "I had a meeting with my team leader.",
+                "example_ko": "팀장님과 회의를 했다.",
+            },
+        ],
     })
-    mock_ai.extract_learning_points = AsyncMock(return_value=[
-        {
-            "card_type": "word",
-            "content_en": "meeting",
-            "content_ko": "회의",
-            "part_of_speech": "noun",
-            "cefr_level": "A2",
-            "example_en": "I had a meeting at work today.",
-            "example_ko": "오늘 회사에서 회의했어.",
-        },
-        {
-            "card_type": "phrase",
-            "content_en": "team leader",
-            "content_ko": "팀장",
-            "part_of_speech": None,
-            "cefr_level": "A2",
-            "example_en": "I had a meeting with my team leader.",
-            "example_ko": "팀장님과 회의를 했다.",
-        },
-    ])
 
     with patch("app.services.conversation_service.AIService", return_value=mock_ai):
         with patch("app.api.v1.conversation.TTSService") as MockTTS:

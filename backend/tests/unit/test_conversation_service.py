@@ -83,21 +83,21 @@ async def test_handle_user_message_expired_session(db_session, seed_conversation
 @pytest.mark.asyncio
 async def test_finish_conversation(db_session, seed_conversation):
     mock_ai = AsyncMock()
-    mock_ai.generate_diary = AsyncMock(return_value={
+    mock_ai.generate_diary_with_learning = AsyncMock(return_value={
         "original_text": "오늘 회의를 했다.",
         "translated_text": "I had a meeting today.",
+        "learning_points": [
+            {
+                "card_type": "word",
+                "content_en": "meeting",
+                "content_ko": "회의",
+                "part_of_speech": "noun",
+                "cefr_level": "A2",
+                "example_en": "I had a meeting.",
+                "example_ko": "회의를 했다.",
+            }
+        ],
     })
-    mock_ai.extract_learning_points = AsyncMock(return_value=[
-        {
-            "card_type": "word",
-            "content_en": "meeting",
-            "content_ko": "회의",
-            "part_of_speech": "noun",
-            "cefr_level": "A2",
-            "example_en": "I had a meeting.",
-            "example_ko": "회의를 했다.",
-        }
-    ])
 
     service = ConversationService(db_session, ai_service=mock_ai)
     result = await service.finish_conversation("conv_test123")

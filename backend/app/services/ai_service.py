@@ -16,6 +16,7 @@ from app.utils.prompt_builder import (
     build_conversation_prompt,
     build_diary_prompt,
     build_diary_user_prompt,
+    build_diary_with_learning_prompt,
     build_first_message_user_prompt,
     build_learning_prompt,
     build_learning_user_prompt,
@@ -177,6 +178,34 @@ class AIService:
             temperature=0.5,
         )
         return self._parse_json(content, [])
+
+    async def generate_diary_with_learning(
+        self,
+        conversation_history: List[Dict[str, str]],
+        native_lang: str = "ko",
+        target_lang: str = "en",
+        cefr_level: Optional[str] = None,
+    ) -> Dict[str, Any]:
+        """Generate diary + learning points in a single LLM call."""
+        labels = get_role_labels(native_lang)
+        conversation_text = "\n".join(
+            f"{labels['ai'] if m['role'] == 'assistant' else labels['user']}: {m['content']}"
+            for m in conversation_history
+        )
+
+        system_prompt = build_diary_with_learning_prompt(native_lang, target_lang, cefr_level)
+        user_prompt = build_diary_user_prompt(native_lang, conversation_text)
+
+        content = await self._chat(
+            messages=[
+                {"role": "system", "content": system_prompt},
+                {"role": "user", "content": user_prompt},
+            ],
+            max_tokens=2500,
+            temperature=0.7,
+        )
+        default: Dict[str, Any] = {"original_text": "", "translated_text": "", "learning_points": []}
+        return self._parse_json(content, default)
 
     async def _chat(self, messages: list, max_tokens: int, temperature: float) -> str:
         """Call OpenAI chat API with circuit breaker + retry."""

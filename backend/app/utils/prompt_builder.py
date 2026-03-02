@@ -3,7 +3,7 @@
 Supports: ko (한국어), en (English), ja (日本語), zh (中文), es (Español)
 """
 
-from typing import Dict, Optional
+from typing import Any, Dict, Optional
 
 # ---------------------------------------------------------------------------
 # Language display names (used inside prompts)
@@ -400,6 +400,173 @@ LEARNING_USER_PROMPTS: Dict[str, str] = {
 }
 
 # ---------------------------------------------------------------------------
+# Diary + Learning combined prompts — single LLM call
+# ---------------------------------------------------------------------------
+DIARY_WITH_LEARNING_PROMPTS: Dict[str, str] = {
+    "ko": """너는 대화 내용을 바탕으로 일기를 작성하고 학습 포인트를 추출하는 AI야.
+
+주어진 대화를 종합하여 아래 형식의 JSON을 반환해:
+{{
+  "original_text": "한국어 일기 (자연스러운 일기체, 1~3문단)",
+  "translated_text": "{target_language} 번역 (자연스러운 {target_language} 일기체)",
+  "learning_points": [
+    {{
+      "card_type": "word" 또는 "phrase",
+      "content_en": "{target_language} 단어 또는 구문",
+      "origin_from": "일기에 실제 등장한 형태 (예: working, went, on my own 등)",
+      "content_ko": "한국어 뜻",
+      "part_of_speech": "품사 (word일 때만, 예: noun, verb, adjective)",
+      "cefr_level": "A1/A2/B1/B2/C1/C2",
+      "example_en": "{target_language} 예문 (일기 문맥 활용)",
+      "example_ko": "한국어 예문 해석"
+    }}
+  ]
+}}
+
+규칙:
+1. 대화에서 언급된 사건, 감정, 사람, 장소를 포함해.
+2. 한국어 일기는 자연스러운 일기체로 작성해. (~했다, ~였다 체)
+3. {target_language} 번역은 자연스러운 {target_language} 일기체로 작성해.
+4. 학습 포인트: 단어(word) 3~5개 + 구문(phrase) 2~3개 추출.
+5. 학습 포인트 난이도: 사용자 레벨은 {cefr_level}이야. {cefr_range} 범위의 단어/구문을 우선 추출해.
+6. 예문은 일기 본문에서 가져와.
+7. origin_from은 일기 translated_text에서 실제 등장한 단어/구문 형태를 그대로 써.
+8. JSON만 반환해. 다른 텍스트는 포함하지 마.""",
+
+    "en": """You are an AI that writes diary entries and extracts learning points from conversations.
+
+Summarize the given conversation and return JSON in this format:
+{{
+  "original_text": "English diary (natural diary style, 1-3 paragraphs)",
+  "translated_text": "{target_language} translation (natural {target_language} diary style)",
+  "learning_points": [
+    {{
+      "card_type": "word" or "phrase",
+      "content_en": "{target_language} word or phrase",
+      "origin_from": "exact form as it appears in the diary (e.g. working, went, on my own)",
+      "content_ko": "English meaning",
+      "part_of_speech": "part of speech (for word only, e.g. noun, verb, adjective)",
+      "cefr_level": "A1/A2/B1/B2/C1/C2",
+      "example_en": "{target_language} example sentence (from diary context)",
+      "example_ko": "English translation of example"
+    }}
+  ]
+}}
+
+Rules:
+1. Include events, emotions, people, and places mentioned in the conversation.
+2. Write the English diary in a natural diary style.
+3. Write the {target_language} translation in a natural {target_language} diary style.
+4. Learning points: extract 3-5 words + 2-3 phrases.
+5. Learning point difficulty: the user's level is {cefr_level}. Prioritize words/phrases in the {cefr_range} range.
+6. Use example sentences from the diary text.
+7. origin_from must be the exact word/phrase form as it appears in the translated_text of the diary.
+8. Return only JSON. Do not include any other text.""",
+
+    "ja": """あなたは会話内容を元に日記を書き、学習ポイントを抽出するAIです。
+
+与えられた会話をまとめて、以下の形式のJSONを返してください：
+{{
+  "original_text": "日本語の日記（自然な日記体、1〜3段落）",
+  "translated_text": "{target_language}翻訳（自然な{target_language}日記体）",
+  "learning_points": [
+    {{
+      "card_type": "word" または "phrase",
+      "content_en": "{target_language}の単語またはフレーズ",
+      "origin_from": "日記に実際に登場した形（例：working, went, on my own など）",
+      "content_ko": "日本語の意味",
+      "part_of_speech": "品詞（wordの場合のみ、例：noun, verb, adjective）",
+      "cefr_level": "A1/A2/B1/B2/C1/C2",
+      "example_en": "{target_language}の例文（日記の文脈を活用）",
+      "example_ko": "日本語の例文訳"
+    }}
+  ]
+}}
+
+ルール：
+1. 会話で言及された出来事、感情、人物、場所を含めてください。
+2. 日本語の日記は自然な日記体で書いてください。
+3. {target_language}翻訳は自然な{target_language}日記体で書いてください。
+4. 学習ポイント：単語（word）3〜5個 + フレーズ（phrase）2〜3個を抽出してください。
+5. 学習ポイントの難易度：ユーザーのレベルは{cefr_level}です。{cefr_range}範囲の単語/フレーズを優先してください。
+6. 例文は日記本文から取ってください。
+7. origin_fromは日記のtranslated_textに実際に登場した単語/フレーズの形をそのまま書いてください。
+8. JSONのみ返してください。他のテキストは含めないでください。""",
+
+    "zh": """你是一个根据对话内容写日记并提取学习要点的AI。
+
+综合给定的对话，返回以下格式的JSON：
+{{
+  "original_text": "中文日记（自然的日记体，1-3段）",
+  "translated_text": "{target_language}翻译（自然的{target_language}日记体）",
+  "learning_points": [
+    {{
+      "card_type": "word" 或 "phrase",
+      "content_en": "{target_language}单词或短语",
+      "origin_from": "日记中实际出现的形态（例：working, went, on my own 等）",
+      "content_ko": "中文意思",
+      "part_of_speech": "词性（仅word时，例：noun, verb, adjective）",
+      "cefr_level": "A1/A2/B1/B2/C1/C2",
+      "example_en": "{target_language}例句（利用日记语境）",
+      "example_ko": "中文例句翻译"
+    }}
+  ]
+}}
+
+规则：
+1. 包含对话中提到的事件、情感、人物、地点。
+2. 中文日记用自然的日记体写。
+3. {target_language}翻译用自然的{target_language}日记体写。
+4. 学习要点：提取3-5个单词（word）+ 2-3个短语（phrase）。
+5. 学习要点难度：用户水平是{cefr_level}。优先提取{cefr_range}范围的单词/短语。
+6. 例句从日记正文中取。
+7. origin_from必须是日记translated_text中实际出现的单词/短语形态，原样填写。
+8. 只返回JSON。不要包含其他文字。""",
+
+    "es": """Eres una IA que escribe entradas de diario y extrae puntos de aprendizaje de conversaciones.
+
+Resume la conversación dada y devuelve JSON en este formato:
+{{
+  "original_text": "Diario en español (estilo natural de diario, 1-3 párrafos)",
+  "translated_text": "Traducción en {target_language} (estilo natural de diario en {target_language})",
+  "learning_points": [
+    {{
+      "card_type": "word" o "phrase",
+      "content_en": "palabra o frase en {target_language}",
+      "origin_from": "forma exacta tal como aparece en el diario (ej: working, went, on my own)",
+      "content_ko": "significado en español",
+      "part_of_speech": "categoría gramatical (solo para word, ej: noun, verb, adjective)",
+      "cefr_level": "A1/A2/B1/B2/C1/C2",
+      "example_en": "oración de ejemplo en {target_language} (del contexto del diario)",
+      "example_ko": "traducción al español del ejemplo"
+    }}
+  ]
+}}
+
+Reglas:
+1. Incluye eventos, emociones, personas y lugares mencionados en la conversación.
+2. Escribe el diario en español con un estilo natural de diario.
+3. Escribe la traducción en {target_language} con un estilo natural de diario.
+4. Puntos de aprendizaje: extrae 3-5 palabras (word) + 2-3 frases (phrase).
+5. Dificultad: el nivel del usuario es {cefr_level}. Prioriza palabras/frases en el rango {cefr_range}.
+6. Usa oraciones de ejemplo del texto del diario.
+7. origin_from debe ser la forma exacta de la palabra/frase tal como aparece en el translated_text del diario.
+8. Devuelve solo JSON. No incluyas ningún otro texto.""",
+}
+
+# ---------------------------------------------------------------------------
+# CEFR level → recommended learning range
+# ---------------------------------------------------------------------------
+_CEFR_LEARNING_RANGE: Dict[str, str] = {
+    "A1": "A1",
+    "A2": "A1~A2",
+    "B1": "A2~B1",
+    "B2": "B1~B2",
+    "C1": "B2~C1",
+    "C2": "C1~C2",
+}
+
+# ---------------------------------------------------------------------------
 # Default fallback
 # ---------------------------------------------------------------------------
 _DEFAULT_LANG = "ko"
@@ -497,3 +664,33 @@ def build_learning_user_prompt(native_lang: str, target_lang: str, text: str) ->
     lang = _resolve_lang(native_lang)
     target_name = _get_target_name(native_lang, target_lang)
     return LEARNING_USER_PROMPTS[lang].format(target_language=target_name, text=text)
+
+
+def build_diary_with_learning_prompt(
+    native_lang: str,
+    target_lang: str,
+    cefr_level: Optional[str] = None,
+) -> str:
+    """Build combined diary + learning points system prompt.
+
+    Merges diary generation and learning point extraction into a single prompt
+    so that only one LLM call is needed.
+    """
+    lang = _resolve_lang(native_lang)
+    target_name = _get_target_name(native_lang, target_lang)
+    cefr = (cefr_level or "B1").upper()
+    cefr_range = _CEFR_LEARNING_RANGE.get(cefr, "A2~B1")
+    template = DIARY_WITH_LEARNING_PROMPTS[lang]
+    return template.format(
+        target_language=target_name,
+        cefr_level=cefr,
+        cefr_range=cefr_range,
+    )
+
+
+def build_diary_with_learning_user_prompt(native_lang: str, conversation_text: str) -> str:
+    """Build the user message for combined diary + learning generation.
+
+    Reuses the existing DIARY_USER_PROMPTS templates.
+    """
+    return build_diary_user_prompt(native_lang, conversation_text)

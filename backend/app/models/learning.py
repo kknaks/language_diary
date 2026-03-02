@@ -18,6 +18,7 @@ class LearningCard(Base):
     diary_id: Mapped[int] = mapped_column(ForeignKey("diaries.id", ondelete="CASCADE"), nullable=False)
     card_type: Mapped[str] = mapped_column(String(10), nullable=False)  # word / phrase / sentence
     content_en: Mapped[str] = mapped_column(Text, nullable=False)
+    origin_from: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
     content_ko: Mapped[str] = mapped_column(Text, nullable=False)
     part_of_speech: Mapped[Optional[str]] = mapped_column(String(20))
     cefr_level: Mapped[Optional[str]] = mapped_column(String(5))

@@ -252,8 +252,9 @@ class ConversationService:
     async def finish_conversation(
         self, session_id: str, user_id: Optional[int] = None,
         native_lang: str = "ko", target_lang: str = "en",
+        cefr_level: Optional[str] = None,
     ) -> DiaryDetailResponse:
-        """Finish conversation: generate diary + learning points.
+        """Finish conversation: generate diary + learning points in a single LLM call.
 
         Returns the created diary with learning cards.
         """
@@ -285,13 +286,22 @@ class ConversationService:
             for m in messages
         ]
 
-        # Generate diary
+        # Generate diary + learning points in a single LLM call
         try:
-            diary_data = await self.ai.generate_diary(
-                history, native_lang=native_lang, target_lang=target_lang,
+            result = await self.ai.generate_diary_with_learning(
+                history,
+                native_lang=native_lang,
+                target_lang=target_lang,
+                cefr_level=cefr_level,
             )
         except AIServiceError as e:
             raise TranslationFailedError(detail=str(e))
+
+        diary_data = {
+            "original_text": result.get("original_text", ""),
+            "translated_text": result.get("translated_text", ""),
+        }
+        learning_points_raw = result.get("learning_points", [])
 
         # Create diary in DB — use the session owner's user_id
         diary = Diary(
@@ -304,22 +314,13 @@ class ConversationService:
         await self.db.flush()
         await self.db.refresh(diary)
 
-        # Extract learning points
-        try:
-            learning_points = await self.ai.extract_learning_points(
-                diary_data.get("translated_text", ""),
-                native_lang=native_lang,
-                target_lang=target_lang,
-            )
-        except AIServiceError as e:
-            raise TranslationFailedError(detail=str(e))
-
         cards = []
-        for i, lp in enumerate(learning_points):
+        for i, lp in enumerate(learning_points_raw):
             card = LearningCard(
                 diary_id=diary.id,
                 card_type=lp.get("card_type", "word"),
                 content_en=lp.get("content_en", ""),
+                origin_from=lp.get("origin_from"),
                 content_ko=lp.get("content_ko", ""),
                 part_of_speech=lp.get("part_of_speech"),
                 cefr_level=lp.get("cefr_level"),
@@ -355,6 +356,7 @@ class ConversationService:
         self, session_id: str, messages: List[Dict[str, str]],
         user_id: Optional[int] = None,
         native_lang: str = "ko", target_lang: str = "en",
+        cefr_level: Optional[str] = None,
     ) -> "DiaryDetailResponse":
         """Save externally-provided messages, then generate diary + learning cards.
 
@@ -397,6 +399,7 @@ class ConversationService:
         # Reuse finish_conversation logic
         return await self.finish_conversation(
             session_id, native_lang=native_lang, target_lang=target_lang,
+            cefr_level=cefr_level,
         )
 
     def _validate_session_active(self, session: ConversationSession) -> None:

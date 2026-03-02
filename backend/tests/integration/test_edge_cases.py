@@ -55,11 +55,11 @@ async def test_max_turns_auto_finish(client, seed_user):
     mock_ai = AsyncMock()
     mock_ai.get_first_message = AsyncMock(return_value="오늘 뭐 했어?")
     mock_ai.get_reply_streaming = _make_streaming_reply("그래? 더 알려줘!")
-    mock_ai.generate_diary = AsyncMock(return_value={
+    mock_ai.generate_diary_with_learning = AsyncMock(return_value={
         "original_text": "자동 완성 일기",
         "translated_text": "Auto-completed diary",
+        "learning_points": [],
     })
-    mock_ai.extract_learning_points = AsyncMock(return_value=[])
 
     mock_tts_bytes = b"fake-mp3-bytes"
 

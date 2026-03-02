@@ -8,6 +8,7 @@ class LearningCardResponse(BaseModel):
     id: int
     card_type: str
     content_en: str
+    origin_from: Optional[str] = None
     content_ko: str
     part_of_speech: Optional[str] = None
     cefr_level: Optional[str] = None

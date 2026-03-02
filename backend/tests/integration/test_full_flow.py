@@ -89,6 +89,11 @@ MOCK_LEARNING_POINTS = [
     },
 ]
 
+MOCK_DIARY_WITH_LEARNING = {
+    **MOCK_DIARY,
+    "learning_points": MOCK_LEARNING_POINTS,
+}
+
 SAMPLE_GPT4O_RESULT = {
     "overall_score": 85.0,
     "accuracy_score": 88.0,
@@ -112,8 +117,7 @@ async def test_full_conversation_to_learning_flow(client, seed_user, tmp_path):
     mock_ai = AsyncMock()
     mock_ai.get_first_message = AsyncMock(return_value="오늘 하루 어땠어?")
     mock_ai.get_reply_streaming = AsyncMock()
-    mock_ai.generate_diary = AsyncMock(return_value=MOCK_DIARY)
-    mock_ai.extract_learning_points = AsyncMock(return_value=MOCK_LEARNING_POINTS)
+    mock_ai.generate_diary_with_learning = AsyncMock(return_value=MOCK_DIARY_WITH_LEARNING)
 
     # Two streaming replies
     reply_count = 0
@@ -251,11 +255,11 @@ async def test_diary_edit_after_creation(client, seed_user):
     """Integration: create diary via WS conversation, then edit it."""
     mock_ai = AsyncMock()
     mock_ai.get_first_message = AsyncMock(return_value="오늘 어땠어?")
-    mock_ai.generate_diary = AsyncMock(return_value={
+    mock_ai.generate_diary_with_learning = AsyncMock(return_value={
         "original_text": "원래 일기 내용",
         "translated_text": "Original diary content",
+        "learning_points": [],
     })
-    mock_ai.extract_learning_points = AsyncMock(return_value=[])
 
     mock_tts_bytes = b"fake-mp3-bytes"
 
@@ -295,11 +299,11 @@ async def test_diary_complete_and_delete_flow(client, seed_user):
     """Integration: create diary → mark complete → soft delete → not in list."""
     mock_ai = AsyncMock()
     mock_ai.get_first_message = AsyncMock(return_value="오늘 어땠어?")
-    mock_ai.generate_diary = AsyncMock(return_value={
+    mock_ai.generate_diary_with_learning = AsyncMock(return_value={
         "original_text": "삭제할 일기",
         "translated_text": "Diary to delete",
+        "learning_points": [],
     })
-    mock_ai.extract_learning_points = AsyncMock(return_value=[])
 
     mock_tts_bytes = b"fake-mp3-bytes"
 
