@@ -273,6 +273,22 @@ export default function WriteScreen() {
   // --- Active conversation: Voice Orb UI ---
   const canFinish = messages.length >= 2 && !isCreatingDiary;
 
+  // 현재 voiceState 기준으로 표시할 메시지 필터링
+  const visibleMessages = (() => {
+    if (voiceState === 'ai_speaking') {
+      // AI 말할 때: 마지막 AI 메시지만
+      const lastAi = [...messages].reverse().find(m => m.role === 'assistant');
+      return lastAi ? [lastAi] : [];
+    } else if (voiceState === 'listening') {
+      // 내가 말할 때: 마지막 user 메시지만 (없으면 마지막 AI 메시지)
+      const lastUser = [...messages].reverse().find(m => m.role === 'user');
+      return lastUser ? [lastUser] : [];
+    } else {
+      // idle 등: 마지막 메시지만
+      return messages.length > 0 ? [messages[messages.length - 1]] : [];
+    }
+  })();
+
   return (
     <SafeAreaView style={styles.container} edges={['top']}>
       {/* Error banner (dismissible) */}
@@ -297,7 +313,7 @@ export default function WriteScreen() {
 
       {/* Message bubbles (dev) */}
       <ScrollView style={styles.messageArea} contentContainerStyle={styles.messageContent}>
-        {messages.map((msg) => (
+        {visibleMessages.map((msg) => (
           <View
             key={msg.id}
             style={[styles.bubble, msg.role === 'user' ? styles.userBubble : styles.aiBubble]}
@@ -307,7 +323,7 @@ export default function WriteScreen() {
             </Text>
           </View>
         ))}
-        {interimText ? (
+        {voiceState === 'listening' && interimText ? (
           <View style={[styles.bubble, styles.userBubble, styles.interimBubble]}>
             <Text style={[styles.bubbleText, styles.userBubbleText, styles.interimText]}>
               {interimText}
@@ -323,13 +339,15 @@ export default function WriteScreen() {
 
       {/* Bottom controls */}
       <View style={styles.controls}>
-        {isActive && voiceState === 'ai_speaking' && (
+        {isActive && (
           <Button
             title="끼어들기"
             onPress={() => sendBargeIn()}
             variant="secondary"
             size="lg"
-            icon={<Ionicons name="mic" size={16} color="#ffffff" />}
+            disabled={voiceState === 'listening'}
+            icon={<Ionicons name="mic" size={16} color={voiceState === 'listening' ? '#999999' : '#ffffff'} />}
+            style={{ flex: 1 }}
           />
         )}
         {isActive && (
@@ -340,6 +358,7 @@ export default function WriteScreen() {
             size="lg"
             disabled={!canFinish}
             icon={<Ionicons name="checkmark-done" size={16} color={canFinish ? colors.primary : colors.textTertiary} />}
+            style={{ flex: 1 }}
           />
         )}
       </View>
@@ -462,7 +481,8 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
-    gap: spacing.lg,
+    gap: 8,
+    paddingHorizontal: 16,
     paddingVertical: spacing.md,
     paddingBottom: spacing.xl,
     backgroundColor: colors.background,
