@@ -5,6 +5,7 @@ import { LearningCard as LearningCardType } from '../../types';
 import { colors, fontSize, spacing, borderRadius, shadows } from '../../constants/theme';
 import { useAudioPlayer } from '../../hooks/useAudioPlayer';
 import { usePronunciation } from '../../hooks/usePronunciation';
+import { API_BASE_URL } from '../../services/api';
 import CefrBadge from './CefrBadge';
 import PronunciationResultView from './PronunciationResult';
 
@@ -31,7 +32,10 @@ export default function LearningCard({ card }: LearningCardProps) {
       audio.resume();
     } else if (card.audio_url) {
       // 백그라운드 TTS 생성 완료 → 캐시된 파일 바로 재생 (API 호출 없음)
-      audio.playFromUrl(card.audio_url);
+      const url = card.audio_url.startsWith('http')
+        ? card.audio_url
+        : `${API_BASE_URL}${card.audio_url}`;
+      audio.playFromUrl(url);
     } else {
       // fallback: 실시간 TTS API 호출
       audio.play(card.content_en);
