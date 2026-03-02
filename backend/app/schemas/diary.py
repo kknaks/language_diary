@@ -14,6 +14,7 @@ class LearningCardResponse(BaseModel):
     cefr_level: Optional[str] = None
     example_en: Optional[str] = None
     example_ko: Optional[str] = None
+    audio_url: Optional[str] = None
     card_order: int
 
     model_config = {"from_attributes": True}
@@ -41,6 +42,7 @@ class DiaryResponse(BaseModel):
 
 class DiaryDetailResponse(DiaryResponse):
     learning_cards: List[LearningCardResponse] = []
+    task_id: Optional[str] = None
 
 
 class DiaryListResponse(BaseModel):

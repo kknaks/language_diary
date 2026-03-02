@@ -7,6 +7,7 @@ from app.models.tts_cache import TTSCache
 from app.models.seed import Language, Avatar, Voice
 from app.models.profile import UserProfile
 from app.models.auth import RefreshToken, UserLanguageLevel
+from app.models.background_task import BackgroundTask
 
 __all__ = [
     "Base",
@@ -23,4 +24,5 @@ __all__ = [
     "UserProfile",
     "RefreshToken",
     "UserLanguageLevel",
+    "BackgroundTask",
 ]
