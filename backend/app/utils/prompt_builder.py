@@ -3,7 +3,7 @@
 Supports: ko (한국어), en (English), ja (日本語), zh (中文), es (Español)
 """
 
-from typing import Any, Dict, Optional
+from typing import Dict, Optional
 
 # ---------------------------------------------------------------------------
 # Language display names (used inside prompts)
