@@ -15,7 +15,7 @@ class UserRepository:
     async def get_by_id(self, user_id: int) -> Optional[User]:
         result = await self.db.execute(
             select(User)
-            .where(User.id == user_id)
+            .where(User.id == user_id, User.deleted_at.is_(None))
             .options(selectinload(User.profile))
         )
         return result.scalar_one_or_none()
@@ -23,14 +23,14 @@ class UserRepository:
     async def find_by_social(self, provider: str, social_id: str) -> Optional[User]:
         result = await self.db.execute(
             select(User)
-            .where(User.social_provider == provider, User.social_id == social_id)
+            .where(User.social_provider == provider, User.social_id == social_id, User.deleted_at.is_(None))
             .options(selectinload(User.profile))
         )
         return result.scalar_one_or_none()
 
     async def find_by_email(self, email: str) -> Optional[User]:
         result = await self.db.execute(
-            select(User).where(User.email == email)
+            select(User).where(User.email == email, User.deleted_at.is_(None))
         )
         return result.scalar_one_or_none()
 

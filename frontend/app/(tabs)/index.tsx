@@ -17,8 +17,12 @@ import { homeApi } from '../../src/services/api';
 import { HomeResponse, HomeDiary } from '../../src/types/home';
 import { useAvatarStore } from '../../src/stores/useAvatarStore';
 import { Button, ScreenHeader } from '../../src/components/common';
+import { DiaryDetailView } from '../../src/components/diary';
+import { LearningView } from '../../src/components/learning';
 import { Live2DAvatar } from '../../src/components/conversation';
 import { colors, fontSize, spacing, borderRadius, shadows } from '../../src/constants/theme';
+
+type Screen = 'main' | 'diary' | 'learning';
 
 function formatDate(iso: string): string {
   const d = new Date(iso);
@@ -50,6 +54,10 @@ export default function HomeScreen() {
   const [error, setError] = useState<string | null>(null);
   const [refreshing, setRefreshing] = useState(false);
 
+  // State-based sub-screen navigation
+  const [screen, setScreen] = useState<Screen>('main');
+  const [selectedDiaryId, setSelectedDiaryId] = useState<number | null>(null);
+
   const loadHome = useCallback(async () => {
     try {
       setError(null);
@@ -78,6 +86,26 @@ export default function HomeScreen() {
   const handleWrite = () => {
     router.push('/(tabs)/write');
   };
+
+  // Sub-screen rendering
+  if (screen === 'learning' && selectedDiaryId) {
+    return (
+      <LearningView
+        diaryId={selectedDiaryId}
+        onBack={() => setScreen('diary')}
+        onGoHome={() => setScreen('main')}
+      />
+    );
+  }
+  if (screen === 'diary' && selectedDiaryId) {
+    return (
+      <DiaryDetailView
+        diaryId={selectedDiaryId}
+        onBack={() => { setScreen('main'); setSelectedDiaryId(null); }}
+        onStartLearning={() => setScreen('learning')}
+      />
+    );
+  }
 
   // Loading state
   if (isLoading) {
@@ -192,7 +220,7 @@ export default function HomeScreen() {
               <TouchableOpacity
                 key={diary.id}
                 style={styles.diaryItem}
-                onPress={() => router.push(`/diary/${diary.id}`)}
+                onPress={() => { setSelectedDiaryId(diary.id); setScreen('diary'); }}
                 activeOpacity={0.7}
               >
                 <View style={styles.diaryTop}>

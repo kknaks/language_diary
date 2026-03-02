@@ -24,7 +24,7 @@ class HomeService:
         # 1. user + profile + avatar + target_language
         result = await db.execute(
             select(User)
-            .where(User.id == user_id)
+            .where(User.id == user_id, User.deleted_at.is_(None))
             .options(
                 selectinload(User.profile).selectinload(UserProfile.target_language),
                 selectinload(User.profile).selectinload(UserProfile.avatar),

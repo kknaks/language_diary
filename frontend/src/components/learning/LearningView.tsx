@@ -1,18 +1,22 @@
 import React, { useEffect, useState, useCallback } from 'react';
-import { View, Text, StyleSheet } from 'react-native';
-import { useLocalSearchParams, useRouter } from 'expo-router';
+import { View, Text, StyleSheet, TouchableOpacity } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
+import { Ionicons } from '@expo/vector-icons';
 
-import { colors, fontSize, spacing, borderRadius } from '../../src/constants/theme';
-import { Loading, ErrorState } from '../../src/components/common';
-import { CardSwiper, LearningComplete } from '../../src/components/learning';
-import { getDiary, completeDiary } from '../../src/services/api';
-import { Diary, LearningCard } from '../../src/types';
+import { colors, fontSize, spacing, borderRadius } from '../../constants/theme';
+import { Loading, ErrorState, ScreenHeader } from '../common';
+import CardSwiper from './CardSwiper';
+import LearningComplete from './LearningComplete';
+import { getDiary, completeDiary } from '../../services/api';
+import { Diary } from '../../types';
 
-export default function LearningScreen() {
-  const { id } = useLocalSearchParams<{ id: string }>();
-  const router = useRouter();
+interface LearningViewProps {
+  diaryId: number;
+  onBack: () => void;
+  onGoHome: () => void;
+}
 
+export default function LearningView({ diaryId, onBack, onGoHome }: LearningViewProps) {
   const [diary, setDiary] = useState<Diary | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -20,18 +24,18 @@ export default function LearningScreen() {
   const [isComplete, setIsComplete] = useState(false);
 
   const fetchDiary = useCallback(async () => {
-    if (!id) return;
+    if (!diaryId) return;
     setIsLoading(true);
     setError(null);
     try {
-      const data = await getDiary(id);
+      const data = await getDiary(diaryId);
       setDiary(data);
     } catch {
       setError('학습 데이터를 불러올 수 없습니다');
     } finally {
       setIsLoading(false);
     }
-  }, [id]);
+  }, [diaryId]);
 
   useEffect(() => {
     fetchDiary();
@@ -44,7 +48,6 @@ export default function LearningScreen() {
     (index: number) => {
       setCurrentIndex(index);
       if (index === totalCards - 1) {
-        // Last card reached — mark complete after a moment
         setTimeout(() => setIsComplete(true), 500);
       }
     },
@@ -52,15 +55,11 @@ export default function LearningScreen() {
   );
 
   const handleComplete = useCallback(async () => {
-    if (id) {
-      await completeDiary(id);
+    if (diaryId) {
+      await completeDiary(diaryId);
     }
     setIsComplete(true);
-  }, [id]);
-
-  const handleGoHome = useCallback(() => {
-    router.replace('/(tabs)');
-  }, [router]);
+  }, [diaryId]);
 
   const handleReviewAgain = useCallback(() => {
     setCurrentIndex(0);
@@ -74,17 +73,24 @@ export default function LearningScreen() {
     return <ErrorState message="학습 포인트가 없습니다" />;
   }
 
-  // Count by type
   const countByType = (type: string) => cards.filter((c) => c.card_type === type).length;
 
   if (isComplete) {
     return (
       <SafeAreaView style={styles.container} edges={['top']}>
+        <ScreenHeader
+          title="학습"
+          left={
+            <TouchableOpacity onPress={onBack} hitSlop={8}>
+              <Ionicons name="chevron-back" size={24} color={colors.text} />
+            </TouchableOpacity>
+          }
+        />
         <LearningComplete
           wordCount={countByType('word')}
           phraseCount={countByType('phrase')}
           sentenceCount={countByType('sentence')}
-          onGoHome={handleGoHome}
+          onGoHome={onGoHome}
           onReviewAgain={handleReviewAgain}
         />
       </SafeAreaView>
@@ -93,6 +99,15 @@ export default function LearningScreen() {
 
   return (
     <SafeAreaView style={styles.container} edges={['top']}>
+      <ScreenHeader
+        title="학습"
+        left={
+          <TouchableOpacity onPress={onBack} hitSlop={8}>
+            <Ionicons name="chevron-back" size={24} color={colors.text} />
+          </TouchableOpacity>
+        }
+      />
+
       {/* English diary text at top */}
       <View style={styles.diarySection}>
         <Text style={styles.diaryText} numberOfLines={3}>

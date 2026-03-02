@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useRef } from 'react';
+import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { View, Text, StyleSheet, TouchableOpacity, ScrollView } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
@@ -6,6 +6,8 @@ import { useRouter } from 'expo-router';
 
 import { colors, fontSize, spacing } from '../../src/constants/theme';
 import { Button, ScreenHeader } from '../../src/components/common';
+import { DiaryDetailView } from '../../src/components/diary';
+import { LearningView } from '../../src/components/learning';
 import {
   DiaryCreatingOverlay,
   Live2DAvatar,
@@ -16,6 +18,8 @@ import { useConversationStore } from '../../src/stores/useConversationStore';
 import { useAvatarStore } from '../../src/stores/useAvatarStore';
 import { useRealtimeRecorder } from '../../src/hooks/useRealtimeRecorder';
 import type { VADCallbacks } from '../../src/hooks/useRealtimeRecorder';
+
+type Screen = 'main' | 'diary' | 'learning';
 
 export default function WriteScreen() {
   const router = useRouter();
@@ -41,6 +45,10 @@ export default function WriteScreen() {
 
   const { avatars, selectedAvatarId } = useAvatarStore();
   const selectedAvatar = avatars.find((a) => a.id === selectedAvatarId);
+
+  // State-based sub-screen navigation
+  const [screen, setScreen] = useState<Screen>('main');
+  const [selectedDiaryId, setSelectedDiaryId] = useState<number | null>(null);
 
   const isActive = !!sessionId && !createdDiary;
   const volumeIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
@@ -159,6 +167,7 @@ export default function WriteScreen() {
       // AI is speaking — clear silence timer
       clearSilenceTimer();
     } else if (voiceState === 'idle') {
+      stopStreamingRef.current();
       micStartedRef.current = false;
       clearSilenceTimer();
     }
@@ -199,6 +208,26 @@ export default function WriteScreen() {
   const handleStartNew = useCallback(() => {
     reset();
   }, [reset]);
+
+  // Sub-screen rendering
+  if (screen === 'learning' && selectedDiaryId) {
+    return (
+      <LearningView
+        diaryId={selectedDiaryId}
+        onBack={() => setScreen('diary')}
+        onGoHome={() => { setScreen('main'); setSelectedDiaryId(null); }}
+      />
+    );
+  }
+  if (screen === 'diary' && selectedDiaryId) {
+    return (
+      <DiaryDetailView
+        diaryId={selectedDiaryId}
+        onBack={() => { setScreen('main'); setSelectedDiaryId(null); }}
+        onStartLearning={() => setScreen('learning')}
+      />
+    );
+  }
 
   // --- Idle state: show start conversation UI ---
   if (!sessionId && !isLoading) {
@@ -252,7 +281,8 @@ export default function WriteScreen() {
             onPress={() => {
               const diaryId = createdDiary.id;
               reset();
-              router.push(`/diary/${diaryId}`);
+              setSelectedDiaryId(diaryId);
+              setScreen('diary');
             }}
             size="lg"
             icon={<Ionicons name="document-text" size={18} color="#fff" />}

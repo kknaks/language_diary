@@ -1,4 +1,4 @@
-import React, { useEffect, useCallback, useMemo } from 'react';
+import React, { useEffect, useCallback, useMemo, useState } from 'react';
 import {
   View,
   Text,
@@ -12,9 +12,13 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { useDiaryStore } from '../../src/stores/useDiaryStore';
 import { Loading, ErrorState, EmptyState, ScreenHeader } from '../../src/components/common';
+import { DiaryDetailView } from '../../src/components/diary';
+import { LearningView } from '../../src/components/learning';
 import { DateHeader, DiaryListItem } from '../../src/components/history';
 import { Diary } from '../../src/types';
 import { colors, spacing } from '../../src/constants/theme';
+
+type Screen = 'main' | 'diary' | 'learning';
 
 interface DiarySection {
   title: string;
@@ -67,6 +71,10 @@ export default function HistoryScreen() {
     useDiaryStore();
   const [refreshing, setRefreshing] = React.useState(false);
 
+  // State-based sub-screen navigation
+  const [screen, setScreen] = useState<Screen>('main');
+  const [selectedDiaryId, setSelectedDiaryId] = useState<number | null>(null);
+
   useEffect(() => {
     fetchDiaries();
   }, []);
@@ -87,9 +95,10 @@ export default function HistoryScreen() {
 
   const handleDiaryPress = useCallback(
     (id: number) => {
-      router.push(`/diary/${id}`);
+      setSelectedDiaryId(id);
+      setScreen('diary');
     },
-    [router],
+    [],
   );
 
   const handleDelete = useCallback(
@@ -98,6 +107,26 @@ export default function HistoryScreen() {
     },
     [removeDiary],
   );
+
+  // Sub-screen rendering
+  if (screen === 'learning' && selectedDiaryId) {
+    return (
+      <LearningView
+        diaryId={selectedDiaryId}
+        onBack={() => setScreen('diary')}
+        onGoHome={() => setScreen('main')}
+      />
+    );
+  }
+  if (screen === 'diary' && selectedDiaryId) {
+    return (
+      <DiaryDetailView
+        diaryId={selectedDiaryId}
+        onBack={() => { setScreen('main'); setSelectedDiaryId(null); }}
+        onStartLearning={() => setScreen('learning')}
+      />
+    );
+  }
 
   if (isLoading && diaries.length === 0) {
     return <Loading message="일기 목록을 불러오는 중..." />;

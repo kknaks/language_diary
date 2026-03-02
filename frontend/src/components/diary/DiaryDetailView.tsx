@@ -1,30 +1,32 @@
 import React, { useEffect, useState, useCallback, useRef } from 'react';
-import { View, Text, ScrollView, StyleSheet, Alert, ViewStyle } from 'react-native';
-import { useLocalSearchParams, useRouter } from 'expo-router';
+import { View, Text, ScrollView, StyleSheet, Alert, ViewStyle, TouchableOpacity } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
+import { SafeAreaView } from 'react-native-safe-area-context';
 
-import { colors, fontSize, spacing, borderRadius, shadows } from '../../src/constants/theme';
-import { Button, Loading, ErrorState } from '../../src/components/common';
-import { DiaryEditor, HighlightedText, LanguageToggle } from '../../src/components/diary';
-import { CefrBadge } from '../../src/components/learning';
-import { getDiary, updateDiary, getConversationMessages, getTaskStatus } from '../../src/services/api';
-import { useDiaryStore } from '../../src/stores/useDiaryStore';
-import { Diary, Message } from '../../src/types';
+import { colors, fontSize, spacing, borderRadius, shadows } from '../../constants/theme';
+import { Button, Loading, ErrorState, ScreenHeader } from '../common';
+import HighlightedText from './HighlightedText';
+import LanguageToggle from './LanguageToggle';
+import CefrBadge from '../learning/CefrBadge';
+import { getDiary, getConversationMessages, getTaskStatus } from '../../services/api';
+import { useDiaryStore } from '../../stores/useDiaryStore';
+import { Diary, Message } from '../../types';
 
 type Language = 'ko' | 'en';
 
-export default function DiaryDetailScreen() {
-  const { id: idParam } = useLocalSearchParams<{ id: string }>();
-  const id = Number(idParam);
-  const router = useRouter();
+interface DiaryDetailViewProps {
+  diaryId: number;
+  onBack: () => void;
+  onStartLearning: (id: number) => void;
+}
+
+export default function DiaryDetailView({ diaryId, onBack, onStartLearning }: DiaryDetailViewProps) {
   const removeDiary = useDiaryStore((s) => s.removeDiary);
 
   const [diary, setDiary] = useState<Diary | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [language, setLanguage] = useState<Language>('en');
-  const [isEditing, setIsEditing] = useState(false);
-  const [isSaving, setIsSaving] = useState(false);
 
   // Conversation messages
   const [conversationMessages, setConversationMessages] = useState<Message[]>([]);
@@ -35,24 +37,21 @@ export default function DiaryDetailScreen() {
   const [ttsProgress, setTtsProgress] = useState<{ progress: number; total: number } | null>(null);
   const taskPollingRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
-
   const fetchDiary = useCallback(async () => {
-    if (!id) return;
+    if (!diaryId) return;
     setIsLoading(true);
     setError(null);
     try {
-      const data = await getDiary(id);
+      const data = await getDiary(diaryId);
       setDiary(data);
-      // Fetch conversation messages if available
       if (data.conversation_id) {
         try {
           const msgs = await getConversationMessages(String(data.conversation_id));
           setConversationMessages(msgs);
         } catch {
-          // Non-critical: conversation messages are optional
+          // Non-critical
         }
       }
-      // Check if TTS is already done (audio_url populated)
       const allReady = data.learning_cards.length > 0 &&
         data.learning_cards.every((c) => c.audio_url !== null && c.audio_url !== undefined);
       if (allReady) {
@@ -63,93 +62,64 @@ export default function DiaryDetailScreen() {
     } finally {
       setIsLoading(false);
     }
-  }, [id]);
+  }, [diaryId]);
 
-  // Task polling: track TTS background generation progress
   const startTaskPolling = useCallback((taskId: string) => {
     if (taskPollingRef.current) clearInterval(taskPollingRef.current);
-    console.log(`[TTS Polling] Starting polling for taskId=${taskId}`);
 
     taskPollingRef.current = setInterval(async () => {
       try {
         const task = await getTaskStatus(taskId);
-        console.log(`[TTS Polling] taskId=${taskId} status=${task.status} progress=${task.progress}/${task.total}`);
         setTtsProgress({ progress: task.progress, total: task.total });
 
         if (task.status === 'completed') {
-          console.log(`[TTS Polling] Task completed! Refreshing diary...`);
           if (taskPollingRef.current) clearInterval(taskPollingRef.current);
           taskPollingRef.current = null;
           setTtsReady(true);
           setTtsProgress(null);
-          // Refresh diary to get updated audio_url on each card
-          const refreshed = await getDiary(id);
-          console.log(`[TTS Polling] Diary refreshed. Cards with audio: ${refreshed.learning_cards.filter(c => c.audio_url).length}/${refreshed.learning_cards.length}`);
+          const refreshed = await getDiary(diaryId);
           setDiary(refreshed);
         } else if (task.status === 'failed') {
-          console.warn(`[TTS Polling] Task failed! error=${task.error ?? 'unknown'}`);
           if (taskPollingRef.current) clearInterval(taskPollingRef.current);
           taskPollingRef.current = null;
           setTtsProgress(null);
-          // Still allow learning even if TTS fails
           setTtsReady(true);
         }
       } catch (err) {
         console.error(`[TTS Polling] Polling error:`, err);
       }
     }, 2000);
-  }, [id]);
+  }, [diaryId]);
 
   useEffect(() => {
     fetchDiary();
   }, [fetchDiary]);
 
-  // Start polling when diary loads and task_id is present
   useEffect(() => {
     if (!diary) return;
     const allReady = diary.learning_cards.length > 0 &&
       diary.learning_cards.every((c) => c.audio_url !== null && c.audio_url !== undefined);
     if (allReady) {
-      console.log(`[TTS Polling] All ${diary.learning_cards.length} cards already have audio. Skipping polling.`);
       setTtsReady(true);
       return;
     }
     if (diary.task_id && !ttsReady) {
-      console.log(`[TTS Polling] Diary loaded with task_id=${diary.task_id}, cards=${diary.learning_cards.length}, starting poll...`);
       startTaskPolling(diary.task_id);
-    } else {
-      console.log(`[TTS Polling] No polling needed. task_id=${diary.task_id ?? 'none'}, ttsReady=${ttsReady}`);
     }
     return () => {
       if (taskPollingRef.current) {
-        console.log(`[TTS Polling] Cleanup: stopping polling`);
         clearInterval(taskPollingRef.current);
       }
     };
   }, [diary?.task_id]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  const handleSave = useCallback(async (text: string) => {
-    if (!diary || !id) return;
-    setIsSaving(true);
-    try {
-      const field = language === 'ko' ? 'original_text' : 'translated_text';
-      const updated = await updateDiary(id, { [field]: text });
-      setDiary(updated);
-      setIsEditing(false);
-    } catch {
-      // Keep editing on error
-    } finally {
-      setIsSaving(false);
-    }
-  }, [diary, id, language]);
-
   const handleStartLearning = useCallback(() => {
-    if (!id) return;
-    router.push(`/learning/${id}`);
-  }, [id, router]);
+    if (!diaryId) return;
+    onStartLearning(diaryId);
+  }, [diaryId, onStartLearning]);
 
   const handleDelete = useCallback(() => {
-    if (!id) return;
+    if (!diaryId) return;
     Alert.alert(
       '일기 삭제',
       '이 일기를 삭제하시겠습니까?\n삭제된 일기는 복구할 수 없습니다.',
@@ -159,23 +129,13 @@ export default function DiaryDetailScreen() {
           text: '삭제',
           style: 'destructive',
           onPress: async () => {
-            await removeDiary(id);
-            router.back();
+            await removeDiary(diaryId);
+            onBack();
           },
         },
       ],
     );
-  }, [id, removeDiary, router]);
-
-  // Debug: highlight data
-  useEffect(() => {
-    if (diary && language === 'en' && diary.learning_cards.length > 0) {
-      console.log('[Highlight] text:', (diary.translated_text ?? '').slice(0, 80));
-      console.log('[Highlight] origin_from values:', diary.learning_cards.map((c) => c.origin_from));
-      console.log('[Highlight] content_en values:', diary.learning_cards.map((c) => c.content_en));
-      console.log('[Highlight] final highlights:', diary.learning_cards.map((c) => c.origin_from ?? c.content_en));
-    }
-  }, [language, diary]);
+  }, [diaryId, removeDiary, onBack]);
 
   if (isLoading) return <Loading message="일기를 불러오는 중..." />;
   if (error || !diary) return <ErrorState message={error ?? '일기를 찾을 수 없습니다'} onRetry={fetchDiary} />;
@@ -186,25 +146,26 @@ export default function DiaryDetailScreen() {
     : (diary.title_translated ?? diary.translated_text?.split('\n')[0]?.slice(0, 30) ?? '');
 
   return (
-    <ScrollView style={styles.container} contentContainerStyle={styles.content}>
-      {/* Language Toggle */}
-      <LanguageToggle selected={language} onSelect={setLanguage} />
+    <SafeAreaView style={styles.container} edges={['top']}>
+      <ScreenHeader
+        title="일기 상세"
+        left={
+          <TouchableOpacity onPress={onBack} hitSlop={8}>
+            <Ionicons name="chevron-back" size={24} color={colors.text} />
+          </TouchableOpacity>
+        }
+      />
+      <ScrollView style={styles.scroll} contentContainerStyle={styles.content}>
+        {/* Language Toggle */}
+        <LanguageToggle selected={language} onSelect={setLanguage} />
 
-      {/* Title */}
-      <Text style={styles.title} role="heading">{currentTitle}</Text>
+        {/* Title */}
+        <Text style={styles.title} role="heading">{currentTitle}</Text>
 
-      {/* Date */}
-      <Text style={styles.date}>{formatDate(diary.created_at)}</Text>
+        {/* Date */}
+        <Text style={styles.date}>{formatDate(diary.created_at)}</Text>
 
-      {/* Content */}
-      {isEditing ? (
-        <DiaryEditor
-          initialText={currentText}
-          onSave={handleSave}
-          onCancel={() => setIsEditing(false)}
-          saving={isSaving}
-        />
-      ) : (
+        {/* Content */}
         <View style={styles.contentCard}>
           {language === 'en' && diary.learning_cards.length > 0 ? (
             <HighlightedText
@@ -215,105 +176,96 @@ export default function DiaryDetailScreen() {
           ) : (
             <Text style={styles.contentText}>{currentText}</Text>
           )}
-          <Button
-            title="수정하기"
-            onPress={() => setIsEditing(true)}
-            variant="ghost"
-            size="sm"
-            icon={<Ionicons name="pencil" size={16} color={colors.primary} />}
-            style={styles.editButton}
-          />
         </View>
-      )}
 
-      {/* Conversation History */}
-      {conversationMessages.length > 0 && (
-        <View style={styles.section}>
-          <TouchableHeader
-            title="대화 기록"
-            icon="chatbubbles-outline"
-            isOpen={showConversation}
-            onToggle={() => setShowConversation(!showConversation)}
-            count={conversationMessages.length}
-          />
-          {showConversation && (
-            <View style={styles.conversationList}>
-              {conversationMessages.map((msg) => (
-                <View
-                  key={msg.id}
-                  style={[
-                    styles.messageBubble,
-                    msg.role === 'user' ? styles.userBubble : styles.aiBubble,
-                  ]}
-                >
-                  <Text style={styles.messageRole}>
-                    {msg.role === 'user' ? '나' : 'AI'}
-                  </Text>
-                  <Text style={styles.messageText}>{msg.content}</Text>
-                </View>
-              ))}
-            </View>
-          )}
-        </View>
-      )}
-
-      {/* Learning Cards Summary */}
-      {diary.learning_cards.length > 0 && (
-        <View style={styles.section}>
-          <View style={styles.sectionHeader}>
-            <View style={styles.sectionHeaderLeft}>
-              <Ionicons name="flash" size={20} color={colors.primary} />
-              <Text style={styles.sectionTitle}>
-                학습 포인트 {diary.learning_cards.length}개
-              </Text>
-            </View>
-          </View>
-
-          {/* Learning card previews */}
-          {diary.learning_cards.map((card) => (
-            <View key={card.id} style={styles.learningCardPreview}>
-              <View style={styles.learningCardHeader}>
-                <Text style={styles.learningCardEnglish}>{card.content_en}</Text>
-                <CefrBadge level={card.cefr_level ?? 'A2'} />
+        {/* Conversation History */}
+        {conversationMessages.length > 0 && (
+          <View style={styles.section}>
+            <TouchableHeader
+              title="대화 기록"
+              icon="chatbubbles-outline"
+              isOpen={showConversation}
+              onToggle={() => setShowConversation(!showConversation)}
+              count={conversationMessages.length}
+            />
+            {showConversation && (
+              <View style={styles.conversationList}>
+                {conversationMessages.map((msg) => (
+                  <View
+                    key={msg.id}
+                    style={[
+                      styles.messageBubble,
+                      msg.role === 'user' ? styles.userBubble : styles.aiBubble,
+                    ]}
+                  >
+                    <Text style={styles.messageRole}>
+                      {msg.role === 'user' ? '나' : 'AI'}
+                    </Text>
+                    <Text style={styles.messageText}>{msg.content}</Text>
+                  </View>
+                ))}
               </View>
-              <Text style={styles.learningCardKorean}>{card.content_ko}</Text>
-            </View>
-          ))}
+            )}
+          </View>
+        )}
 
-          {ttsProgress && !ttsReady ? (
-            <View style={styles.ttsProgressContainer}>
-              <Ionicons name="hourglass-outline" size={16} color={colors.textSecondary} />
-              <Text style={styles.ttsProgressText}>
-                학습 오디오 준비 중... ({ttsProgress.progress}/{ttsProgress.total})
-              </Text>
+        {/* Learning Cards Summary */}
+        {diary.learning_cards.length > 0 && (
+          <View style={styles.section}>
+            <View style={styles.sectionHeader}>
+              <View style={styles.sectionHeaderLeft}>
+                <Ionicons name="flash" size={20} color={colors.primary} />
+                <Text style={styles.sectionTitle}>
+                  학습 포인트 {diary.learning_cards.length}개
+                </Text>
+              </View>
             </View>
-          ) : null}
-          <Button
-            title={!ttsReady && diary.task_id ? '오디오 준비 중...' : '학습 시작'}
-            onPress={handleStartLearning}
-            size="lg"
-            disabled={!ttsReady && !!diary.task_id}
-            icon={
-              !ttsReady && diary.task_id
-                ? <Ionicons name="hourglass-outline" size={20} color="#fff" />
-                : <Ionicons name="school" size={20} color="#fff" />
-            }
-            style={StyleSheet.flatten([styles.learningButton, (!ttsReady && !!diary.task_id) ? styles.learningButtonDisabled : undefined]) as ViewStyle}
-          />
-        </View>
-      )}
 
-      {/* Delete button */}
-      <Button
-        title="일기 삭제"
-        onPress={handleDelete}
-        variant="ghost"
-        size="sm"
-        icon={<Ionicons name="trash-outline" size={16} color={colors.error} />}
-        textStyle={{ color: colors.error }}
-        style={styles.deleteButton}
-      />
-    </ScrollView>
+            {diary.learning_cards.map((card) => (
+              <View key={card.id} style={styles.learningCardPreview}>
+                <View style={styles.learningCardHeader}>
+                  <Text style={styles.learningCardEnglish}>{card.content_en}</Text>
+                  <CefrBadge level={card.cefr_level ?? 'A2'} />
+                </View>
+                <Text style={styles.learningCardKorean}>{card.content_ko}</Text>
+              </View>
+            ))}
+
+            {ttsProgress && !ttsReady ? (
+              <View style={styles.ttsProgressContainer}>
+                <Ionicons name="hourglass-outline" size={16} color={colors.textSecondary} />
+                <Text style={styles.ttsProgressText}>
+                  학습 오디오 준비 중... ({ttsProgress.progress}/{ttsProgress.total})
+                </Text>
+              </View>
+            ) : null}
+            <Button
+              title={!ttsReady && diary.task_id ? '오디오 준비 중...' : '학습 시작'}
+              onPress={handleStartLearning}
+              size="lg"
+              disabled={!ttsReady && !!diary.task_id}
+              icon={
+                !ttsReady && diary.task_id
+                  ? <Ionicons name="hourglass-outline" size={20} color="#fff" />
+                  : <Ionicons name="school" size={20} color="#fff" />
+              }
+              style={StyleSheet.flatten([styles.learningButton, (!ttsReady && !!diary.task_id) ? styles.learningButtonDisabled : undefined]) as ViewStyle}
+            />
+          </View>
+        )}
+
+        {/* Delete button */}
+        <Button
+          title="일기 삭제"
+          onPress={handleDelete}
+          variant="ghost"
+          size="sm"
+          icon={<Ionicons name="trash-outline" size={16} color={colors.error} />}
+          textStyle={{ color: colors.error }}
+          style={styles.deleteButton}
+        />
+      </ScrollView>
+    </SafeAreaView>
   );
 }
 
@@ -368,6 +320,9 @@ const styles = StyleSheet.create({
     flex: 1,
     backgroundColor: colors.background,
   },
+  scroll: {
+    flex: 1,
+  },
   content: {
     padding: spacing.lg,
     gap: spacing.md,
@@ -394,11 +349,6 @@ const styles = StyleSheet.create({
     color: colors.text,
     lineHeight: fontSize.md * 1.8,
   },
-  editButton: {
-    alignSelf: 'flex-end',
-    marginTop: spacing.sm,
-  },
-  // Sections
   section: {
     backgroundColor: colors.surface,
     borderRadius: borderRadius.lg,
@@ -420,7 +370,6 @@ const styles = StyleSheet.create({
     fontWeight: '600',
     color: colors.text,
   },
-  // Conversation messages
   conversationList: {
     marginTop: spacing.md,
     gap: spacing.sm,
@@ -449,7 +398,6 @@ const styles = StyleSheet.create({
     color: colors.text,
     lineHeight: fontSize.sm * 1.5,
   },
-  // Learning card previews
   learningCardPreview: {
     marginTop: spacing.sm,
     paddingTop: spacing.sm,
@@ -476,12 +424,10 @@ const styles = StyleSheet.create({
     width: '100%',
     marginTop: spacing.md,
   },
-  // Delete
   deleteButton: {
     alignSelf: 'center',
     marginTop: spacing.md,
   },
-  // TTS progress
   ttsProgressContainer: {
     flexDirection: 'row',
     alignItems: 'center',
