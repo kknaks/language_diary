@@ -22,9 +22,10 @@ class Settings(BaseSettings):
     # ElevenLabs Conversational AI Agent
     ELEVENLABS_AGENT_ID: str = ""
 
-    # Azure Speech (optional — kept for potential rollback, not used by GPT-4o pronunciation)
+    # Azure Speech
     AZURE_SPEECH_KEY: str = ""
     AZURE_SPEECH_REGION: str = "koreacentral"
+    AZURE_SPEECH_ENDPOINT: str = ""  # AI Services 리소스용 (e.g. https://xxx.services.ai.azure.com)
 
     # App
     SECRET_KEY: str = "change-me"

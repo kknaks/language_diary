@@ -123,12 +123,29 @@ export interface TtsResponse {
 }
 
 // ===== 발음 평가 결과 =====
+export interface WordScore {
+  word: string;
+  score: number;
+  errorType?: string;
+}
+
 export interface PronunciationResult {
   overallScore: number;
   accuracyScore: number;
   fluencyScore: number;
   completenessScore: number;
   feedback: string;
+  wordScores?: WordScore[];
+}
+
+// ===== 단어 하이라이트 상태 =====
+export type WordHighlightStatus = 'pending' | 'speaking' | 'done';
+
+export interface WordHighlight {
+  word: string;
+  status: WordHighlightStatus;
+  score?: number;
+  errorType?: string;
 }
 
 // ===== WebSocket 메시지 (서버 → 클라이언트) =====

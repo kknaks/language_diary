@@ -1,4 +1,4 @@
-import { Diary, LearningCard, Message, PaginatedResponse, ConversationSession, TtsResponse, PronunciationResult, TaskStatus } from '../types';
+import { Diary, LearningCard, Message, PaginatedResponse, ConversationSession, TtsResponse, PronunciationResult, TaskStatus, WordScore } from '../types';
 import { AuthTokens, SocialLoginResponse } from '../types/auth';
 import { LanguageListResponse, AvatarListResponse, VoiceListResponse, CefrLevel } from '../types/seed';
 import { ProfileCreateRequest, ProfileUpdateRequest, LanguageLevelUpdateRequest, UserProfileResponse } from '../types/profile';
@@ -281,6 +281,86 @@ export async function requestTts(text: string): Promise<TtsResponse> {
     cached: json.cached,
     durationMs: json.duration_ms,
   };
+}
+
+export async function getSpeechToken(): Promise<{ token: string; region: string; endpoint?: string; expiresAt: string }> {
+  const res = await fetchWithAuth(`${API_BASE_URL}/api/v1/speech/token`, {
+    method: 'POST',
+  });
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const json = await handleResponse(res) as any;
+
+  return {
+    token: json.token,
+    region: json.region,
+    endpoint: json.endpoint ?? undefined,
+    expiresAt: json.expires_at,
+  };
+}
+
+export async function savePronunciationResult(req: {
+  card_id: number;
+  reference_text: string;
+  overall_score: number;
+  accuracy_score: number;
+  fluency_score: number;
+  completeness_score: number;
+  feedback?: string;
+  word_scores: Array<{ word: string; score: number; error_type?: string }>;
+}): Promise<PronunciationResult> {
+  const res = await fetchWithAuth(`${API_BASE_URL}/api/v1/speech/result`, {
+    method: 'POST',
+    body: JSON.stringify(req),
+  });
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const json = await handleResponse(res) as any;
+
+  const wordScores: WordScore[] = (json.word_scores ?? []).map(
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    (w: any) => ({ word: w.word, score: w.score, errorType: w.error_type }),
+  );
+
+  return {
+    overallScore: json.overall_score ?? 0,
+    accuracyScore: json.accuracy_score ?? 0,
+    fluencyScore: json.fluency_score ?? 0,
+    completenessScore: json.completeness_score ?? 0,
+    feedback: json.feedback ?? '',
+    wordScores,
+  };
+}
+
+export async function getPronunciationResults(
+  cardIds: number[],
+): Promise<Record<number, PronunciationResult | null>> {
+  if (cardIds.length === 0) return {};
+  const qs = cardIds.join(',');
+  const res = await fetchWithAuth(`${API_BASE_URL}/api/v1/speech/results?card_ids=${qs}`);
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const json = await handleResponse(res) as any;
+
+  const out: Record<number, PronunciationResult | null> = {};
+  for (const [id, val] of Object.entries(json.results)) {
+    if (!val) {
+      out[Number(id)] = null;
+      continue;
+    }
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const v = val as any;
+    const wordScores: WordScore[] = (v.word_scores ?? []).map(
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      (w: any) => ({ word: w.word, score: w.score, errorType: w.error_type }),
+    );
+    out[Number(id)] = {
+      overallScore: v.overall_score ?? 0,
+      accuracyScore: v.accuracy_score ?? 0,
+      fluencyScore: v.fluency_score ?? 0,
+      completenessScore: v.completeness_score ?? 0,
+      feedback: v.feedback ?? '',
+      wordScores,
+    };
+  }
+  return out;
 }
 
 export async function evaluatePronunciation(text: string): Promise<PronunciationResult> {

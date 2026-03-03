@@ -114,7 +114,7 @@ export default function HistoryScreen() {
       <LearningView
         diaryId={selectedDiaryId}
         onBack={() => setScreen('diary')}
-        onGoHome={() => setScreen('main')}
+        onGoHome={() => { fetchDiaries(); setScreen('main'); }}
       />
     );
   }

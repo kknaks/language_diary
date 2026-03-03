@@ -6,6 +6,28 @@ from typing import List, Optional
 from pydantic import BaseModel, Field
 
 
+# --- Speech Token ---
+
+class SpeechTokenResponse(BaseModel):
+    token: str
+    region: str
+    endpoint: Optional[str] = None  # AI Foundry 리소스용 커스텀 엔드포인트
+    expires_at: datetime
+
+
+# --- Pronunciation Save (from frontend native SDK) ---
+
+class PronunciationSaveRequest(BaseModel):
+    card_id: int
+    reference_text: str
+    overall_score: float = Field(..., ge=0, le=100)
+    accuracy_score: float = Field(..., ge=0, le=100)
+    fluency_score: float = Field(..., ge=0, le=100)
+    completeness_score: float = Field(..., ge=0, le=100)
+    feedback: Optional[str] = None
+    word_scores: List["WordScore"] = []
+
+
 # --- TTS ---
 
 class TTSRequest(BaseModel):
@@ -36,8 +58,14 @@ class PronunciationEvaluateResponse(BaseModel):
     fluency_score: float
     completeness_score: float
     feedback: Optional[str] = None
+    reference_text: Optional[str] = None
     word_scores: List[WordScore] = []
     attempt_number: int
     created_at: datetime
 
     model_config = {"from_attributes": True}
+
+
+class PronunciationResultsResponse(BaseModel):
+    """카드별 최신 발음 결과 맵: {card_id: result}"""
+    results: dict[int, Optional[PronunciationEvaluateResponse]]

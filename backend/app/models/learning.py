@@ -2,7 +2,7 @@ from datetime import datetime
 from typing import Optional
 from decimal import Decimal
 
-from sqlalchemy import DateTime, ForeignKey, Index, Integer, Numeric, String, Text, func
+from sqlalchemy import DateTime, ForeignKey, Index, Integer, JSON, Numeric, String, Text, func
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.models.base import Base
@@ -44,12 +44,14 @@ class PronunciationResult(Base):
     id: Mapped[int] = mapped_column(primary_key=True)
     card_id: Mapped[int] = mapped_column(ForeignKey("learning_cards.id", ondelete="CASCADE"), nullable=False)
     user_id: Mapped[int] = mapped_column(ForeignKey("users.id"), nullable=False)
+    reference_text: Mapped[Optional[str]] = mapped_column(Text)
     audio_url: Mapped[Optional[str]] = mapped_column(String(500))
     accuracy_score: Mapped[Optional[Decimal]] = mapped_column(Numeric(5, 2))
     fluency_score: Mapped[Optional[Decimal]] = mapped_column(Numeric(5, 2))
     completeness_score: Mapped[Optional[Decimal]] = mapped_column(Numeric(5, 2))
     overall_score: Mapped[Optional[Decimal]] = mapped_column(Numeric(5, 2))
     feedback: Mapped[Optional[str]] = mapped_column(Text)
+    word_scores: Mapped[Optional[list]] = mapped_column(JSON)  # [{"word": "hello", "score": 95, "error_type": "None"}]
     attempt_number: Mapped[int] = mapped_column(Integer, server_default="1", nullable=False)
     created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now(), nullable=False)
 

@@ -7,8 +7,9 @@ import { colors, fontSize, spacing, borderRadius } from '../../constants/theme';
 import { Loading, ErrorState, ScreenHeader } from '../common';
 import CardSwiper from './CardSwiper';
 import LearningComplete from './LearningComplete';
-import { getDiary, completeDiary } from '../../services/api';
-import { Diary } from '../../types';
+import { getDiary, completeDiary, getPronunciationResults } from '../../services/api';
+import { prefetchSpeechToken } from '../../hooks/usePronunciation';
+import { Diary, PronunciationResult } from '../../types';
 
 interface LearningViewProps {
   diaryId: number;
@@ -22,6 +23,7 @@ export default function LearningView({ diaryId, onBack, onGoHome }: LearningView
   const [error, setError] = useState<string | null>(null);
   const [currentIndex, setCurrentIndex] = useState(0);
   const [isComplete, setIsComplete] = useState(false);
+  const [savedResults, setSavedResults] = useState<Record<number, PronunciationResult | null>>({});
 
   const fetchDiary = useCallback(async () => {
     if (!diaryId) return;
@@ -30,6 +32,12 @@ export default function LearningView({ diaryId, onBack, onGoHome }: LearningView
     try {
       const data = await getDiary(diaryId);
       setDiary(data);
+      // 학습 시작 시 Speech 토큰 미리 캐싱 + 기존 발음 결과 로드
+      prefetchSpeechToken().catch(() => {});
+      const cardIds = (data.learning_cards ?? []).map((c) => c.id);
+      if (cardIds.length > 0) {
+        getPronunciationResults(cardIds).then(setSavedResults).catch(() => {});
+      }
     } catch {
       setError('학습 데이터를 불러올 수 없습니다');
     } finally {
@@ -47,16 +55,17 @@ export default function LearningView({ diaryId, onBack, onGoHome }: LearningView
   const handleIndexChange = useCallback(
     (index: number) => {
       setCurrentIndex(index);
-      if (index === totalCards - 1) {
-        setTimeout(() => setIsComplete(true), 500);
-      }
     },
-    [totalCards],
+    [],
   );
 
   const handleComplete = useCallback(async () => {
     if (diaryId) {
-      await completeDiary(diaryId);
+      try {
+        await completeDiary(diaryId);
+      } catch {
+        // 이미 완료된 일기 — 무시
+      }
     }
     setIsComplete(true);
   }, [diaryId]);
@@ -64,6 +73,10 @@ export default function LearningView({ diaryId, onBack, onGoHome }: LearningView
   const handleReviewAgain = useCallback(() => {
     setCurrentIndex(0);
     setIsComplete(false);
+  }, []);
+
+  const handleResultSaved = useCallback((cardId: number, result: PronunciationResult) => {
+    setSavedResults((prev) => ({ ...prev, [cardId]: result }));
   }, []);
 
   if (isLoading) return <Loading message="학습 카드를 준비하고 있어요..." />;
@@ -121,11 +134,6 @@ export default function LearningView({ diaryId, onBack, onGoHome }: LearningView
             ]}
           />
         </View>
-        {currentIndex === totalCards - 1 && (
-          <Text style={styles.completeHint} onPress={handleComplete}>
-            완료
-          </Text>
-        )}
       </View>
 
       {/* Card swiper */}
@@ -134,6 +142,9 @@ export default function LearningView({ diaryId, onBack, onGoHome }: LearningView
           cards={cards}
           currentIndex={currentIndex}
           onIndexChange={handleIndexChange}
+          onSwipePastEnd={handleComplete}
+          savedResults={savedResults}
+          onResultSaved={handleResultSaved}
         />
       </View>
 

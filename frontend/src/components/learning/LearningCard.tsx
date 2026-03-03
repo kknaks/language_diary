@@ -1,11 +1,14 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { View, Text, StyleSheet, TouchableOpacity, ActivityIndicator } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { LearningCard as LearningCardType } from '../../types';
 import { colors, fontSize, spacing, borderRadius, shadows } from '../../constants/theme';
 import { useAudioPlayer } from '../../hooks/useAudioPlayer';
+import { usePronunciation } from '../../hooks/usePronunciation';
 import { API_BASE_URL } from '../../services/api';
 import CefrBadge from './CefrBadge';
+import WordHighlightRow from './WordHighlightRow';
+import PronunciationResultView from './PronunciationResult';
 
 const typeConfig: Record<string, { label: string; color: string; icon: keyof typeof Ionicons.glyphMap }> = {
   word: { label: 'Word', color: '#3B82F6', icon: 'text' },
@@ -15,14 +18,16 @@ const typeConfig: Record<string, { label: string; color: string; icon: keyof typ
 
 interface LearningCardProps {
   card: LearningCardType;
+  savedResult?: import('../../types').PronunciationResult | null;
+  onResultSaved?: (cardId: number, result: import('../../types').PronunciationResult) => void;
 }
 
-export default function LearningCard({ card }: LearningCardProps) {
+export default function LearningCard({ card, savedResult, onResultSaved }: LearningCardProps) {
   const config = typeConfig[card.card_type] ?? typeConfig.word;
   const contentAudio = useAudioPlayer();
   const exampleAudio = useAudioPlayer();
+  const pronunciation = usePronunciation();
   const [openSection, setOpenSection] = useState<'content' | 'example' | null>('content');
-  const [isRecording, setIsRecording] = useState(false);
 
   const resolveUrl = (url: string) =>
     url.startsWith('http') ? url : `${API_BASE_URL}${url}`;
@@ -54,16 +59,35 @@ export default function LearningCard({ card }: LearningCardProps) {
   const toggleSection = (target: 'content' | 'example') => {
     if (openSection === target) {
       setOpenSection(null);
-      setIsRecording(false);
+      pronunciation.reset();
     } else {
       setOpenSection(target);
-      setIsRecording(false);
+      pronunciation.reset();
     }
   };
 
-  const toggleRecording = () => {
-    setIsRecording((prev) => !prev);
+  const handleMicPress = () => {
+    if (pronunciation.state === 'recording') {
+      pronunciation.stopRecording();
+    } else {
+      const text = openSection === 'example' ? (card.example_en ?? '') : card.content_en;
+      pronunciation.startRecording(text, card.id);
+    }
   };
+
+  const isRecording = pronunciation.state === 'recording';
+  const isEvaluating = pronunciation.state === 'evaluating';
+  const isDone = pronunciation.state === 'done';
+  // 현재 세션 결과 또는 DB에서 가져온 이전 결과
+  const displayResult = pronunciation.result ?? savedResult ?? null;
+  const hasResult = isDone || (!isDone && !!savedResult);
+
+  // 새 결과 저장 시 부모에 알림
+  useEffect(() => {
+    if (isDone && pronunciation.result && onResultSaved) {
+      onResultSaved(card.id, pronunciation.result);
+    }
+  }, [isDone, pronunciation.result, card.id, onResultSaved]);
 
   return (
     <View style={styles.container}>
@@ -144,50 +168,93 @@ export default function LearningCard({ card }: LearningCardProps) {
         )}
       </View>
 
-      {/* Pronunciation Section */}
+      {/* Pronunciation Section — Content */}
       {openSection === 'content' && (
         <View style={[styles.pronSection, { alignItems: 'center' }]}>
-          <Text style={[styles.pronTargetText, { color: config.color, textAlign: 'center' }]}>
-            {card.content_en}
-          </Text>
-          <Text style={styles.pronTargetSub}>{card.content_ko}</Text>
-          <TouchableOpacity
-            style={[styles.micButton, isRecording && styles.micButtonRecording]}
-            onPress={toggleRecording}
-            activeOpacity={0.7}
-          >
-            <Ionicons
-              name={isRecording ? 'stop' : 'mic'}
-              size={28}
-              color={isRecording ? '#FFF' : config.color}
+          {pronunciation.wordHighlights.length > 0 ? (
+            <WordHighlightRow
+              words={pronunciation.wordHighlights}
+              showScores={isDone}
             />
-          </TouchableOpacity>
-          <Text style={styles.micHint}>{isRecording ? '듣고 있어요...' : '버튼을 눌러 말해보세요'}</Text>
+          ) : (
+            <Text style={[styles.pronTargetText, { color: config.color, textAlign: 'center' }]}>
+              {card.content_en}
+            </Text>
+          )}
+          <Text style={styles.pronTargetSub}>{card.content_ko}</Text>
+
+          {isEvaluating ? (
+            <ActivityIndicator size="large" color={config.color} style={{ marginTop: spacing.sm }} />
+          ) : (
+            <TouchableOpacity
+              style={[styles.micButton, isRecording && styles.micButtonRecording]}
+              onPress={handleMicPress}
+              activeOpacity={0.7}
+              disabled={isEvaluating}
+            >
+              <Ionicons
+                name={isRecording ? 'stop' : 'mic'}
+                size={28}
+                color={isRecording ? '#FFF' : config.color}
+              />
+            </TouchableOpacity>
+          )}
+          <Text style={styles.micHint}>
+            {isRecording ? '듣고 있어요...' : isEvaluating ? '평가 중...' : '버튼을 눌러 말해보세요'}
+          </Text>
+
+          {hasResult && displayResult && (
+            <PronunciationResultView
+              result={displayResult}
+              onRetry={() => pronunciation.reset()}
+            />
+          )}
         </View>
       )}
 
+      {/* Pronunciation Section — Example */}
       {openSection === 'example' && card.example_en && (
         <View style={[styles.pronSection, { alignItems: 'flex-start' }]}>
-          <Text style={[styles.pronTargetText, { color: colors.text }]}>
-            {card.example_en}
-          </Text>
+          {pronunciation.wordHighlights.length > 0 ? (
+            <WordHighlightRow
+              words={pronunciation.wordHighlights}
+              showScores={isDone}
+            />
+          ) : (
+            <Text style={[styles.pronTargetText, { color: colors.text }]}>
+              {card.example_en}
+            </Text>
+          )}
           {card.example_ko && (
             <Text style={styles.pronTargetSub}>{card.example_ko}</Text>
           )}
-          <TouchableOpacity
-            style={[styles.micButton, isRecording && styles.micButtonRecording, { alignSelf: 'center' }]}
-            onPress={toggleRecording}
-            activeOpacity={0.7}
-          >
-            <Ionicons
-              name={isRecording ? 'stop' : 'mic'}
-              size={28}
-              color={isRecording ? '#FFF' : colors.textSecondary}
-            />
-          </TouchableOpacity>
+
+          {isEvaluating ? (
+            <ActivityIndicator size="large" color={colors.textSecondary} style={{ marginTop: spacing.sm, alignSelf: 'center' }} />
+          ) : (
+            <TouchableOpacity
+              style={[styles.micButton, isRecording && styles.micButtonRecording, { alignSelf: 'center' }]}
+              onPress={handleMicPress}
+              activeOpacity={0.7}
+              disabled={isEvaluating}
+            >
+              <Ionicons
+                name={isRecording ? 'stop' : 'mic'}
+                size={28}
+                color={isRecording ? '#FFF' : colors.textSecondary}
+              />
+            </TouchableOpacity>
+          )}
           <Text style={[styles.micHint, { alignSelf: 'center' }]}>
-            {isRecording ? '듣고 있어요...' : '버튼을 눌러 말해보세요'}
+            {isRecording ? '듣고 있어요...' : isEvaluating ? '평가 중...' : '버튼을 눌러 말해보세요'}
           </Text>
+
+          {hasResult && displayResult && (
+            <PronunciationResultView
+              result={displayResult}
+              onRetry={() => pronunciation.reset()}
+            />
+          )}
         </View>
       )}
     </View>
