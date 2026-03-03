@@ -11,7 +11,7 @@ from app.config import settings
 from app.database import get_db
 from app.dependencies import get_current_user
 from app.exceptions import BadRequestError, EvaluationFailedError, NotFoundError, TTSFailedError
-from app.models.learning import LearningCard
+from app.models.learning import LearningCard, PronunciationResult
 from app.models.seed import Voice  # noqa: F401
 from app.models.user import User
 from app.repositories.pronunciation_repo import PronunciationRepository
