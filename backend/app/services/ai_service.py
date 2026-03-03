@@ -6,7 +6,7 @@ Uses Circuit Breaker + Retry with exponential backoff for resilience.
 import json
 import logging
 import re
-from typing import Any, AsyncGenerator, Dict, List, Optional
+from typing import Any, AsyncGenerator, Dict, List, Optional, Tuple
 
 from openai import AsyncOpenAI
 
@@ -124,6 +124,62 @@ class AIService:
             remaining = buffer.strip()
             if remaining:
                 yield remaining
+
+            if _openai_cb:
+                _openai_cb.record_success()
+
+        except Exception as e:
+            if _openai_cb:
+                _openai_cb.record_failure()
+            raise AIServiceError(f"OpenAI API 호출 실패: {e}")
+
+    async def get_reply_streaming_phrases(
+        self, conversation_history: List[Dict[str, str]],
+        native_lang: str = "ko",
+        personality: Optional[Dict[str, int]] = None,
+        cefr_level: Optional[str] = None,
+        target_lang: Optional[str] = None,
+    ) -> AsyncGenerator[Tuple[str, bool], None]:
+        """Generate AI reply with streaming, yielding phrases (clauses or sentences).
+
+        Yields (text, is_sentence_end) tuples:
+        - is_sentence_end=False: clause/phrase (for frontend display only)
+        - is_sentence_end=True: complete sentence (for TTS + display)
+        """
+        system_prompt = build_conversation_prompt(
+            native_lang, personality, cefr_level=cefr_level, target_lang=target_lang,
+        )
+        messages = [{"role": "system", "content": system_prompt}]
+        messages.extend(conversation_history)
+
+        if _openai_cb and not _openai_cb.allow_request():
+            raise AIServiceError("OpenAI 서비스를 일시적으로 사용할 수 없습니다.")
+
+        try:
+            stream = await self.client.chat.completions.create(
+                model="gpt-4o-mini",
+                messages=messages,
+                max_tokens=200,
+                temperature=0.8,
+                stream=True,
+            )
+
+            buffer = ""
+            async for chunk in stream:
+                delta = chunk.choices[0].delta
+                if delta.content:
+                    buffer += delta.content
+                    while True:
+                        phrase, is_sentence, rest = _split_first_phrase(buffer)
+                        if phrase is None:
+                            break
+                        buffer = rest
+                        yield phrase, is_sentence
+
+            # Yield remaining text as a sentence end
+            remaining = buffer.strip()
+            if remaining:
+                yield remaining, True
 
             if _openai_cb:
                 _openai_cb.record_success()
@@ -257,6 +313,15 @@ _SENTENCE_BOUNDARY = re.compile(
     r'|([다요죠네까][\.\!\?]?\s)'  # Korean endings + optional punctuation + space
 )
 
+# Clause boundary pattern: commas, semicolons, Korean connective endings, dashes
+_CLAUSE_BOUNDARY = re.compile(
+    r'([,;]\s)'                   # comma/semicolon + space
+    r'|([고며면서]\s)'             # Korean connective endings + space
+    r'|(—\s|–\s|-\s)'            # dashes + space
+)
+
+_MIN_PHRASE_WORDS = 3  # Minimum words/tokens for a phrase to be yielded
+
 
 def _split_first_sentence(text: str) -> "tuple[Optional[str], str]":
     """Split the first complete sentence from text.
@@ -272,3 +337,33 @@ def _split_first_sentence(text: str) -> "tuple[Optional[str], str]":
         if sentence:
             return sentence, remaining
     return None, text
+
+
+def _split_first_phrase(text: str) -> "tuple[Optional[str], bool, str]":
+    """Split the first complete phrase (sentence or clause) from text.
+
+    Returns (phrase, is_sentence_end, remaining) if a boundary is found,
+    or (None, False, text) if no complete phrase yet.
+
+    Sentence boundaries take priority over clause boundaries.
+    """
+    # Try sentence boundary first
+    sent_match = _SENTENCE_BOUNDARY.search(text)
+    if sent_match:
+        end = sent_match.end()
+        phrase = text[:end].strip()
+        remaining = text[end:]
+        if phrase:
+            return phrase, True, remaining
+
+    # Try clause boundary (require minimum word count)
+    clause_match = _CLAUSE_BOUNDARY.search(text)
+    if clause_match:
+        end = clause_match.end()
+        phrase = text[:end].strip()
+        remaining = text[end:]
+        word_count = len(phrase.split())
+        if phrase and word_count >= _MIN_PHRASE_WORDS:
+            return phrase, False, remaining
+
+    return None, False, text

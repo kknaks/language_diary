@@ -113,7 +113,7 @@ async def _send_tts_ws(
 
     Falls back to REST TTS if WebSocket connection fails.
     """
-    from app.services.tts_service import _normalize_volume
+    from app.services.tts_service import normalize_volume_cached
     tts_session = None  # type: Optional[TTSStreamSession]
     try:
         tts_session = TTSStreamSession()
@@ -125,7 +125,7 @@ async def _send_tts_ws(
         chunk_index = 0
         async for audio_chunk in tts_session.receive_audio_chunks():
             if volume_gain_db != 0:
-                audio_chunk = _normalize_volume(audio_chunk, volume_gain_db)
+                audio_chunk = await normalize_volume_cached(audio_chunk, volume_gain_db)
             audio_b64 = base64.b64encode(audio_chunk).decode("ascii")
             await websocket.send_json({
                 "type": "tts_audio",
@@ -236,13 +236,13 @@ async def _handle_ai_reply_streaming(
         # --- Background: relay TTS audio chunks to client ---
         async def _relay_tts_audio():
             """Read audio chunks from TTS WebSocket and push to client."""
-            from app.services.tts_service import _normalize_volume
+            from app.services.tts_service import normalize_volume_cached
             if not tts_session:
                 return
             try:
                 async for audio_chunk in tts_session.receive_audio_chunks():
                     if volume_gain_db != 0:
-                        audio_chunk = _normalize_volume(audio_chunk, volume_gain_db)
+                        audio_chunk = await normalize_volume_cached(audio_chunk, volume_gain_db)
                     audio_b64 = base64.b64encode(audio_chunk).decode("ascii")
                     await websocket.send_json({
                         "type": "tts_audio",
@@ -264,51 +264,58 @@ async def _handle_ai_reply_streaming(
         rest_tts_tasks = []  # type: list
 
         # --- Wrap LLM streaming in a task so barge_in can cancel it ---
+        tts_sentence_index = [0]  # Track sentence index separately for TTS
+
         async def _run_llm():
             """Run the LLM streaming loop; populates *sentences* as a side-effect."""
             nonlocal index, use_ws_tts, tts_session, relay_task
-            t_first_sentence = None  # type: Optional[float]
-            async for sentence in service.handle_user_message_streaming(
+            t_first_chunk = None  # type: Optional[float]
+            async for phrase, is_sentence in service.handle_user_message_streaming_phrases(
                 session_id, user_text,
                 native_lang=native_lang, personality=personality,
                 cefr_level=cefr_level, target_lang=target_lang,
             ):
-                if t_first_sentence is None:
-                    t_first_sentence = time.monotonic()
+                if t_first_chunk is None:
+                    t_first_chunk = time.monotonic()
                     logger.info(
-                        "[latency] LLM first sentence: %.0f ms",
+                        "[latency] LLM first chunk: %.0f ms",
                         _ms_since(t_turn_start),
                     )
-                sentences.append(sentence)
+                sentences.append(phrase)
+                # Send all chunks to frontend (both phrases and sentences)
                 await websocket.send_json({
                     "type": "ai_message_chunk",
-                    "text": sentence,
+                    "text": phrase,
                     "index": index,
                     "is_final": False,
+                    "is_sentence": is_sentence,
                 })
 
-                if use_ws_tts and tts_session:
-                    try:
-                        await tts_session.send_sentence(sentence)
-                    except TTSError as e:
-                        logger.warning("TTS WS send failed at sentence %d, switching to REST: %s", index, e)
-                        use_ws_tts = False
-                        await tts_session.close()
-                        tts_session = None
-                        pipeline_state["tts_session"] = None
-                        if relay_task:
-                            relay_task.cancel()
-                            try:
-                                await relay_task
-                            except (asyncio.CancelledError, Exception):
-                                pass
-                            relay_task = None
-                            pipeline_state["relay_task"] = None
+                # Only send complete sentences to TTS
+                if is_sentence:
+                    if use_ws_tts and tts_session:
+                        try:
+                            await tts_session.send_sentence(phrase)
+                        except TTSError as e:
+                            logger.warning("TTS WS send failed at sentence %d, switching to REST: %s", tts_sentence_index[0], e)
+                            use_ws_tts = False
+                            await tts_session.close()
+                            tts_session = None
+                            pipeline_state["tts_session"] = None
+                            if relay_task:
+                                relay_task.cancel()
+                                try:
+                                    await relay_task
+                                except (asyncio.CancelledError, Exception):
+                                    pass
+                                relay_task = None
+                                pipeline_state["relay_task"] = None
+                            tts_svc = TTSService(db)
+                            rest_tts_tasks.append((tts_sentence_index[0], asyncio.create_task(tts_svc.generate_bytes(phrase, voice_id=voice_id))))  # noqa: E501
+                    elif not use_ws_tts:
                         tts_svc = TTSService(db)
-                        rest_tts_tasks.append((index, asyncio.create_task(tts_svc.generate_bytes(sentence, voice_id=voice_id))))  # noqa: E501
-                elif not use_ws_tts:
-                    tts_svc = TTSService(db)
-                    rest_tts_tasks.append((index, asyncio.create_task(tts_svc.generate_bytes(sentence, voice_id=voice_id))))  # noqa: E501
+                        rest_tts_tasks.append((tts_sentence_index[0], asyncio.create_task(tts_svc.generate_bytes(phrase, voice_id=voice_id))))  # noqa: E501
+                    tts_sentence_index[0] += 1
 
                 index += 1
 
@@ -342,24 +349,26 @@ async def _handle_ai_reply_streaming(
                 await tts_session.close()
                 tts_session = None
             else:
-                # REST fallback: send all TTS results in order
-                for tts_idx, task in rest_tts_tasks:
-                    try:
-                        audio_bytes = await task
-                        audio_b64 = base64.b64encode(audio_bytes).decode("ascii")
-                        await websocket.send_json({
-                            "type": "tts_audio",
-                            "audio_data": audio_b64,
-                            "format": "mp3",
-                            "index": tts_idx,
-                        })
-                    except Exception as e:
-                        logger.error("REST TTS failed for chunk %d: %s", tts_idx, e)
-                        await websocket.send_json({
-                            "type": "error",
-                            "code": "TTS_FAILED",
-                            "message": str(e),
-                        })
+                # REST fallback: run all TTS tasks in parallel, send in order
+                if rest_tts_tasks:
+                    tasks_only = [task for _, task in rest_tts_tasks]
+                    results = await asyncio.gather(*tasks_only, return_exceptions=True)
+                    for (tts_idx, _), result in zip(rest_tts_tasks, results):
+                        if isinstance(result, Exception):
+                            logger.error("REST TTS failed for chunk %d: %s", tts_idx, result)
+                            await websocket.send_json({
+                                "type": "error",
+                                "code": "TTS_FAILED",
+                                "message": str(result),
+                            })
+                        else:
+                            audio_b64 = base64.b64encode(result).decode("ascii")
+                            await websocket.send_json({
+                                "type": "tts_audio",
+                                "audio_data": audio_b64,
+                                "format": "mp3",
+                                "index": tts_idx,
+                            })
 
             # Signal turn done AFTER all TTS audio has been sent
             await websocket.send_json({"type": "ai_done"})
@@ -538,7 +547,24 @@ async def conversation_websocket(
                 "session_id": session_id,
             })
 
-            # --- AI greeting ---
+            # --- Start STT connection in parallel with greeting ---
+            async def _connect_stt() -> Optional[STTSession]:
+                """Connect STT session (runs concurrently with greeting)."""
+                try:
+                    sess = STTSession(
+                        settings.ELEVENLABS_API_KEY,
+                        client_ws=websocket,
+                    )
+                    await sess.connect()
+                    logger.info("STT session connected (parallel with greeting)")
+                    return sess
+                except STTError as e:
+                    logger.error("STT connection failed: %s", e)
+                    return None
+
+            stt_connect_task = asyncio.create_task(_connect_stt())
+
+            # --- AI greeting (runs while STT connects) ---
             greeting = await service.generate_greeting(
                 session_id, native_lang=native_lang, personality=personality,
                 cefr_level=cefr_level, target_lang=target_lang,
@@ -560,22 +586,14 @@ async def conversation_websocket(
             # Signal greeting turn done so frontend transitions to listening
             await websocket.send_json({"type": "ai_done"})
 
-            # --- Open long-lived STT session ---
-            try:
-                stt_session = STTSession(
-                    settings.ELEVENLABS_API_KEY,
-                    client_ws=websocket,
-                )
-                await stt_session.connect()
-                logger.info("Long-lived STT session created after greeting")
-            except STTError as e:
-                logger.error("STT connection failed: %s", e)
+            # --- Await STT connection (likely already done by now) ---
+            stt_session = await stt_connect_task
+            if not stt_session:
                 await websocket.send_json({
                     "type": "error",
                     "code": "STT_FAILED",
-                    "message": str(e),
+                    "message": "STT 연결에 실패했습니다.",
                 })
-                stt_session = None
 
             # --- Commit listener: drives AI pipeline from STT auto-commits ---
             async def _commit_listener():

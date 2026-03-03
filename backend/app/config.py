@@ -37,6 +37,9 @@ class Settings(BaseSettings):
     # CORS — comma-separated origins, "*" for all (dev only)
     ALLOWED_ORIGINS: str = "*"
 
+    # Redis
+    REDIS_URL: str = "redis://localhost:6379/0"
+
     # Rate limiting
     RATE_LIMIT_PER_MINUTE: int = 60
 

@@ -1,7 +1,7 @@
 """Conversation Service — orchestrates the conversation flow."""
 
 import uuid
-from typing import AsyncGenerator, Dict, List, Optional
+from typing import AsyncGenerator, Dict, List, Optional, Tuple
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -245,6 +245,62 @@ class ConversationService:
             raise TranslationFailedError(detail=str(e))
 
         # Save full AI reply
+        full_reply = " ".join(full_reply_parts)
+        await self.repo.add_message(session_id, "ai", full_reply, message_order=current_order + 1)
+        await self.db.commit()
+
+    async def handle_user_message_streaming_phrases(
+        self, session_id: str, text: str,
+        native_lang: str = "ko",
+        personality: Optional[Dict] = None,
+        cefr_level: Optional[str] = None,
+        target_lang: Optional[str] = None,
+    ) -> AsyncGenerator[Tuple[str, bool], None]:
+        """Process user message and stream AI reply as (phrase, is_sentence) tuples.
+
+        Yields (text, is_sentence_end) tuples. Only complete sentences
+        (is_sentence_end=True) are collected for DB storage.
+        """
+        session = await self.repo.get_session(session_id)
+        if not session:
+            raise NotFoundError(
+                code="SESSION_NOT_FOUND",
+                message="대화 세션을 찾을 수 없습니다.",
+                detail=f"session_id={session_id}",
+            )
+
+        self._validate_session_active(session)
+
+        if session.status == "created":
+            await self.repo.update_session_status(session, "active")
+
+        current_order = len(session.messages) + 1
+
+        await self.repo.add_message(session_id, "user", text, message_order=current_order)
+        await self.repo.increment_turn(session)
+
+        history = self._build_openai_history(session.messages, text, current_order)
+
+        if session.turn_count + 1 >= MAX_TURNS:
+            await self.db.commit()
+            return
+
+        # Stream AI reply as phrases
+        full_reply_parts: List[str] = []
+        try:
+            async for phrase, is_sentence in self.ai.get_reply_streaming_phrases(
+                history, native_lang=native_lang, personality=personality,
+                cefr_level=cefr_level, target_lang=target_lang,
+            ):
+                if is_sentence:
+                    full_reply_parts.append(phrase)
+                else:
+                    # Accumulate clause text for eventual sentence completion
+                    full_reply_parts.append(phrase)
+                yield phrase, is_sentence
+        except AIServiceError as e:
+            raise TranslationFailedError(detail=str(e))
+
         full_reply = " ".join(full_reply_parts)
         await self.repo.add_message(session_id, "ai", full_reply, message_order=current_order + 1)
         await self.db.commit()

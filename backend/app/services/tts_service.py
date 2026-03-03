@@ -7,10 +7,9 @@ TTSStreamSession for low-latency streaming TTS.
 import asyncio
 import base64
 import hashlib
+import io
 import json
 import logging
-import subprocess
-import tempfile
 import uuid
 from pathlib import Path
 from typing import AsyncIterator, Optional
@@ -18,6 +17,7 @@ from typing import AsyncIterator, Optional
 import httpx
 import websockets
 from openai import AsyncOpenAI
+from pydub import AudioSegment
 
 from app.config import settings
 from app.utils.circuit_breaker import CircuitBreaker, CircuitBreakerError, retry_with_backoff
@@ -102,30 +102,49 @@ async def _generate_openai_tts(text: str) -> bytes:
 
 
 def _normalize_volume(audio_bytes: bytes, gain_db: float) -> bytes:
-    """ffmpeg volume 필터로 gain 적용 후 bytes 반환."""
+    """Apply volume gain using pydub (in-memory, no subprocess)."""
     if gain_db == 0:
         return audio_bytes
 
-    with tempfile.NamedTemporaryFile(suffix=".mp3", delete=False) as tmp_in:
-        tmp_in.write(audio_bytes)
-        tmp_in_path = tmp_in.name
-
-    tmp_out_path = tmp_in_path + ".out.mp3"
     try:
-        result = subprocess.run(
-            ["ffmpeg", "-y", "-i", tmp_in_path, "-af", f"volume={gain_db}dB", tmp_out_path],
-            capture_output=True,
-            timeout=10,
-        )
-        if result.returncode == 0:
-            return Path(tmp_out_path).read_bytes()
-        logger.warning("ffmpeg volume adjust failed, returning raw audio")
+        segment = AudioSegment.from_mp3(io.BytesIO(audio_bytes))
+        adjusted = segment + gain_db  # pydub uses dB directly
+        buf = io.BytesIO()
+        adjusted.export(buf, format="mp3")
+        return buf.getvalue()
+    except Exception as e:
+        logger.warning("pydub volume adjust failed, returning raw audio: %s", e)
         return audio_bytes
+
+
+async def normalize_volume_cached(audio_bytes: bytes, gain_db: float) -> bytes:
+    """Normalize volume with Redis caching. Falls back to direct processing."""
+    if gain_db == 0:
+        return audio_bytes
+
+    from app.redis_client import get_redis
+
+    cache_key = "vol:" + hashlib.sha256(audio_bytes + str(gain_db).encode()).hexdigest()
+
+    try:
+        r = await get_redis()
+        if r:
+            cached = await r.get(cache_key)
+            if cached:
+                return cached
     except Exception:
-        return audio_bytes
-    finally:
-        Path(tmp_in_path).unlink(missing_ok=True)
-        Path(tmp_out_path).unlink(missing_ok=True)
+        pass
+
+    result = _normalize_volume(audio_bytes, gain_db)
+
+    try:
+        r = await get_redis()
+        if r:
+            await r.set(cache_key, result, ex=3600)
+    except Exception:
+        pass
+
+    return result
 
 
 def _save_audio_file(audio_bytes: bytes, extension: str = "mp3") -> str:
@@ -276,14 +295,36 @@ class TTSService:
         return audio_bytes
 
     async def _get_volume_gain(self, elevenlabs_voice_id: str) -> float:
-        """DB에서 voice의 volume_gain_db 조회."""
+        """DB에서 voice의 volume_gain_db 조회 (Redis 캐시 적용)."""
+        from app.redis_client import get_redis
+
+        cache_key = f"voice_gain:{elevenlabs_voice_id}"
+
+        try:
+            r = await get_redis()
+            if r:
+                cached = await r.get(cache_key)
+                if cached is not None:
+                    return float(cached)
+        except Exception:
+            pass
+
         from app.models.seed import Voice
         from sqlalchemy import select
         result = await self.db.execute(
             select(Voice.volume_gain_db).where(Voice.elevenlabs_voice_id == elevenlabs_voice_id)
         )
         row = result.scalar_one_or_none()
-        return row if row is not None else 0.0
+        gain = row if row is not None else 0.0
+
+        try:
+            r = await get_redis()
+            if r:
+                await r.set(cache_key, str(gain).encode(), ex=3600)
+        except Exception:
+            pass
+
+        return gain
 
     async def _generate_with_fallback(self, text: str, voice_id: str) -> bytes:
         """Try ElevenLabs TTS, fall back to OpenAI TTS on failure."""

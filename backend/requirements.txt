@@ -21,6 +21,12 @@ python-jose[cryptography]==3.3.*
 passlib[bcrypt]==1.7.*
 google-auth>=2.0.0
 
+# Audio processing
+pydub==0.25.*
+
+# Redis
+redis[hiredis]==5.2.*
+
 # Utilities
 python-multipart==0.0.*
 httpx==0.28.*

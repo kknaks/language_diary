@@ -54,6 +54,10 @@ async def lifespan(app: FastAPI):
 
     yield
 
+    # Shutdown: close Redis connection pool
+    from app.redis_client import close_redis
+    await close_redis()
+
 # Configure structured logging
 logging.basicConfig(
     level=logging.DEBUG if settings.DEBUG else logging.INFO,
