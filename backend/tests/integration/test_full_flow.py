@@ -45,6 +45,17 @@ def _make_streaming_reply(*sentences):
     return _gen
 
 
+def _make_streaming_reply_phrases(*sentences):
+    """Create an async generator for get_reply_streaming_phrases.
+
+    Yields (phrase, is_sentence_end) tuples.
+    """
+    async def _gen(history, **kwargs):
+        for s in sentences:
+            yield s, True
+    return _gen
+
+
 def _get_ws_url():
     """Get WS URL with valid auth token."""
     token = create_access_token(1)
@@ -118,20 +129,19 @@ async def test_full_conversation_to_learning_flow(client, seed_user, tmp_path):
 
     mock_ai = AsyncMock()
     mock_ai.get_first_message = AsyncMock(return_value="오늘 하루 어땠어?")
-    mock_ai.get_reply_streaming = AsyncMock()
     mock_ai.generate_diary_with_learning = AsyncMock(return_value=MOCK_DIARY_WITH_LEARNING)
 
-    # Two streaming replies
+    # Two streaming replies (yields (phrase, is_sentence_end) tuples)
     reply_count = 0
     replies = ["어떤 회의였어? 누구랑 했어?", "결과는 어땠어? 힘들진 않았어?"]
 
-    async def streaming_reply(history, **kwargs):
+    async def streaming_reply_phrases(history, **kwargs):
         nonlocal reply_count
         text = replies[reply_count] if reply_count < len(replies) else "알겠어!"
         reply_count += 1
-        yield text
+        yield text, True
 
-    mock_ai.get_reply_streaming = streaming_reply
+    mock_ai.get_reply_streaming_phrases = streaming_reply_phrases
 
     mock_tts_bytes = b"fake-mp3-bytes"
 

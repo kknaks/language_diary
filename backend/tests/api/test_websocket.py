@@ -44,6 +44,17 @@ def _make_streaming_reply(*sentences):
     return _gen
 
 
+def _make_streaming_reply_phrases(*sentences):
+    """Create an async generator mock for get_reply_streaming_phrases.
+
+    Yields (phrase, is_sentence_end) tuples — each sentence treated as a complete sentence.
+    """
+    async def _gen(history, **kwargs):
+        for s in sentences:
+            yield s, True
+    return _gen
+
+
 def _get_ws_url():
     """Get WS URL with valid auth token."""
     token = create_access_token(1)
@@ -140,7 +151,7 @@ async def test_websocket_session_created_on_connect(client, seed_user, auth_toke
 async def test_websocket_send_message_streaming(client, seed_user, auth_token):
     """Send a text message via WS and receive streaming AI reply chunks + TTS."""
     mock_ai = _make_mock_ai()
-    mock_ai.get_reply_streaming = _make_streaming_reply("어떤 회의였어?")
+    mock_ai.get_reply_streaming_phrases = _make_streaming_reply_phrases("어떤 회의였어?")
 
     with patch("app.services.conversation_service.AIService", return_value=mock_ai):
         with patch("app.api.v1.conversation.TTSService") as MockTTS:
@@ -319,7 +330,7 @@ async def test_websocket_stt_connect_error(client, seed_user, auth_token):
     """STT connection failure sends error but keeps text messaging alive."""
     MockSTTClass = _make_mock_stt_class(connect_error=True)
     mock_ai = _make_mock_ai()
-    mock_ai.get_reply_streaming = _make_streaming_reply("어떤 회의였어?")
+    mock_ai.get_reply_streaming_phrases = _make_streaming_reply_phrases("어떤 회의였어?")
 
     with patch("app.services.conversation_service.AIService", return_value=mock_ai):
         with patch("app.api.v1.conversation.STTSession", MockSTTClass):
@@ -351,7 +362,7 @@ async def test_websocket_binary_without_stt_session(client, seed_user, auth_toke
     """Sending binary data when STT failed is silently ignored."""
     MockSTTClass = _make_mock_stt_class(connect_error=True)
     mock_ai = _make_mock_ai()
-    mock_ai.get_reply_streaming = _make_streaming_reply("응!")
+    mock_ai.get_reply_streaming_phrases = _make_streaming_reply_phrases("응!")
 
     with patch("app.services.conversation_service.AIService", return_value=mock_ai):
         with patch("app.api.v1.conversation.STTSession", MockSTTClass):

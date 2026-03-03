@@ -35,6 +35,17 @@ def _make_streaming_reply(*sentences):
     return _gen
 
 
+def _make_streaming_reply_phrases(*sentences):
+    """Create an async generator for get_reply_streaming_phrases.
+
+    Yields (phrase, is_sentence_end) tuples.
+    """
+    async def _gen(history, **kwargs):
+        for s in sentences:
+            yield s, True
+    return _gen
+
+
 def _get_ws_url():
     """Get WS URL with valid auth token."""
     token = create_access_token(1)
@@ -54,7 +65,7 @@ async def test_max_turns_auto_finish(client, seed_user):
     """
     mock_ai = AsyncMock()
     mock_ai.get_first_message = AsyncMock(return_value="오늘 뭐 했어?")
-    mock_ai.get_reply_streaming = _make_streaming_reply("그래? 더 알려줘!")
+    mock_ai.get_reply_streaming_phrases = _make_streaming_reply_phrases("그래? 더 알려줘!")
     mock_ai.generate_diary_with_learning = AsyncMock(return_value={
         "title_original": "자동 완성",
         "title_translated": "Auto-completed",
@@ -166,7 +177,7 @@ async def test_websocket_very_long_message(client, seed_user):
     """WebSocket handles a very long text message."""
     mock_ai = AsyncMock()
     mock_ai.get_first_message = AsyncMock(return_value="오늘 뭐 했어?")
-    mock_ai.get_reply_streaming = _make_streaming_reply("긴 메시지 잘 받았어!")
+    mock_ai.get_reply_streaming_phrases = _make_streaming_reply_phrases("긴 메시지 잘 받았어!")
 
     mock_tts_bytes = b"fake-mp3-bytes"
 
@@ -235,7 +246,7 @@ async def test_websocket_binary_without_audio_session(client, seed_user):
     """Sending binary data without audio_start is silently ignored."""
     mock_ai = AsyncMock()
     mock_ai.get_first_message = AsyncMock(return_value="안녕!")
-    mock_ai.get_reply_streaming = _make_streaming_reply("응!")
+    mock_ai.get_reply_streaming_phrases = _make_streaming_reply_phrases("응!")
 
     mock_tts_bytes = b"fake-mp3-bytes"
 
