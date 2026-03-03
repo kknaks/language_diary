@@ -39,9 +39,9 @@ public class ExpoAzurePronunciationModule: Module {
     do {
       let speechConfig = try SPXSpeechConfiguration(authorizationToken: authToken, region: region)
       speechConfig.speechRecognitionLanguage = language
-      // Longer silence timeouts for better recognition (especially with earphones)
-      try speechConfig.setPropertyTo("3000", byName: "SpeechServiceConnection_EndSilenceTimeoutMs")
-      try speechConfig.setPropertyTo("5000", byName: "SpeechServiceConnection_InitialSilenceTimeoutMs")
+      // End silence: 800ms for quick auto-completion after speech ends
+      try speechConfig.setPropertyTo("800", byName: "SpeechServiceConnection_EndSilenceTimeoutMs")
+      try speechConfig.setPropertyTo("3000", byName: "SpeechServiceConnection_InitialSilenceTimeoutMs")
 
       // Audio session must be configured before SPXAudioConfiguration opens the mic
       // Use .measurement mode to avoid AGC/noise suppression that can muffle earphone mic input
