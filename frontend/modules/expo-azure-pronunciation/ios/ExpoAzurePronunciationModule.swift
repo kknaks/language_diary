@@ -25,7 +25,7 @@ public class ExpoAzurePronunciationModule: Module {
       let language = config["language"] as? String ?? "en-US"
       self.referenceWords = referenceText.split(separator: " ").map(String.init)
 
-      self.startRecognition(authToken: authToken, region: region, referenceText: referenceText, language: language)
+      self.prepareAndRecognize(authToken: authToken, region: region, referenceText: referenceText, language: language)
     }
 
     Function("stopAssessment") {
@@ -33,15 +33,27 @@ public class ExpoAzurePronunciationModule: Module {
     }
   }
 
-  private func startRecognition(authToken: String, region: String, referenceText: String, language: String) {
+  /// Set up audio session & recognizer (must happen on the calling thread for mic access),
+  /// then dispatch the blocking recognizeOnce() to a background thread.
+  private func prepareAndRecognize(authToken: String, region: String, referenceText: String, language: String) {
     do {
       let speechConfig = try SPXSpeechConfiguration(authorizationToken: authToken, region: region)
       speechConfig.speechRecognitionLanguage = language
+      // Reduce silence timeouts for faster response
+      try speechConfig.setPropertyTo("500", byName: "SpeechServiceConnection_EndSilenceTimeoutMs")
+      try speechConfig.setPropertyTo("2000", byName: "SpeechServiceConnection_InitialSilenceTimeoutMs")
 
-      // 기존 앱의 오디오 세션과 호환되도록 PlayAndRecord + VoiceChat 설정
+      // Audio session must be configured before SPXAudioConfiguration opens the mic
       let audioSession = AVAudioSession.sharedInstance()
       try audioSession.setCategory(.playAndRecord, mode: .voiceChat, options: [.defaultToSpeaker, .allowBluetooth])
       try audioSession.setActive(true)
+
+      // Log audio session state
+      let currentRoute = audioSession.currentRoute
+      for input in currentRoute.inputs {
+        NSLog("[Pronunciation] Audio input: \(input.portName) type=\(input.portType.rawValue) channels=\(input.channels?.count ?? 0)")
+      }
+      NSLog("[Pronunciation] Audio session: sampleRate=\(audioSession.sampleRate) inputAvailable=\(audioSession.isInputAvailable) category=\(audioSession.category.rawValue) mode=\(audioSession.mode.rawValue)")
 
       let audioConfig = SPXAudioConfiguration()
 
@@ -61,6 +73,8 @@ public class ExpoAzurePronunciationModule: Module {
         let spokenWords = partialText.split(separator: " ")
         let wordIndex = max(0, spokenWords.count - 1)
 
+        NSLog("[Pronunciation] Recognizing: text=\"\(partialText)\" wordIndex=\(wordIndex) duration=\(event.result.duration)")
+
         self.sendEvent("onRecognizing", [
           "text": partialText,
           "wordIndex": wordIndex
@@ -71,8 +85,11 @@ public class ExpoAzurePronunciationModule: Module {
         guard let self = self else { return }
         let result = event.result
 
+        NSLog("[Pronunciation] Recognized: reason=\(result.reason.rawValue) text=\"\(result.text ?? "(nil)")\" duration=\(result.duration)")
+
         guard result.reason == .recognizedSpeech else {
           if result.reason == .noMatch {
+            NSLog("[Pronunciation] NO_MATCH — no speech detected by SDK")
             self.sendEvent("onError", [
               "code": "NO_MATCH",
               "message": "음성을 인식하지 못했습니다. 다시 시도해 주세요."
@@ -117,7 +134,24 @@ public class ExpoAzurePronunciationModule: Module {
       }
 
       self.speechRecognizer = recognizer
-      try recognizer.recognizeOnce()
+
+      // recognizeOnce() blocks until speech ends — run on background thread
+      // so the JS thread stays free for UI updates (recording button, etc.)
+      NSLog("[Pronunciation] Dispatching recognizeOnce to background thread...")
+      DispatchQueue.global(qos: .userInitiated).async {
+        do {
+          NSLog("[Pronunciation] recognizeOnce() started — listening...")
+          try recognizer.recognizeOnce()
+          NSLog("[Pronunciation] recognizeOnce() finished")
+        } catch {
+          NSLog("[Pronunciation] recognizeOnce() threw: \(error.localizedDescription)")
+          self.sendEvent("onError", [
+            "code": "RECOGNIZE_FAILED",
+            "message": error.localizedDescription
+          ])
+          self.speechRecognizer = nil
+        }
+      }
 
     } catch {
       self.sendEvent("onError", [
@@ -128,9 +162,8 @@ public class ExpoAzurePronunciationModule: Module {
   }
 
   private func stopRecognition() {
-    if let recognizer = speechRecognizer {
-      try? recognizer.stopContinuousRecognition()
-      speechRecognizer = nil
-    }
+    // Setting speechRecognizer to nil releases the recognizer, which
+    // closes the microphone stream and cancels any in-flight recognition.
+    speechRecognizer = nil
   }
 }

@@ -46,6 +46,9 @@ class ExpoAzurePronunciationModule : Module() {
     try {
       val speechConfig = SpeechConfig.fromAuthorizationToken(authToken, region)
       speechConfig.speechRecognitionLanguage = language
+      // Reduce silence timeouts for faster response
+      speechConfig.setProperty("SpeechServiceConnection_EndSilenceTimeoutMs", "500")
+      speechConfig.setProperty("SpeechServiceConnection_InitialSilenceTimeoutMs", "2000")
 
       val audioConfig = AudioConfig.fromDefaultMicrophoneInput()
 
@@ -123,7 +126,9 @@ class ExpoAzurePronunciationModule : Module() {
   }
 
   private fun stopRecognition() {
-    speechRecognizer?.stopContinuousRecognitionAsync()
+    // recognizeOnceAsync() cannot be stopped by stopContinuousRecognitionAsync().
+    // close() releases the recognizer, closes the microphone and cancels recognition.
+    speechRecognizer?.close()
     speechRecognizer = null
   }
 }

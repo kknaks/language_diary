@@ -38,13 +38,19 @@ const errorTypeStyles: Record<string, { color: string; decoration?: 'line-throug
   Monotone:        { color: '#9C27B0' },                                // 모노톤 — 보라
 };
 
-function getScoreStyle(score?: number, errorType?: string) {
+interface ScoreStyle {
+  color: string;
+  textDecorationLine?: 'line-through' | 'underline';
+  borderColor?: string;
+}
+
+function getScoreStyle(score?: number, errorType?: string): ScoreStyle {
   // errorType이 있고 None이 아니면 에러 스타일 우선
   if (errorType && errorType !== 'None' && errorTypeStyles[errorType]) {
     const style = errorTypeStyles[errorType];
     return {
       color: style.color,
-      textDecorationLine: style.decoration as 'line-through' | 'underline' | undefined,
+      textDecorationLine: style.decoration,
       borderColor: style.border,
     };
   }
@@ -62,13 +68,13 @@ export default function WordHighlightRow({ words, showScores = false }: WordHigh
           return <PulseWord key={idx} word={wh.word} />;
         }
 
-        const result = wh.status === 'done' ? getScoreStyle(wh.score, wh.errorType) : {};
+        const result: ScoreStyle | null = wh.status === 'done' ? getScoreStyle(wh.score, wh.errorType) : null;
         const bgStyle =
-          wh.status === 'done' && result.color
+          result?.color
             ? { backgroundColor: result.color + '10' }
             : {};
         const borderStyle =
-          wh.status === 'done' && result.borderColor
+          result?.borderColor
             ? { borderWidth: 1.5, borderColor: result.borderColor }
             : {};
 
@@ -78,14 +84,14 @@ export default function WordHighlightRow({ words, showScores = false }: WordHigh
               style={[
                 styles.wordText,
                 wh.status === 'pending' && styles.wordTextPending,
-                result.color ? { color: result.color } : {},
-                result.textDecorationLine ? { textDecorationLine: result.textDecorationLine } : {},
+                result?.color ? { color: result.color } : {},
+                result?.textDecorationLine ? { textDecorationLine: result.textDecorationLine } : {},
               ]}
             >
               {wh.word}
             </Text>
             {showScores && wh.status === 'done' && wh.score != null && (
-              <Text style={[styles.scoreText, { color: result.color ?? colors.textTertiary }]}>
+              <Text style={[styles.scoreText, { color: result?.color ?? colors.textTertiary }]}>
                 {Math.round(wh.score)}
               </Text>
             )}

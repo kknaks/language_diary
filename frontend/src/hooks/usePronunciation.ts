@@ -8,13 +8,14 @@ import {
   addRecognizedListener,
   addErrorListener,
 } from '../../modules/expo-azure-pronunciation/src';
-import type { Subscription } from 'expo-modules-core';
+import type { EventSubscription as Subscription } from 'expo-modules-core';
 
-export type PronunciationState = 'idle' | 'recording' | 'evaluating' | 'done';
+export type PronunciationState = 'idle' | 'recording' | 'evaluating' | 'done' | 'error';
 
 interface UsePronunciationReturn {
   state: PronunciationState;
   result: PronunciationResult | null;
+  errorMessage: string | null;
   wordHighlights: WordHighlight[];
   currentWordIndex: number;
   startRecording: (text: string, cardId: number) => void;
@@ -49,22 +50,46 @@ export async function prefetchSpeechToken(): Promise<void> {
   await getToken();
 }
 
-export function usePronunciation(): UsePronunciationReturn {
+/** Map simple language code to Azure Speech locale */
+const LANG_TO_LOCALE: Record<string, string> = {
+  en: 'en-US',
+  ja: 'ja-JP',
+  zh: 'zh-CN',
+  fr: 'fr-FR',
+  es: 'es-ES',
+  de: 'de-DE',
+  ko: 'ko-KR',
+  pt: 'pt-BR',
+  it: 'it-IT',
+  vi: 'vi-VN',
+  th: 'th-TH',
+};
+
+export function usePronunciation(langCode?: string): UsePronunciationReturn {
+  const language = LANG_TO_LOCALE[langCode ?? 'en'] ?? 'en-US';
   const [state, setState] = useState<PronunciationState>('idle');
   const [result, setResult] = useState<PronunciationResult | null>(null);
+  const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [wordHighlights, setWordHighlights] = useState<WordHighlight[]>([]);
   const [currentWordIndex, setCurrentWordIndex] = useState(-1);
   const textRef = useRef('');
   const cardIdRef = useRef(0);
   const subscriptionsRef = useRef<Subscription[]>([]);
+  const mountedRef = useRef(true);
 
   const cleanup = useCallback(() => {
     subscriptionsRef.current.forEach((sub) => sub.remove());
     subscriptionsRef.current = [];
   }, []);
 
+  // On unmount: remove JS listeners AND stop the native recognizer
   useEffect(() => {
-    return cleanup;
+    mountedRef.current = true;
+    return () => {
+      mountedRef.current = false;
+      cleanup();
+      stopAssessment();
+    };
   }, [cleanup]);
 
   const startRecording = useCallback(
@@ -72,6 +97,7 @@ export function usePronunciation(): UsePronunciationReturn {
       textRef.current = text;
       cardIdRef.current = cardId;
       setResult(null);
+      setErrorMessage(null);
       setCurrentWordIndex(-1);
 
       const words = text.trim().split(/\s+/);
@@ -96,6 +122,7 @@ export function usePronunciation(): UsePronunciationReturn {
 
         subs.push(
           addRecognizingListener((event) => {
+            if (!mountedRef.current) return;
             console.log('[Pronunciation] Event:recognizing (full)', JSON.stringify(event, null, 2));
             const idx = event.wordIndex;
             setCurrentWordIndex(idx);
@@ -110,9 +137,9 @@ export function usePronunciation(): UsePronunciationReturn {
         );
 
         subs.push(
-          addRecognizedListener(async (event) => {
+          addRecognizedListener((event) => {
+            if (!mountedRef.current) return;
             console.log('[Pronunciation] Event:recognized (full)', JSON.stringify(event, null, 2));
-            setState('evaluating');
 
             const wordScores = event.words.map((w) => ({
               word: w.word,
@@ -143,36 +170,39 @@ export function usePronunciation(): UsePronunciationReturn {
               wordScores,
             };
 
-            // Save to backend
-            try {
-              const saved = await savePronunciationResult({
-                card_id: cardIdRef.current,
-                reference_text: textRef.current,
-                overall_score: event.pronScore,
-                accuracy_score: event.accuracyScore,
-                fluency_score: event.fluencyScore,
-                completeness_score: event.completenessScore,
-                word_scores: wordScores.map((ws) => ({
-                  word: ws.word,
-                  score: ws.score,
-                  error_type: ws.errorType,
-                })),
-              });
-              pronResult.feedback = saved.feedback;
-            } catch (saveErr) {
-              console.error('[Pronunciation] Backend save failed:', saveErr);
-            }
-
+            // Show result immediately, save to backend in background
             setResult(pronResult);
             setState('done');
             cleanup();
+
+            savePronunciationResult({
+              card_id: cardIdRef.current,
+              reference_text: textRef.current,
+              overall_score: event.pronScore,
+              accuracy_score: event.accuracyScore,
+              fluency_score: event.fluencyScore,
+              completeness_score: event.completenessScore,
+              word_scores: wordScores.map((ws) => ({
+                word: ws.word,
+                score: ws.score,
+                error_type: ws.errorType,
+              })),
+            }).then((saved) => {
+              if (!mountedRef.current) return;
+              setResult((prev) => prev ? { ...prev, feedback: saved.feedback } : prev);
+            }).catch((saveErr) => {
+              console.error('[Pronunciation] Backend save failed:', saveErr);
+            });
           }),
         );
 
         subs.push(
           addErrorListener((event) => {
+            if (!mountedRef.current) return;
             console.warn('[Pronunciation] Error:', event.code, event.message);
-            setState('idle');
+            const msg = event.message || '음성 인식에 실패했습니다.';
+            setErrorMessage(`${msg} (${event.code})`);
+            setState('error');
             cleanup();
           }),
         );
@@ -181,13 +211,13 @@ export function usePronunciation(): UsePronunciationReturn {
 
         console.log('[Pronunciation] 3. Starting assessment...', {
           referenceText: text,
-          language: 'en-US',
+          language,
         });
         startAssessment({
           authToken: token,
           region,
           referenceText: text,
-          language: 'en-US',
+          language,
         });
         console.log('[Pronunciation] 4. startAssessment called — waiting for SDK events');
       } catch (err) {
@@ -208,6 +238,7 @@ export function usePronunciation(): UsePronunciationReturn {
     stopAssessment();
     setState('idle');
     setResult(null);
+    setErrorMessage(null);
     setWordHighlights([]);
     setCurrentWordIndex(-1);
     textRef.current = '';
@@ -217,6 +248,7 @@ export function usePronunciation(): UsePronunciationReturn {
   return {
     state,
     result,
+    errorMessage,
     wordHighlights,
     currentWordIndex,
     startRecording,

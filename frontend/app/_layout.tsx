@@ -6,9 +6,11 @@ import { colors, fontSize } from '../src/constants/theme';
 import DebugBanner, { debugLog } from '../src/components/common/DebugBanner';
 import { env } from '../src/config/env';
 import { useAuthStore } from '../src/stores/useAuthStore';
+import { useProfileStore } from '../src/stores/useProfileStore';
 
 export default function RootLayout() {
   const { isLoading, isAuthenticated, isOnboarded, initializeFromStorage } = useAuthStore();
+  const fetchProfile = useProfileStore((s) => s.fetchProfile);
   const navigationState = useRootNavigationState();
 
   useEffect(() => {
@@ -28,6 +30,7 @@ export default function RootLayout() {
       router.replace('/onboarding/step1-language');
       debugLog('info', 'Auth: not onboarded — redirecting to onboarding');
     } else {
+      fetchProfile();
       debugLog('info', 'Auth: authenticated & onboarded');
     }
   }, [isLoading, isAuthenticated, isOnboarded, navigationState?.key]);

@@ -1,4 +1,4 @@
-import { requireNativeModule, EventEmitter, type Subscription } from 'expo-modules-core';
+import { requireNativeModule, EventEmitter } from 'expo-modules-core';
 import type {
   AssessmentConfig,
   RecognizingEvent,
@@ -15,7 +15,8 @@ export type {
 } from './ExpoAzurePronunciation.types';
 
 const ExpoAzurePronunciation = requireNativeModule('ExpoAzurePronunciation');
-const emitter = new EventEmitter(ExpoAzurePronunciation);
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+const emitter = new EventEmitter(ExpoAzurePronunciation) as any;
 
 export function startAssessment(config: AssessmentConfig): void {
   ExpoAzurePronunciation.startAssessment(config);
@@ -27,18 +28,18 @@ export function stopAssessment(): void {
 
 export function addRecognizingListener(
   callback: (event: RecognizingEvent) => void,
-): Subscription {
+) {
   return emitter.addListener('onRecognizing', callback);
 }
 
 export function addRecognizedListener(
   callback: (event: RecognizedEvent) => void,
-): Subscription {
+) {
   return emitter.addListener('onRecognized', callback);
 }
 
 export function addErrorListener(
   callback: (event: ErrorEvent) => void,
-): Subscription {
+) {
   return emitter.addListener('onError', callback);
 }

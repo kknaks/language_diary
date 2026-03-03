@@ -1,10 +1,11 @@
-import React, { useState, useEffect } from 'react';
-import { View, Text, StyleSheet, TouchableOpacity, ActivityIndicator } from 'react-native';
+import React, { useState, useEffect, useRef } from 'react';
+import { View, Text, StyleSheet, TouchableOpacity, ActivityIndicator, Vibration, Animated } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { LearningCard as LearningCardType } from '../../types';
 import { colors, fontSize, spacing, borderRadius, shadows } from '../../constants/theme';
 import { useAudioPlayer } from '../../hooks/useAudioPlayer';
 import { usePronunciation } from '../../hooks/usePronunciation';
+import { useProfileStore } from '../../stores/useProfileStore';
 import { API_BASE_URL } from '../../services/api';
 import CefrBadge from './CefrBadge';
 import WordHighlightRow from './WordHighlightRow';
@@ -24,9 +25,10 @@ interface LearningCardProps {
 
 export default function LearningCard({ card, savedResult, onResultSaved }: LearningCardProps) {
   const config = typeConfig[card.card_type] ?? typeConfig.word;
+  const targetLang = useProfileStore((s) => s.profile?.profile?.target_language?.code);
   const contentAudio = useAudioPlayer();
   const exampleAudio = useAudioPlayer();
-  const pronunciation = usePronunciation();
+  const pronunciation = usePronunciation(targetLang ?? undefined);
   const [openSection, setOpenSection] = useState<'content' | 'example' | null>('content');
 
   const resolveUrl = (url: string) =>
@@ -70,17 +72,37 @@ export default function LearningCard({ card, savedResult, onResultSaved }: Learn
     if (pronunciation.state === 'recording') {
       pronunciation.stopRecording();
     } else {
+      if (pronunciation.state === 'error' || pronunciation.state === 'done') {
+        pronunciation.reset();
+      }
       const text = openSection === 'example' ? (card.example_en ?? '') : card.content_en;
       pronunciation.startRecording(text, card.id);
     }
   };
 
   const isRecording = pronunciation.state === 'recording';
-  const isEvaluating = pronunciation.state === 'evaluating';
   const isDone = pronunciation.state === 'done';
+  const isError = pronunciation.state === 'error';
   // 현재 세션 결과 또는 DB에서 가져온 이전 결과
   const displayResult = pronunciation.result ?? savedResult ?? null;
   const hasResult = isDone || (!isDone && !!savedResult);
+
+  // 완료 시 진동 + 체크마크 애니메이션
+  const checkOpacity = useRef(new Animated.Value(0)).current;
+  const checkScale = useRef(new Animated.Value(0.5)).current;
+
+  useEffect(() => {
+    if (isDone && pronunciation.result) {
+      Vibration.vibrate(50);
+      Animated.parallel([
+        Animated.timing(checkOpacity, { toValue: 1, duration: 300, useNativeDriver: true }),
+        Animated.spring(checkScale, { toValue: 1, friction: 4, useNativeDriver: true }),
+      ]).start();
+    } else {
+      checkOpacity.setValue(0);
+      checkScale.setValue(0.5);
+    }
+  }, [isDone, pronunciation.result, checkOpacity, checkScale]);
 
   // 새 결과 저장 시 부모에 알림
   useEffect(() => {
@@ -183,25 +205,34 @@ export default function LearningCard({ card, savedResult, onResultSaved }: Learn
           )}
           <Text style={styles.pronTargetSub}>{card.content_ko}</Text>
 
-          {isEvaluating ? (
-            <ActivityIndicator size="large" color={config.color} style={{ marginTop: spacing.sm }} />
-          ) : (
+          <View style={styles.micRow}>
             <TouchableOpacity
-              style={[styles.micButton, isRecording && styles.micButtonRecording]}
+              style={[styles.micButton, isRecording && styles.micButtonRecording, isDone && styles.micButtonDone]}
               onPress={handleMicPress}
               activeOpacity={0.7}
-              disabled={isEvaluating}
             >
               <Ionicons
-                name={isRecording ? 'stop' : 'mic'}
+                name={isRecording ? 'stop' : isDone ? 'mic' : 'mic'}
                 size={28}
                 color={isRecording ? '#FFF' : config.color}
               />
             </TouchableOpacity>
-          )}
+            {isDone && pronunciation.result && (
+              <Animated.View style={[styles.checkBadge, { opacity: checkOpacity, transform: [{ scale: checkScale }] }]}>
+                <Ionicons name="checkmark-circle" size={28} color={colors.success} />
+              </Animated.View>
+            )}
+          </View>
           <Text style={styles.micHint}>
-            {isRecording ? '듣고 있어요...' : isEvaluating ? '평가 중...' : '버튼을 눌러 말해보세요'}
+            {isRecording ? '듣고 있어요...' : isError ? '' : isDone ? '' : '버튼을 눌러 말해보세요'}
           </Text>
+
+          {isError && pronunciation.errorMessage && (
+            <View style={styles.errorContainer}>
+              <Ionicons name="warning-outline" size={18} color={colors.error} />
+              <Text style={styles.errorText}>{pronunciation.errorMessage}</Text>
+            </View>
+          )}
 
           {hasResult && displayResult && (
             <PronunciationResultView
@@ -229,14 +260,11 @@ export default function LearningCard({ card, savedResult, onResultSaved }: Learn
             <Text style={styles.pronTargetSub}>{card.example_ko}</Text>
           )}
 
-          {isEvaluating ? (
-            <ActivityIndicator size="large" color={colors.textSecondary} style={{ marginTop: spacing.sm, alignSelf: 'center' }} />
-          ) : (
+          <View style={[styles.micRow, { alignSelf: 'center' }]}>
             <TouchableOpacity
-              style={[styles.micButton, isRecording && styles.micButtonRecording, { alignSelf: 'center' }]}
+              style={[styles.micButton, isRecording && styles.micButtonRecording, isDone && styles.micButtonDone]}
               onPress={handleMicPress}
               activeOpacity={0.7}
-              disabled={isEvaluating}
             >
               <Ionicons
                 name={isRecording ? 'stop' : 'mic'}
@@ -244,10 +272,22 @@ export default function LearningCard({ card, savedResult, onResultSaved }: Learn
                 color={isRecording ? '#FFF' : colors.textSecondary}
               />
             </TouchableOpacity>
-          )}
+            {isDone && pronunciation.result && (
+              <Animated.View style={[styles.checkBadge, { opacity: checkOpacity, transform: [{ scale: checkScale }] }]}>
+                <Ionicons name="checkmark-circle" size={28} color={colors.success} />
+              </Animated.View>
+            )}
+          </View>
           <Text style={[styles.micHint, { alignSelf: 'center' }]}>
-            {isRecording ? '듣고 있어요...' : isEvaluating ? '평가 중...' : '버튼을 눌러 말해보세요'}
+            {isRecording ? '듣고 있어요...' : isError ? '' : isDone ? '' : '버튼을 눌러 말해보세요'}
           </Text>
+
+          {isError && pronunciation.errorMessage && (
+            <View style={[styles.errorContainer, { alignSelf: 'center' }]}>
+              <Ionicons name="warning-outline" size={18} color={colors.error} />
+              <Text style={styles.errorText}>{pronunciation.errorMessage}</Text>
+            </View>
+          )}
 
           {hasResult && displayResult && (
             <PronunciationResultView
@@ -364,6 +404,12 @@ const styles = StyleSheet.create({
     color: colors.textSecondary,
     marginTop: -spacing.sm,
   },
+  micRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.sm,
+    marginTop: spacing.sm,
+  },
   micButton: {
     width: 56,
     height: 56,
@@ -373,14 +419,34 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     borderWidth: 2,
     borderColor: colors.border,
-    marginTop: spacing.sm,
   },
   micButtonRecording: {
     backgroundColor: colors.error,
     borderColor: colors.error,
   },
+  micButtonDone: {
+    borderColor: colors.success,
+  },
+  checkBadge: {
+    position: 'absolute',
+    right: -36,
+  },
   micHint: {
     fontSize: fontSize.xs,
     color: colors.textTertiary,
+  },
+  errorContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.sm,
+    paddingHorizontal: spacing.md,
+    paddingVertical: spacing.sm,
+    backgroundColor: colors.error + '10',
+    borderRadius: borderRadius.md,
+  },
+  errorText: {
+    flex: 1,
+    fontSize: fontSize.sm,
+    color: colors.error,
   },
 });
