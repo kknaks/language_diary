@@ -46,9 +46,9 @@ class ExpoAzurePronunciationModule : Module() {
     try {
       val speechConfig = SpeechConfig.fromAuthorizationToken(authToken, region)
       speechConfig.speechRecognitionLanguage = language
-      // Reduce silence timeouts for faster response
-      speechConfig.setProperty("SpeechServiceConnection_EndSilenceTimeoutMs", "500")
-      speechConfig.setProperty("SpeechServiceConnection_InitialSilenceTimeoutMs", "2000")
+      // Longer silence timeouts for better recognition (especially with earphones)
+      speechConfig.setProperty("SpeechServiceConnection_EndSilenceTimeoutMs", "3000")
+      speechConfig.setProperty("SpeechServiceConnection_InitialSilenceTimeoutMs", "5000")
 
       val audioConfig = AudioConfig.fromDefaultMicrophoneInput()
 
