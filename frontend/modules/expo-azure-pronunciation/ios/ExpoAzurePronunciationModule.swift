@@ -136,22 +136,19 @@ public class ExpoAzurePronunciationModule: Module {
 
       self.speechRecognizer = recognizer
 
-      // recognizeOnce() blocks until speech ends — run on background thread
-      // so the JS thread stays free for UI updates (recording button, etc.)
-      NSLog("[Pronunciation] Dispatching recognizeOnce to background thread...")
-      DispatchQueue.global(qos: .userInitiated).async {
-        do {
-          NSLog("[Pronunciation] recognizeOnce() started — listening...")
-          try recognizer.recognizeOnce()
-          NSLog("[Pronunciation] recognizeOnce() finished")
-        } catch {
-          NSLog("[Pronunciation] recognizeOnce() threw: \(error.localizedDescription)")
-          self.sendEvent("onError", [
-            "code": "RECOGNIZE_FAILED",
-            "message": error.localizedDescription
-          ])
-          self.speechRecognizer = nil
-        }
+      // startContinuousRecognition: 말하는 동안 interim 이벤트 오고,
+      // stopAssessment() 호출 시 즉시 onRecognized 발생 → 침묵 대기 없음
+      NSLog("[Pronunciation] Starting continuous recognition...")
+      do {
+        try recognizer.startContinuousRecognition()
+        NSLog("[Pronunciation] Continuous recognition started — listening...")
+      } catch {
+        NSLog("[Pronunciation] startContinuousRecognition threw: \(error.localizedDescription)")
+        self.sendEvent("onError", [
+          "code": "RECOGNIZE_FAILED",
+          "message": error.localizedDescription
+        ])
+        self.speechRecognizer = nil
       }
 
     } catch {
@@ -163,8 +160,14 @@ public class ExpoAzurePronunciationModule: Module {
   }
 
   private func stopRecognition() {
-    // Setting speechRecognizer to nil releases the recognizer, which
-    // closes the microphone stream and cancels any in-flight recognition.
+    guard let recognizer = speechRecognizer else { return }
+    NSLog("[Pronunciation] stopContinuousRecognition called")
+    // stopContinuousRecognition → onRecognized 이벤트 즉시 발생 (침묵 대기 없음)
+    do {
+      try recognizer.stopContinuousRecognition()
+    } catch {
+      NSLog("[Pronunciation] stopContinuousRecognition threw: \(error.localizedDescription)")
+    }
     speechRecognizer = nil
   }
 }
