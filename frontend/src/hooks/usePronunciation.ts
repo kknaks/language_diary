@@ -125,6 +125,7 @@ export function usePronunciation(langCode?: string): UsePronunciationReturn {
             if (!mountedRef.current) return;
             console.log('[Pronunciation] Event:recognizing (full)', JSON.stringify(event, null, 2));
             const idx = event.wordIndex;
+            const totalWords = textRef.current.trim().split(/\s+/).length;
             setCurrentWordIndex(idx);
             setWordHighlights((prev) =>
               prev.map((wh, i) => {
@@ -133,6 +134,15 @@ export function usePronunciation(langCode?: string): UsePronunciationReturn {
                 return { ...wh, status: 'pending' as const };
               }),
             );
+
+            // 마지막 단어까지 인식되면 즉시 체크 표시 (점수는 onRecognized에서 업데이트)
+            if (idx >= totalWords - 1) {
+              setWordHighlights((prev) =>
+                prev.map((wh) => ({ ...wh, status: 'done' as const })),
+              );
+              setCurrentWordIndex(-1);
+              setState('done');
+            }
           }),
         );
 
@@ -147,18 +157,6 @@ export function usePronunciation(langCode?: string): UsePronunciationReturn {
               errorType: w.errorType,
             }));
 
-            // Update word highlights with final scores
-            setWordHighlights((prev) =>
-              prev.map((wh, i) => {
-                const matched = wordScores[i];
-                return {
-                  word: wh.word,
-                  status: 'done' as const,
-                  score: matched?.score,
-                  errorType: matched?.errorType,
-                };
-              }),
-            );
             setCurrentWordIndex(-1);
 
             const pronResult: PronunciationResult = {
@@ -170,9 +168,21 @@ export function usePronunciation(langCode?: string): UsePronunciationReturn {
               wordScores,
             };
 
-            // Show result immediately, save to backend in background
+            // 점수 업데이트 (체크 표시는 onRecognizing 마지막 단어에서 이미 됐을 수 있음)
             setResult(pronResult);
             setState('done');
+            // 점수 기반으로 wordHighlights 최종 업데이트
+            setWordHighlights((prev) =>
+              prev.map((wh, i) => {
+                const matched = wordScores[i];
+                return {
+                  word: wh.word,
+                  status: 'done' as const,
+                  score: matched?.score,
+                  errorType: matched?.errorType,
+                };
+              }),
+            );
             cleanup();
 
             savePronunciationResult({
