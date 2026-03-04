@@ -190,7 +190,8 @@ async def test_full_conversation_to_learning_flow(client, seed_user, tmp_path):
                     assert diary["status"] == "translated"
                     assert "회사에서" in diary["original_text"]
                     assert "meeting" in diary["translated_text"]
-                    assert len(diary["learning_cards"]) == 3
+                    # 3 learning_points + 2 sentence cards
+                    assert len(diary["learning_cards"]) == 5
 
     diary_id = diary["id"]
 
@@ -205,7 +206,7 @@ async def test_full_conversation_to_learning_flow(client, seed_user, tmp_path):
     assert resp.status_code == 200
     detail = resp.json()
     assert detail["id"] == diary_id
-    assert len(detail["learning_cards"]) == 3
+    assert len(detail["learning_cards"]) == 5
     card_id = detail["learning_cards"][0]["id"]
 
     # ── Step 6: Generate TTS for learning card text ──────────────────

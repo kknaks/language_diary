@@ -107,7 +107,8 @@ async def test_finish_conversation(db_session, seed_conversation):
     assert result.original_text == "오늘 회의를 했다."
     assert result.translated_text == "I had a meeting today."
     assert result.status == "translated"
-    assert len(result.learning_cards) == 1
+    # 1 word card + 1 sentence card ("I had a meeting today.")
+    assert len(result.learning_cards) == 2
     assert result.learning_cards[0].content_en == "meeting"
 
     # Session should be completed

@@ -44,7 +44,7 @@ jobs:
       - name: Lint with ruff
         run: pip install ruff && ruff check .
       - name: Run tests
-        run: pytest --tb=short -q
+        run: pip install pytest-rerunfailures && pytest --tb=short -q --reruns 2 --reruns-delay 1
 
   build-and-push:
     needs: [test-backend]

@@ -246,7 +246,8 @@ async def test_websocket_finish_conversation(client, seed_user, auth_token):
                         assert diary["original_text"] == "오늘 회사에서 팀장님과 회의를 했다."
                         assert diary["translated_text"] == "I had a meeting with my team leader at work today."
                         assert diary["status"] == "translated"
-                        assert len(diary["learning_cards"]) == 2
+                        # 2 learning_points + 1 sentence card
+                        assert len(diary["learning_cards"]) == 3
 
 
 @pytest.mark.asyncio
