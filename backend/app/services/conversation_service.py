@@ -12,12 +12,10 @@ from app.exceptions import (
     SessionExpiredError,
     TranslationFailedError,
 )
-from sqlalchemy import select
 
 from app.models.conversation import ConversationMessage, ConversationSession
 from app.models.diary import Diary
 from app.models.learning import LearningCard
-from app.models.seed import CefrLevel
 from app.repositories.conversation_repo import ConversationRepository
 from app.repositories.seed_repo import SeedRepository
 from app.schemas.conversation import (
