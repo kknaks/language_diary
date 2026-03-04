@@ -241,6 +241,7 @@ class AIService:
         native_lang: str = "ko",
         target_lang: str = "en",
         cefr_level: Optional[str] = None,
+        cefr_description: Optional[str] = None,
     ) -> Dict[str, Any]:
         """Generate diary + learning points in a single LLM call."""
         labels = get_role_labels(native_lang)
@@ -249,7 +250,7 @@ class AIService:
             for m in conversation_history
         )
 
-        system_prompt = build_diary_with_learning_prompt(native_lang, target_lang, cefr_level)
+        system_prompt = build_diary_with_learning_prompt(native_lang, target_lang, cefr_level, cefr_description)
         user_prompt = build_diary_user_prompt(native_lang, conversation_text)
 
         content = await self._chat(

@@ -12,10 +12,14 @@ from app.exceptions import (
     SessionExpiredError,
     TranslationFailedError,
 )
+from sqlalchemy import select
+
 from app.models.conversation import ConversationMessage, ConversationSession
 from app.models.diary import Diary
 from app.models.learning import LearningCard
+from app.models.seed import CefrLevel
 from app.repositories.conversation_repo import ConversationRepository
+from app.repositories.seed_repo import SeedRepository
 from app.schemas.conversation import (
     ConversationCreateResponse,
     ConversationDetailResponse,
@@ -33,6 +37,7 @@ class ConversationService:
     def __init__(self, db: AsyncSession, ai_service: AIService = None):
         self.db = db
         self.repo = ConversationRepository(db)
+        self.seed_repo = SeedRepository(db)
         self.ai = ai_service or AIService()
 
     async def create_session(
@@ -342,6 +347,13 @@ class ConversationService:
             for m in messages
         ]
 
+        # Fetch CEFR description from DB
+        cefr_description = None
+        if cefr_level:
+            cefr_row = await self.seed_repo.get_cefr_level(cefr_level)
+            if cefr_row:
+                cefr_description = f"{cefr_row.name} - {cefr_row.description}"
+
         # Generate diary + learning points in a single LLM call
         try:
             result = await self.ai.generate_diary_with_learning(
@@ -349,6 +361,7 @@ class ConversationService:
                 native_lang=native_lang,
                 target_lang=target_lang,
                 cefr_level=cefr_level,
+                cefr_description=cefr_description,
             )
         except AIServiceError as e:
             raise TranslationFailedError(detail=str(e))
@@ -381,6 +394,28 @@ class ConversationService:
                 example_en=lp.get("example_en"),
                 example_ko=lp.get("example_ko"),
                 card_order=i + 1,
+            )
+            self.db.add(card)
+            cards.append(card)
+
+        # Split translated_text and original_text into sentences for sentence cards
+        translated = result.get("translated_text", "")
+        original = result.get("original_text", "")
+        translated_sentences = [s.strip() for s in translated.split(".") if s.strip()]
+        original_sentences = [s.strip() for s in original.split(".") if s.strip()]
+        sentence_offset = len(cards)
+        for j, (t_sent, o_sent) in enumerate(zip(translated_sentences, original_sentences)):
+            card = LearningCard(
+                diary_id=diary.id,
+                card_type="sentence",
+                content_en=t_sent + ".",
+                origin_from=t_sent + ".",
+                content_ko=o_sent + ".",
+                part_of_speech=None,
+                cefr_level=None,
+                example_en=None,
+                example_ko=None,
+                card_order=sentence_offset + j + 1,
             )
             self.db.add(card)
             cards.append(card)

@@ -431,7 +431,7 @@ DIARY_WITH_LEARNING_PROMPTS: Dict[str, str] = {
 3. 한국어 일기는 자연스러운 일기체로 작성해. (~했다, ~였다 체)
 4. {target_language} 번역은 자연스러운 {target_language} 일기체로 작성해.
 5. 학습 포인트: 단어(word) 3~5개 + 구문(phrase) 2~3개를 반드시 translated_text에 실제 등장하는 단어/구문에서만 추출해. translated_text에 없는 단어나 구문은 절대 포함하지 마.
-6. 학습 포인트 난이도: 사용자 레벨은 {cefr_level}이야. {cefr_range} 범위의 단어/구문을 우선 추출해.
+6. 학습 포인트 난이도: 사용자 레벨은 {cefr_level}({cefr_description})이야. {cefr_range} 범위의 단어/구문을 우선 추출해. 번역문(translated_text)도 이 수준에 맞게 작성해.
 7. 예문은 일기 본문에서 가져와.
 8. origin_from은 일기 translated_text에서 실제 등장한 단어/구문 형태를 그대로 써.
 9. content_en도 translated_text에 실제 등장하는 형태여야 해. 일기에 없는 표현을 만들어내지 마.
@@ -465,7 +465,7 @@ Rules:
 3. Write the English diary in a natural diary style.
 4. Write the {target_language} translation in a natural {target_language} diary style.
 5. Learning points: extract 3-5 words + 2-3 phrases ONLY from words/phrases that actually appear in the translated_text. Never include words or phrases not present in the translated_text.
-6. Learning point difficulty: the user's level is {cefr_level}. Prioritize words/phrases in the {cefr_range} range.
+6. Learning point difficulty: the user's level is {cefr_level} ({cefr_description}). Prioritize words/phrases in the {cefr_range} range. Write the translated_text at this level too.
 7. Use example sentences from the diary text.
 8. origin_from must be the exact word/phrase form as it appears in the translated_text of the diary.
 9. content_en must also be a form that actually appears in the translated_text. Do not invent expressions not found in the diary.
@@ -499,7 +499,7 @@ Rules:
 3. 日本語の日記は自然な日記体で書いてください。
 4. {target_language}翻訳は自然な{target_language}日記体で書いてください。
 5. 学習ポイント：単語（word）3〜5個 + フレーズ（phrase）2〜3個を、必ずtranslated_textに実際に登場する単語/フレーズからのみ抽出してください。translated_textにない単語やフレーズは絶対に含めないでください。
-6. 学習ポイントの難易度：ユーザーのレベルは{cefr_level}です。{cefr_range}範囲の単語/フレーズを優先してください。
+6. 学習ポイントの難易度：ユーザーのレベルは{cefr_level}（{cefr_description}）です。{cefr_range}範囲の単語/フレーズを優先してください。translated_textもこのレベルに合わせて書いてください。
 7. 例文は日記本文から取ってください。
 8. origin_fromは日記のtranslated_textに実際に登場した単語/フレーズの形をそのまま書いてください。
 9. content_enもtranslated_textに実際に登場する形でなければなりません。日記にない表現を作り出さないでください。
@@ -533,7 +533,7 @@ Rules:
 3. 中文日记用自然的日记体写。
 4. {target_language}翻译用自然的{target_language}日记体写。
 5. 学习要点：从translated_text中实际出现的单词/短语中提取3-5个单词（word）+ 2-3个短语（phrase）。绝对不要包含translated_text中没有的单词或短语。
-6. 学习要点难度：用户水平是{cefr_level}。优先提取{cefr_range}范围的单词/短语。
+6. 学习要点难度：用户水平是{cefr_level}（{cefr_description}）。优先提取{cefr_range}范围的单词/短语。translated_text也要按照这个水平来写。
 7. 例句从日记正文中取。
 8. origin_from必须是日记translated_text中实际出现的单词/短语形态，原样填写。
 9. content_en也必须是translated_text中实际出现的形态。不要编造日记中没有的表达。
@@ -567,7 +567,7 @@ Reglas:
 3. Escribe el diario en español con un estilo natural de diario.
 4. Escribe la traducción en {target_language} con un estilo natural de diario.
 5. Puntos de aprendizaje: extrae 3-5 palabras (word) + 2-3 frases (phrase) SOLO de palabras/frases que realmente aparezcan en el translated_text. Nunca incluyas palabras o frases que no estén presentes en el translated_text.
-6. Dificultad: el nivel del usuario es {cefr_level}. Prioriza palabras/frases en el rango {cefr_range}.
+6. Dificultad: el nivel del usuario es {cefr_level} ({cefr_description}). Prioriza palabras/frases en el rango {cefr_range}. Escribe el translated_text a este nivel también.
 7. Usa oraciones de ejemplo del texto del diario.
 8. origin_from debe ser la forma exacta de la palabra/frase tal como aparece en el translated_text del diario.
 9. content_en también debe ser una forma que realmente aparezca en el translated_text. No inventes expresiones que no estén en el diario.
@@ -690,6 +690,7 @@ def build_diary_with_learning_prompt(
     native_lang: str,
     target_lang: str,
     cefr_level: Optional[str] = None,
+    cefr_description: Optional[str] = None,
 ) -> str:
     """Build combined diary + learning points system prompt.
 
@@ -700,11 +701,13 @@ def build_diary_with_learning_prompt(
     target_name = _get_target_name(native_lang, target_lang)
     cefr = (cefr_level or "B1").upper()
     cefr_range = _CEFR_LEARNING_RANGE.get(cefr, "A2~B1")
+    cefr_desc = cefr_description or cefr
     template = DIARY_WITH_LEARNING_PROMPTS[lang]
     return template.format(
         target_language=target_name,
         cefr_level=cefr,
         cefr_range=cefr_range,
+        cefr_description=cefr_desc,
     )
 
 
