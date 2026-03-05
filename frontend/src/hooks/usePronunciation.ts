@@ -8,7 +8,6 @@ import {
   addRecognizingListener,
   addRecognizedListener,
   addErrorListener,
-  addDebugListener,
 } from '../../modules/expo-azure-pronunciation/src';
 import type { EventSubscription as Subscription } from 'expo-modules-core';
 
@@ -123,12 +122,6 @@ export function usePronunciation(langCode?: string): UsePronunciationReturn {
         });
 
         const subs: Subscription[] = [];
-
-        subs.push(
-          addDebugListener((event) => {
-            debugLog('warn', `[Native] ${event.message}`);
-          }),
-        );
 
         subs.push(
           addRecognizingListener((event) => {

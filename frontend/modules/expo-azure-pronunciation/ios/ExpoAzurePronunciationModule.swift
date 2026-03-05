@@ -9,7 +9,7 @@ public class ExpoAzurePronunciationModule: Module {
   public func definition() -> ModuleDefinition {
     Name("ExpoAzurePronunciation")
 
-    Events("onRecognizing", "onRecognized", "onError", "onDebug")
+    Events("onRecognizing", "onRecognized", "onError")
 
     Function("startAssessment") { (config: [String: Any]) in
       guard let authToken = config["authToken"] as? String,
@@ -44,34 +44,17 @@ public class ExpoAzurePronunciationModule: Module {
       try speechConfig.setPropertyTo("3000", byName: "SpeechServiceConnection_InitialSilenceTimeoutMs")
 
       // Audio session must be configured before SPXAudioConfiguration opens the mic
+      // Use .measurement mode to avoid AGC/noise suppression that can muffle earphone mic input
       let audioSession = AVAudioSession.sharedInstance()
       try audioSession.setCategory(.playAndRecord, mode: .measurement, options: [.defaultToSpeaker, .allowBluetooth, .allowBluetoothA2DP])
       try audioSession.setActive(true)
 
-      // 오디오 세션 상태 로그
+      // Log audio session state
       let currentRoute = audioSession.currentRoute
       for input in currentRoute.inputs {
-        let msg = "AudioInput: \(input.portName) type=\(input.portType.rawValue) ch=\(input.channels?.count ?? 0)"
-        NSLog("[Pronunciation] \(msg)")
-        self.sendEvent("onDebug", ["message": msg])
+        NSLog("[Pronunciation] Audio input: \(input.portName) type=\(input.portType.rawValue) channels=\(input.channels?.count ?? 0)")
       }
-      let sessionMsg = "AudioSession: sr=\(audioSession.sampleRate) cat=\(audioSession.category.rawValue) mode=\(audioSession.mode.rawValue)"
-      NSLog("[Pronunciation] \(sessionMsg)")
-      self.sendEvent("onDebug", ["message": sessionMsg])
-
-      // 오디오 세션 인터럽트/route change 감지
-      NotificationCenter.default.addObserver(forName: AVAudioSession.interruptionNotification, object: nil, queue: nil) { [weak self] note in
-        let type = (note.userInfo?[AVAudioSessionInterruptionTypeKey] as? UInt) ?? 99
-        let msg = "⚠️ AudioSession interruption type=\(type)"
-        NSLog("[Pronunciation] \(msg)")
-        self?.sendEvent("onDebug", ["message": msg])
-      }
-      NotificationCenter.default.addObserver(forName: AVAudioSession.routeChangeNotification, object: nil, queue: nil) { [weak self] note in
-        let reason = (note.userInfo?[AVAudioSessionRouteChangeReasonKey] as? UInt) ?? 99
-        let msg = "🔀 AudioSession routeChange reason=\(reason)"
-        NSLog("[Pronunciation] \(msg)")
-        self?.sendEvent("onDebug", ["message": msg])
-      }
+      NSLog("[Pronunciation] Audio session: sampleRate=\(audioSession.sampleRate) inputAvailable=\(audioSession.isInputAvailable) category=\(audioSession.category.rawValue) mode=\(audioSession.mode.rawValue)")
 
       let audioConfig = SPXAudioConfiguration()
 
@@ -144,9 +127,6 @@ public class ExpoAzurePronunciationModule: Module {
 
       recognizer.addCanceledEventHandler { [weak self] _, event in
         guard let self = self else { return }
-        let msg = "CANCELED: code=\(event.errorCode.rawValue) details=\(event.errorDetails ?? "nil")"
-        NSLog("[Pronunciation] \(msg)")
-        self.sendEvent("onDebug", ["message": msg])
         self.sendEvent("onError", [
           "code": "CANCELED",
           "message": event.errorDetails ?? "Recognition canceled"

@@ -43,9 +43,3 @@ export function addErrorListener(
 ) {
   return emitter.addListener('onError', callback);
 }
-
-export function addDebugListener(
-  callback: (event: { message: string }) => void,
-) {
-  return emitter.addListener('onDebug', callback);
-}
