@@ -85,18 +85,6 @@ public class ExpoAzurePronunciationModule: Module {
       let recognizer = try SPXSpeechRecognizer(speechConfiguration: speechConfig, audioConfiguration: audioConfig)
       try pronConfig.apply(to: recognizer)
 
-      recognizer.addSessionStartedEventHandler { [weak self] _, _ in
-        let msg = "✅ WS Session Started (연결됨)"
-        NSLog("[Pronunciation] \(msg)")
-        self?.sendEvent("onDebug", ["message": msg])
-      }
-
-      recognizer.addSessionStoppedEventHandler { [weak self] _, _ in
-        let msg = "🔌 WS Session Stopped (연결 종료)"
-        NSLog("[Pronunciation] \(msg)")
-        self?.sendEvent("onDebug", ["message": msg])
-      }
-
       recognizer.addRecognizingEventHandler { [weak self] _, event in
         guard let self = self else { return }
         let partialText = event.result.text ?? ""
