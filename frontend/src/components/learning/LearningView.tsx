@@ -54,7 +54,13 @@ export default function LearningView({ diaryId, onBack, onGoHome }: LearningView
     fetchDiary();
   }, [fetchDiary]);
 
-  const cards = diary?.learning_cards ?? [];
+  const cards = (diary?.learning_cards ?? []).slice().sort((a, b) => {
+    const typeOrder: Record<string, number> = { word: 0, phrase: 1, sentence: 2 };
+    const levelOrder: Record<string, number> = { a1: 0, a2: 1, b1: 2, b2: 3, c1: 4, c2: 5 };
+    const typeDiff = (typeOrder[a.card_type] ?? 99) - (typeOrder[b.card_type] ?? 99);
+    if (typeDiff !== 0) return typeDiff;
+    return (levelOrder[(a.cefr_level ?? '').toLowerCase()] ?? 99) - (levelOrder[(b.cefr_level ?? '').toLowerCase()] ?? 99);
+  });
   const totalCards = cards.length;
 
   const handleIndexChange = useCallback(

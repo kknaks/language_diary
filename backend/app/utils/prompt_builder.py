@@ -291,7 +291,7 @@ LEARNING_PROMPTS: Dict[str, str] = {
     "content_ko": "한국어 뜻",
     "part_of_speech": "품사 (word일 때만, 예: noun, verb, adjective)",
     "cefr_level": "A1/A2/B1/B2/C1/C2",
-    "example_en": "{target_language} 예문 (일기 문맥 활용)",
+    "example_en": "{target_language} 예문 (일기와 다른 새로운 예문)",
     "example_ko": "한국어 예문 해석"
   }}
 ]
@@ -299,7 +299,7 @@ LEARNING_PROMPTS: Dict[str, str] = {
 규칙:
 1. 단어(word) 3~5개 + 구문(phrase) 2~3개를 추출해.
 2. CEFR 등급을 정확히 매겨. 고빈도 단어 우선.
-3. 예문은 일기 본문에서 가져와.
+3. 예문은 일기 본문과 다른 새로운 문장으로 만들어. 일기 문장을 그대로 쓰지 마.
 4. JSON 배열만 반환해. 다른 텍스트는 포함하지 마.""",
 
     "en": """You are a {target_language} learning expert. Extract learning points from the {target_language} diary.
@@ -312,7 +312,7 @@ Return a JSON array like this:
     "content_ko": "English meaning",
     "part_of_speech": "part of speech (for word only, e.g. noun, verb, adjective)",
     "cefr_level": "A1/A2/B1/B2/C1/C2",
-    "example_en": "{target_language} example sentence (from diary context)",
+    "example_en": "{target_language} example sentence (new, different from diary)",
     "example_ko": "English translation of example"
   }}
 ]
@@ -320,7 +320,7 @@ Return a JSON array like this:
 Rules:
 1. Extract 3-5 words + 2-3 phrases.
 2. Assign accurate CEFR levels. Prioritize high-frequency words.
-3. Use example sentences from the diary text.
+3. Create new example sentences different from the diary text. Do not reuse diary sentences.
 4. Return only the JSON array. Do not include any other text.""",
 
     "ja": """あなたは{target_language}学習の専門家です。{target_language}の日記から学習ポイントを抽出してください。
@@ -333,7 +333,7 @@ Rules:
     "content_ko": "日本語の意味",
     "part_of_speech": "品詞（wordの場合のみ、例：noun, verb, adjective）",
     "cefr_level": "A1/A2/B1/B2/C1/C2",
-    "example_en": "{target_language}の例文（日記の文脈を活用）",
+    "example_en": "{target_language}の例文（日記とは異なる新しい例文）",
     "example_ko": "日本語の例文訳"
   }}
 ]
@@ -341,7 +341,7 @@ Rules:
 ルール：
 1. 単語（word）3〜5個 + フレーズ（phrase）2〜3個を抽出してください。
 2. CEFRレベルを正確に付けてください。高頻度の単語を優先。
-3. 例文は日記本文から取ってください。
+3. 例文は日記本文とは異なる新しい文を作ってください。日記の文をそのまま使わないでください。
 4. JSON配列のみ返してください。他のテキストは含めないでください。""",
 
     "zh": """你是{target_language}学习专家。从{target_language}日记中提取学习要点。
@@ -354,7 +354,7 @@ Rules:
     "content_ko": "中文意思",
     "part_of_speech": "词性（仅word时，例：noun, verb, adjective）",
     "cefr_level": "A1/A2/B1/B2/C1/C2",
-    "example_en": "{target_language}例句（利用日记语境）",
+    "example_en": "{target_language}例句（与日记不同的新例句）",
     "example_ko": "中文例句翻译"
   }}
 ]
@@ -362,7 +362,7 @@ Rules:
 规则：
 1. 提取3-5个单词（word）+ 2-3个短语（phrase）。
 2. 准确标注CEFR等级。优先高频词汇。
-3. 例句从日记正文中取。
+3. 例句要与日记正文不同，创造新的句子。不要直接使用日记中的句子。
 4. 只返回JSON数组。不要包含其他文字。""",
 
     "es": """Eres un experto en aprendizaje de {target_language}.
@@ -376,7 +376,7 @@ Devuelve un array JSON como este:
     "content_ko": "significado en español",
     "part_of_speech": "categoría gramatical (solo para word, ej: noun, verb, adjective)",
     "cefr_level": "A1/A2/B1/B2/C1/C2",
-    "example_en": "oración de ejemplo en {target_language} (del contexto del diario)",
+    "example_en": "oración de ejemplo en {target_language} (nueva, diferente del diario)",
     "example_ko": "traducción al español del ejemplo"
   }}
 ]
@@ -384,7 +384,7 @@ Devuelve un array JSON como este:
 Reglas:
 1. Extrae 3-5 palabras (word) + 2-3 frases (phrase).
 2. Asigna niveles CEFR precisos. Prioriza palabras de alta frecuencia.
-3. Usa oraciones de ejemplo del texto del diario.
+3. Crea oraciones de ejemplo nuevas, diferentes al texto del diario. No reutilices las oraciones del diario.
 4. Devuelve solo el array JSON. No incluyas ningún otro texto.""",
 }
 
@@ -419,7 +419,7 @@ DIARY_WITH_LEARNING_PROMPTS: Dict[str, str] = {
       "content_ko": "한국어 뜻",
       "part_of_speech": "품사 (word일 때만, 예: noun, verb, adjective)",
       "cefr_level": "A1/A2/B1/B2/C1/C2",
-      "example_en": "{target_language} 예문 (일기 문맥 활용)",
+      "example_en": "{target_language} 예문 (일기와 다른 새로운 예문)",
       "example_ko": "한국어 예문 해석"
     }}
   ]
@@ -428,11 +428,11 @@ DIARY_WITH_LEARNING_PROMPTS: Dict[str, str] = {
 규칙:
 1. 대화에서 언급된 사건, 감정, 사람, 장소를 포함해.
 2. 제목은 대화 내용을 함축하는 자연스러운 표현으로, 10자 이내로 작성해.
-3. 한국어 일기는 자연스러운 일기체로 작성해. (~했다, ~였다 체)
-4. {target_language} 번역은 자연스러운 {target_language} 일기체로 작성해.
+3. 한국어 일기는 자연스러운 일기체로 작성하되, 사용자의 {target_language} 수준({cefr_level})에 맞춰 내용의 깊이와 표현 복잡도를 조절해. 높은 레벨(B2~C2)이면 감정 묘사, 비유, 복문 등 풍부한 표현을 사용해. (~했다, ~였다 체)
+4. {target_language} 번역은 사용자의 수준({cefr_level})에 맞는 어휘와 문법을 적극 활용해. 높은 레벨이면 고급 어휘, 관용구, 복잡한 문장 구조를 사용해. 쉬운 표현만 나열하지 마.
 5. 학습 포인트: 단어(word) 3~5개 + 구문(phrase) 2~3개를 반드시 translated_text에 실제 등장하는 단어/구문에서만 추출해. translated_text에 없는 단어나 구문은 절대 포함하지 마.
-6. 학습 포인트 난이도: 사용자 레벨은 {cefr_level}({cefr_description})이야. {cefr_range} 범위의 단어/구문을 우선 추출해. 번역문(translated_text)도 이 수준에 맞게 작성해.
-7. 예문은 일기 본문에서 가져와.
+6. 학습 포인트 난이도: 사용자 레벨은 {cefr_level}({cefr_description})이야. {cefr_range} 범위의 단어/구문을 우선 추출해.
+7. 예문은 일기 본문과 다른 새로운 문장으로 만들어. 일기 문장을 그대로 쓰지 마.
 8. origin_from은 일기 translated_text에서 실제 등장한 단어/구문 형태를 그대로 써.
 9. content_en도 translated_text에 실제 등장하는 형태여야 해. 일기에 없는 표현을 만들어내지 마.
 10. JSON만 반환해. 다른 텍스트는 포함하지 마.""",
@@ -453,7 +453,7 @@ Summarize the given conversation and return JSON in this format:
       "content_ko": "English meaning",
       "part_of_speech": "part of speech (for word only, e.g. noun, verb, adjective)",
       "cefr_level": "A1/A2/B1/B2/C1/C2",
-      "example_en": "{target_language} example sentence (from diary context)",
+      "example_en": "{target_language} example sentence (new, different from diary)",
       "example_ko": "English translation of example"
     }}
   ]
@@ -462,11 +462,11 @@ Summarize the given conversation and return JSON in this format:
 Rules:
 1. Include events, emotions, people, and places mentioned in the conversation.
 2. The title should be a natural expression summarizing the conversation, within 10 words.
-3. Write the English diary in a natural diary style.
-4. Write the {target_language} translation in a natural {target_language} diary style.
+3. Write the English diary in a natural diary style, adjusting depth and complexity to match the user's {target_language} level ({cefr_level}). For higher levels (B2~C2), use rich emotional descriptions, metaphors, and complex sentences.
+4. Write the {target_language} translation using vocabulary and grammar appropriate for the user's level ({cefr_level}). For higher levels, actively use advanced vocabulary, idioms, and complex sentence structures. Do not stick to simple expressions only.
 5. Learning points: extract 3-5 words + 2-3 phrases ONLY from words/phrases that actually appear in the translated_text. Never include words or phrases not present in the translated_text.
-6. Learning point difficulty: the user's level is {cefr_level} ({cefr_description}). Prioritize words/phrases in the {cefr_range} range. Write the translated_text at this level too.
-7. Use example sentences from the diary text.
+6. Learning point difficulty: the user's level is {cefr_level} ({cefr_description}). Prioritize words/phrases in the {cefr_range} range.
+7. Create new example sentences different from the diary text. Do not reuse diary sentences.
 8. origin_from must be the exact word/phrase form as it appears in the translated_text of the diary.
 9. content_en must also be a form that actually appears in the translated_text. Do not invent expressions not found in the diary.
 10. Return only JSON. Do not include any other text.""",
@@ -487,7 +487,7 @@ Rules:
       "content_ko": "日本語の意味",
       "part_of_speech": "品詞（wordの場合のみ、例：noun, verb, adjective）",
       "cefr_level": "A1/A2/B1/B2/C1/C2",
-      "example_en": "{target_language}の例文（日記の文脈を活用）",
+      "example_en": "{target_language}の例文（日記とは異なる新しい例文）",
       "example_ko": "日本語の例文訳"
     }}
   ]
@@ -496,11 +496,11 @@ Rules:
 ルール：
 1. 会話で言及された出来事、感情、人物、場所を含めてください。
 2. タイトルは会話内容を要約する自然な表現で、10文字以内で書いてください。
-3. 日本語の日記は自然な日記体で書いてください。
-4. {target_language}翻訳は自然な{target_language}日記体で書いてください。
+3. 日本語の日記は自然な日記体で書いてください。ユーザーの{target_language}レベル（{cefr_level}）に合わせて内容の深さと表現の複雑さを調整してください。高レベル（B2〜C2）なら感情描写、比喩、複文など豊かな表現を使ってください。
+4. {target_language}翻訳はユーザーのレベル（{cefr_level}）に合った語彙と文法を積極的に活用してください。高レベルなら高度な語彙、慣用句、複雑な文構造を使ってください。簡単な表現だけに留めないでください。
 5. 学習ポイント：単語（word）3〜5個 + フレーズ（phrase）2〜3個を、必ずtranslated_textに実際に登場する単語/フレーズからのみ抽出してください。translated_textにない単語やフレーズは絶対に含めないでください。
-6. 学習ポイントの難易度：ユーザーのレベルは{cefr_level}（{cefr_description}）です。{cefr_range}範囲の単語/フレーズを優先してください。translated_textもこのレベルに合わせて書いてください。
-7. 例文は日記本文から取ってください。
+6. 学習ポイントの難易度：ユーザーのレベルは{cefr_level}（{cefr_description}）です。{cefr_range}範囲の単語/フレーズを優先してください。
+7. 例文は日記本文とは異なる新しい文を作ってください。日記の文をそのまま使わないでください。
 8. origin_fromは日記のtranslated_textに実際に登場した単語/フレーズの形をそのまま書いてください。
 9. content_enもtranslated_textに実際に登場する形でなければなりません。日記にない表現を作り出さないでください。
 10. JSONのみ返してください。他のテキストは含めないでください。""",
@@ -521,7 +521,7 @@ Rules:
       "content_ko": "中文意思",
       "part_of_speech": "词性（仅word时，例：noun, verb, adjective）",
       "cefr_level": "A1/A2/B1/B2/C1/C2",
-      "example_en": "{target_language}例句（利用日记语境）",
+      "example_en": "{target_language}例句（与日记不同的新例句）",
       "example_ko": "中文例句翻译"
     }}
   ]
@@ -530,11 +530,11 @@ Rules:
 规则：
 1. 包含对话中提到的事件、情感、人物、地点。
 2. 标题应是概括对话内容的自然表达，10字以内。
-3. 中文日记用自然的日记体写。
-4. {target_language}翻译用自然的{target_language}日记体写。
+3. 中文日记用自然的日记体写，根据用户的{target_language}水平（{cefr_level}）调整内容深度和表达复杂度。高水平（B2~C2）时使用丰富的情感描写、比喻和复合句。
+4. {target_language}翻译要积极使用与用户水平（{cefr_level}）匹配的词汇和语法。高水平时要使用高级词汇、惯用语和复杂句型。不要只用简单表达。
 5. 学习要点：从translated_text中实际出现的单词/短语中提取3-5个单词（word）+ 2-3个短语（phrase）。绝对不要包含translated_text中没有的单词或短语。
-6. 学习要点难度：用户水平是{cefr_level}（{cefr_description}）。优先提取{cefr_range}范围的单词/短语。translated_text也要按照这个水平来写。
-7. 例句从日记正文中取。
+6. 学习要点难度：用户水平是{cefr_level}（{cefr_description}）。优先提取{cefr_range}范围的单词/短语。
+7. 例句要与日记正文不同，创造新的句子。不要直接使用日记中的句子。
 8. origin_from必须是日记translated_text中实际出现的单词/短语形态，原样填写。
 9. content_en也必须是translated_text中实际出现的形态。不要编造日记中没有的表达。
 10. 只返回JSON。不要包含其他文字。""",
@@ -555,7 +555,7 @@ Resume la conversación dada y devuelve JSON en este formato:
       "content_ko": "significado en español",
       "part_of_speech": "categoría gramatical (solo para word, ej: noun, verb, adjective)",
       "cefr_level": "A1/A2/B1/B2/C1/C2",
-      "example_en": "oración de ejemplo en {target_language} (del contexto del diario)",
+      "example_en": "oración de ejemplo en {target_language} (nueva, diferente del diario)",
       "example_ko": "traducción al español del ejemplo"
     }}
   ]
@@ -564,11 +564,11 @@ Resume la conversación dada y devuelve JSON en este formato:
 Reglas:
 1. Incluye eventos, emociones, personas y lugares mencionados en la conversación.
 2. El título debe ser una expresión natural que resuma la conversación, en máximo 10 palabras.
-3. Escribe el diario en español con un estilo natural de diario.
-4. Escribe la traducción en {target_language} con un estilo natural de diario.
+3. Escribe el diario en español con un estilo natural, ajustando la profundidad y complejidad según el nivel de {target_language} del usuario ({cefr_level}). Para niveles altos (B2~C2), usa descripciones emocionales ricas, metáforas y oraciones complejas.
+4. Escribe la traducción en {target_language} usando vocabulario y gramática apropiados para el nivel del usuario ({cefr_level}). Para niveles altos, usa activamente vocabulario avanzado, modismos y estructuras oracionales complejas. No te limites a expresiones simples.
 5. Puntos de aprendizaje: extrae 3-5 palabras (word) + 2-3 frases (phrase) SOLO de palabras/frases que realmente aparezcan en el translated_text. Nunca incluyas palabras o frases que no estén presentes en el translated_text.
-6. Dificultad: el nivel del usuario es {cefr_level} ({cefr_description}). Prioriza palabras/frases en el rango {cefr_range}. Escribe el translated_text a este nivel también.
-7. Usa oraciones de ejemplo del texto del diario.
+6. Dificultad: el nivel del usuario es {cefr_level} ({cefr_description}). Prioriza palabras/frases en el rango {cefr_range}.
+7. Crea oraciones de ejemplo nuevas, diferentes al texto del diario. No reutilices las oraciones del diario.
 8. origin_from debe ser la forma exacta de la palabra/frase tal como aparece en el translated_text del diario.
 9. content_en también debe ser una forma que realmente aparezca en el translated_text. No inventes expresiones que no estén en el diario.
 10. Devuelve solo JSON. No incluyas ningún otro texto.""",

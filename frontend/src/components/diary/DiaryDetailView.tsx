@@ -170,7 +170,7 @@ export default function DiaryDetailView({ diaryId, onBack, onStartLearning }: Di
           {language === 'en' && diary.learning_cards.length > 0 ? (
             <HighlightedText
               text={currentText}
-              highlights={diary.learning_cards.map((c) => c.content_en)}
+              highlights={diary.learning_cards.filter((c) => c.card_type !== 'sentence').map((c) => c.content_en)}
               textStyle={styles.contentText}
             />
           ) : (
