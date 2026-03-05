@@ -39,11 +39,13 @@ class PronunciationResult(Base):
     __table_args__ = (
         Index("idx_pronunciation_results_card_id", "card_id"),
         Index("idx_pronunciation_results_user_id", "user_id"),
+        Index("idx_pronunciation_results_card_section", "card_id", "section"),
     )
 
     id: Mapped[int] = mapped_column(primary_key=True)
     card_id: Mapped[int] = mapped_column(ForeignKey("learning_cards.id", ondelete="CASCADE"), nullable=False)
     user_id: Mapped[int] = mapped_column(ForeignKey("users.id"), nullable=False)
+    section: Mapped[str] = mapped_column(String(20), server_default="content", nullable=False)
     reference_text: Mapped[Optional[str]] = mapped_column(Text)
     audio_url: Mapped[Optional[str]] = mapped_column(String(500))
     accuracy_score: Mapped[Optional[Decimal]] = mapped_column(Numeric(5, 2))

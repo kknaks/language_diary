@@ -271,6 +271,7 @@ class PronunciationService:
         user_id: int,
         audio_data: bytes,
         reference_text: str,
+        section: str = "content",
     ) -> dict:
         """Evaluate pronunciation and store the result.
 
@@ -293,13 +294,14 @@ class PronunciationService:
         scores = await self._call_gpt4o_with_retry(audio_data, reference_text)
 
         # Get next attempt number
-        attempt_number = await self.repo.get_next_attempt_number(card_id, user_id)
+        attempt_number = await self.repo.get_next_attempt_number(card_id, user_id, section=section)
 
         # Store result in DB
         result = await self.repo.create(
             card_id=card_id,
             user_id=user_id,
             attempt_number=attempt_number,
+            section=section,
             audio_url=audio_url,
             accuracy_score=Decimal(str(scores["accuracy_score"])),
             fluency_score=Decimal(str(scores["fluency_score"])),

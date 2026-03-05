@@ -169,7 +169,7 @@ async def save_pronunciation_result(
         )
 
     repo = PronunciationRepository(db)
-    attempt_number = await repo.get_next_attempt_number(request.card_id, current_user.id)
+    attempt_number = await repo.get_next_attempt_number(request.card_id, current_user.id, section=request.section)
 
     feedback = request.feedback
     if not feedback:
@@ -185,6 +185,7 @@ async def save_pronunciation_result(
         card_id=request.card_id,
         user_id=current_user.id,
         attempt_number=attempt_number,
+        section=request.section,
         reference_text=request.reference_text,
         accuracy_score=request.accuracy_score,
         fluency_score=request.fluency_score,
@@ -198,6 +199,7 @@ async def save_pronunciation_result(
     return PronunciationEvaluateResponse(
         id=pron_result.id,
         card_id=pron_result.card_id,
+        section=pron_result.section,
         overall_score=float(pron_result.overall_score or 0),
         accuracy_score=float(pron_result.accuracy_score or 0),
         fluency_score=float(pron_result.fluency_score or 0),
@@ -215,6 +217,7 @@ def _to_response(r: "PronunciationResult") -> PronunciationEvaluateResponse:
     return PronunciationEvaluateResponse(
         id=r.id,
         card_id=r.card_id,
+        section=r.section,
         overall_score=float(r.overall_score or 0),
         accuracy_score=float(r.accuracy_score or 0),
         fluency_score=float(r.fluency_score or 0),
@@ -241,5 +244,8 @@ async def get_pronunciation_results(
     repo = PronunciationRepository(db)
     latest = await repo.get_latest_by_card_ids(ids, current_user.id)
 
-    results = {cid: _to_response(latest[cid]) if cid in latest else None for cid in ids}
+    results: dict[int, dict] = {}
+    for cid in ids:
+        card_sections = latest.get(cid, {})
+        results[cid] = {sec: _to_response(r) for sec, r in card_sections.items()}
     return PronunciationResultsResponse(results=results)

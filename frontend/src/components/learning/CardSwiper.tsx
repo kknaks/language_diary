@@ -11,8 +11,8 @@ interface CardSwiperProps {
   currentIndex: number;
   onIndexChange: (index: number) => void;
   onSwipePastEnd?: () => void;
-  savedResults?: Record<number, PronunciationResult | null>;
-  onResultSaved?: (cardId: number, result: PronunciationResult) => void;
+  savedResults?: Record<number, Record<string, PronunciationResult | null>>;
+  onResultSaved?: (cardId: number, section: string, result: PronunciationResult) => void;
 }
 
 export default function CardSwiper({ cards, currentIndex, onIndexChange, onSwipePastEnd, savedResults, onResultSaved }: CardSwiperProps) {
@@ -52,7 +52,7 @@ export default function CardSwiper({ cards, currentIndex, onIndexChange, onSwipe
         showsVerticalScrollIndicator={false}
         nestedScrollEnabled
       >
-        <LearningCard card={item} savedResult={savedResults?.[item.id]} onResultSaved={onResultSaved} />
+        <LearningCard card={item} savedResults={savedResults?.[item.id]} onResultSaved={onResultSaved} />
       </ScrollView>
     ),
     [savedResults, onResultSaved],

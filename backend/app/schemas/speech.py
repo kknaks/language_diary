@@ -20,6 +20,7 @@ class SpeechTokenResponse(BaseModel):
 class PronunciationSaveRequest(BaseModel):
     card_id: int
     reference_text: str
+    section: str = Field(default="content", pattern="^(content|example)$")
     overall_score: float = Field(..., ge=0, le=100)
     accuracy_score: float = Field(..., ge=0, le=100)
     fluency_score: float = Field(..., ge=0, le=100)
@@ -53,6 +54,7 @@ class WordScore(BaseModel):
 class PronunciationEvaluateResponse(BaseModel):
     id: int
     card_id: int
+    section: str = "content"
     overall_score: float
     accuracy_score: float
     fluency_score: float
@@ -67,5 +69,5 @@ class PronunciationEvaluateResponse(BaseModel):
 
 
 class PronunciationResultsResponse(BaseModel):
-    """카드별 최신 발음 결과 맵: {card_id: result}"""
-    results: dict[int, Optional[PronunciationEvaluateResponse]]
+    """카드별 섹션별 최신 발음 결과 맵: {card_id: {section: result}}"""
+    results: dict[int, dict[str, Optional[PronunciationEvaluateResponse]]]

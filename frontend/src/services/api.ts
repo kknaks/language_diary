@@ -301,6 +301,7 @@ export async function getSpeechToken(): Promise<{ token: string; region: string;
 export async function savePronunciationResult(req: {
   card_id: number;
   reference_text: string;
+  section?: string;
   overall_score: number;
   accuracy_score: number;
   fluency_score: number;
@@ -308,9 +309,10 @@ export async function savePronunciationResult(req: {
   feedback?: string;
   word_scores: Array<{ word: string; score: number; error_type?: string }>;
 }): Promise<PronunciationResult> {
+  const body = { ...req, section: req.section ?? 'content' };
   const res = await fetchWithAuth(`${API_BASE_URL}/api/v1/speech/result`, {
     method: 'POST',
-    body: JSON.stringify(req),
+    body: JSON.stringify(body),
   });
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const json = await handleResponse(res) as any;
@@ -330,35 +332,44 @@ export async function savePronunciationResult(req: {
   };
 }
 
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+function parsePronunciationResult(v: any): PronunciationResult {
+  const wordScores: WordScore[] = (v.word_scores ?? []).map(
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    (w: any) => ({ word: w.word, score: w.score, errorType: w.error_type }),
+  );
+  return {
+    overallScore: v.overall_score ?? 0,
+    accuracyScore: v.accuracy_score ?? 0,
+    fluencyScore: v.fluency_score ?? 0,
+    completenessScore: v.completeness_score ?? 0,
+    feedback: v.feedback ?? '',
+    wordScores,
+  };
+}
+
 export async function getPronunciationResults(
   cardIds: number[],
-): Promise<Record<number, PronunciationResult | null>> {
+): Promise<Record<number, Record<string, PronunciationResult | null>>> {
   if (cardIds.length === 0) return {};
   const qs = cardIds.join(',');
   const res = await fetchWithAuth(`${API_BASE_URL}/api/v1/speech/results?card_ids=${qs}`);
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const json = await handleResponse(res) as any;
 
-  const out: Record<number, PronunciationResult | null> = {};
+  const out: Record<number, Record<string, PronunciationResult | null>> = {};
   for (const [id, val] of Object.entries(json.results)) {
     if (!val) {
-      out[Number(id)] = null;
+      out[Number(id)] = {};
       continue;
     }
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const v = val as any;
-    const wordScores: WordScore[] = (v.word_scores ?? []).map(
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      (w: any) => ({ word: w.word, score: w.score, errorType: w.error_type }),
-    );
-    out[Number(id)] = {
-      overallScore: v.overall_score ?? 0,
-      accuracyScore: v.accuracy_score ?? 0,
-      fluencyScore: v.fluency_score ?? 0,
-      completenessScore: v.completeness_score ?? 0,
-      feedback: v.feedback ?? '',
-      wordScores,
-    };
+    const sectionMap = val as Record<string, any>;
+    const parsed: Record<string, PronunciationResult | null> = {};
+    for (const [section, sectionVal] of Object.entries(sectionMap)) {
+      parsed[section] = sectionVal ? parsePronunciationResult(sectionVal) : null;
+    }
+    out[Number(id)] = parsed;
   }
   return out;
 }

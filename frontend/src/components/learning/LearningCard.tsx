@@ -19,17 +19,19 @@ const typeConfig: Record<string, { label: string; color: string; icon: keyof typ
 
 interface LearningCardProps {
   card: LearningCardType;
-  savedResult?: import('../../types').PronunciationResult | null;
-  onResultSaved?: (cardId: number, result: import('../../types').PronunciationResult) => void;
+  savedResults?: Record<string, import('../../types').PronunciationResult | null>;
+  onResultSaved?: (cardId: number, section: string, result: import('../../types').PronunciationResult) => void;
 }
 
-export default function LearningCard({ card, savedResult, onResultSaved }: LearningCardProps) {
+export default function LearningCard({ card, savedResults, onResultSaved }: LearningCardProps) {
   const config = typeConfig[card.card_type] ?? typeConfig.word;
   const targetLang = useProfileStore((s) => s.profile?.profile?.target_language?.code);
   const contentAudio = useAudioPlayer();
   const exampleAudio = useAudioPlayer();
   const pronunciation = usePronunciation(targetLang ?? undefined);
   const [openSection, setOpenSection] = useState<'content' | 'example' | null>('content');
+  const [contentResult, setContentResult] = useState<import('../../types').PronunciationResult | null>(savedResults?.content ?? null);
+  const [exampleResult, setExampleResult] = useState<import('../../types').PronunciationResult | null>(savedResults?.example ?? null);
 
   const resolveUrl = (url: string) =>
     url.startsWith('http') ? url : `${API_BASE_URL}${url}`;
@@ -76,23 +78,25 @@ export default function LearningCard({ card, savedResult, onResultSaved }: Learn
         pronunciation.reset();
       }
       const text = openSection === 'example' ? (card.example_en ?? '') : card.content_en;
-      pronunciation.startRecording(text, card.id);
+      pronunciation.startRecording(text, card.id, openSection ?? 'content');
     }
   };
 
   const isRecording = pronunciation.state === 'recording';
+  const isEvaluating = pronunciation.state === 'evaluating';
   const isDone = pronunciation.state === 'done';
   const isError = pronunciation.state === 'error';
-  // 현재 세션 결과 또는 DB에서 가져온 이전 결과
-  const displayResult = pronunciation.result ?? savedResult ?? null;
-  const hasResult = isDone || (!isDone && !!savedResult);
+  // 현재 섹션에 맞는 결과 표시
+  const sectionResult = openSection === 'example' ? exampleResult : contentResult;
+  const displayResult = pronunciation.result ?? sectionResult ?? null;
+  const hasResult = isDone || (!isDone && !isEvaluating && !!sectionResult);
 
-  // 완료 시 진동 + 체크마크 애니메이션
+  // 음성 인식 완료 시 (evaluating 진입) 진동 + 체크마크 애니메이션
   const checkOpacity = useRef(new Animated.Value(0)).current;
   const checkScale = useRef(new Animated.Value(0.5)).current;
 
   useEffect(() => {
-    if (isDone && pronunciation.result) {
+    if (isEvaluating || isDone) {
       Vibration.vibrate(50);
       Animated.parallel([
         Animated.timing(checkOpacity, { toValue: 1, duration: 300, useNativeDriver: true }),
@@ -102,14 +106,19 @@ export default function LearningCard({ card, savedResult, onResultSaved }: Learn
       checkOpacity.setValue(0);
       checkScale.setValue(0.5);
     }
-  }, [isDone, pronunciation.result, checkOpacity, checkScale]);
+  }, [isEvaluating, isDone, checkOpacity, checkScale]);
 
-  // 새 결과 저장 시 부모에 알림
+  // 새 결과 저장 시 해당 섹션에 캐시 + 부모에 알림
   useEffect(() => {
-    if (isDone && pronunciation.result && onResultSaved) {
-      onResultSaved(card.id, pronunciation.result);
+    if (isDone && pronunciation.result) {
+      if (openSection === 'example') {
+        setExampleResult(pronunciation.result);
+      } else {
+        setContentResult(pronunciation.result);
+      }
+      onResultSaved?.(card.id, openSection ?? 'content', pronunciation.result);
     }
-  }, [isDone, pronunciation.result, card.id, onResultSaved]);
+  }, [isDone, pronunciation.result, card.id, openSection, onResultSaved]);
 
   return (
     <View style={styles.container}>
@@ -207,24 +216,29 @@ export default function LearningCard({ card, savedResult, onResultSaved }: Learn
 
           <View style={styles.micRow}>
             <TouchableOpacity
-              style={[styles.micButton, isRecording && styles.micButtonRecording, isDone && styles.micButtonDone]}
+              style={[styles.micButton, isRecording && styles.micButtonRecording, (isEvaluating || isDone) && styles.micButtonDone]}
               onPress={handleMicPress}
               activeOpacity={0.7}
+              disabled={isEvaluating}
             >
-              <Ionicons
-                name={isRecording ? 'stop' : isDone ? 'mic' : 'mic'}
-                size={28}
-                color={isRecording ? '#FFF' : config.color}
-              />
+              {isEvaluating ? (
+                <ActivityIndicator size="small" color={config.color} />
+              ) : (
+                <Ionicons
+                  name={isRecording ? 'stop' : 'mic'}
+                  size={28}
+                  color={isRecording ? '#FFF' : config.color}
+                />
+              )}
             </TouchableOpacity>
-            {isDone && pronunciation.result && (
+            {(isEvaluating || isDone) && (
               <Animated.View style={[styles.checkBadge, { opacity: checkOpacity, transform: [{ scale: checkScale }] }]}>
                 <Ionicons name="checkmark-circle" size={28} color={colors.success} />
               </Animated.View>
             )}
           </View>
           <Text style={styles.micHint}>
-            {isRecording ? '듣고 있어요...' : isError ? '' : isDone ? '' : '버튼을 눌러 말해보세요'}
+            {isRecording ? '듣고 있어요...' : isEvaluating ? '평가 중...' : isError ? '' : isDone ? '' : '버튼을 눌러 말해보세요'}
           </Text>
 
           {isError && pronunciation.errorMessage && (
@@ -262,24 +276,29 @@ export default function LearningCard({ card, savedResult, onResultSaved }: Learn
 
           <View style={[styles.micRow, { alignSelf: 'center' }]}>
             <TouchableOpacity
-              style={[styles.micButton, isRecording && styles.micButtonRecording, isDone && styles.micButtonDone]}
+              style={[styles.micButton, isRecording && styles.micButtonRecording, (isEvaluating || isDone) && styles.micButtonDone]}
               onPress={handleMicPress}
               activeOpacity={0.7}
+              disabled={isEvaluating}
             >
-              <Ionicons
-                name={isRecording ? 'stop' : 'mic'}
-                size={28}
-                color={isRecording ? '#FFF' : colors.textSecondary}
-              />
+              {isEvaluating ? (
+                <ActivityIndicator size="small" color={colors.textSecondary} />
+              ) : (
+                <Ionicons
+                  name={isRecording ? 'stop' : 'mic'}
+                  size={28}
+                  color={isRecording ? '#FFF' : colors.textSecondary}
+                />
+              )}
             </TouchableOpacity>
-            {isDone && pronunciation.result && (
+            {(isEvaluating || isDone) && (
               <Animated.View style={[styles.checkBadge, { opacity: checkOpacity, transform: [{ scale: checkScale }] }]}>
                 <Ionicons name="checkmark-circle" size={28} color={colors.success} />
               </Animated.View>
             )}
           </View>
           <Text style={[styles.micHint, { alignSelf: 'center' }]}>
-            {isRecording ? '듣고 있어요...' : isError ? '' : isDone ? '' : '버튼을 눌러 말해보세요'}
+            {isRecording ? '듣고 있어요...' : isEvaluating ? '평가 중...' : isError ? '' : isDone ? '' : '버튼을 눌러 말해보세요'}
           </Text>
 
           {isError && pronunciation.errorMessage && (

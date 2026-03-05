@@ -19,7 +19,7 @@ interface UsePronunciationReturn {
   errorMessage: string | null;
   wordHighlights: WordHighlight[];
   currentWordIndex: number;
-  startRecording: (text: string, cardId: number) => void;
+  startRecording: (text: string, cardId: number, section?: string) => void;
   stopRecording: () => void;
   reset: () => void;
 }
@@ -75,6 +75,7 @@ export function usePronunciation(langCode?: string): UsePronunciationReturn {
   const [currentWordIndex, setCurrentWordIndex] = useState(-1);
   const textRef = useRef('');
   const cardIdRef = useRef(0);
+  const sectionRef = useRef('content');
   const subscriptionsRef = useRef<Subscription[]>([]);
   const mountedRef = useRef(true);
 
@@ -94,9 +95,10 @@ export function usePronunciation(langCode?: string): UsePronunciationReturn {
   }, [cleanup]);
 
   const startRecording = useCallback(
-    async (text: string, cardId: number) => {
+    async (text: string, cardId: number, section?: string) => {
       textRef.current = text;
       cardIdRef.current = cardId;
+      sectionRef.current = section ?? 'content';
       setResult(null);
       setErrorMessage(null);
       setCurrentWordIndex(-1);
@@ -130,13 +132,20 @@ export function usePronunciation(langCode?: string): UsePronunciationReturn {
             console.log('[Pronunciation] Event:recognizing (full)', JSON.stringify(event, null, 2));
             const idx = event.wordIndex;
             setCurrentWordIndex(idx);
-            setWordHighlights((prev) =>
-              prev.map((wh, i) => {
-                if (i < idx) return { ...wh, status: 'done' as const };
+            setWordHighlights((prev) => {
+              const isLastWord = idx >= prev.length - 1;
+              return prev.map((wh, i) => {
+                if (isLastWord || i < idx) return { ...wh, status: 'done' as const };
                 if (i === idx) return { ...wh, status: 'speaking' as const };
                 return { ...wh, status: 'pending' as const };
-              }),
-            );
+              });
+            });
+            // All words spoken → transition to evaluating
+            const totalWords = text.trim().split(/\s+/).length;
+            if (idx >= totalWords - 1) {
+              setState('evaluating');
+              setCurrentWordIndex(-1);
+            }
           }),
         );
 
@@ -183,6 +192,7 @@ export function usePronunciation(langCode?: string): UsePronunciationReturn {
             savePronunciationResult({
               card_id: cardIdRef.current,
               reference_text: textRef.current,
+              section: sectionRef.current,
               overall_score: event.pronScore,
               accuracy_score: event.accuracyScore,
               fluency_score: event.fluencyScore,
@@ -206,6 +216,8 @@ export function usePronunciation(langCode?: string): UsePronunciationReturn {
             if (!mountedRef.current) return;
             debugLog('error', `[Pron] 에러: ${event.code} — ${event.message}`);
             console.warn('[Pronunciation] Error:', event.code, event.message);
+            // Log full diagnostic info from native module
+            console.warn('[Pronunciation] Debug:', JSON.stringify(event, null, 2));
             const msg = event.message || '음성 인식에 실패했습니다.';
             setErrorMessage(`${msg} (${event.code})`);
             setState('error');
@@ -250,6 +262,7 @@ export function usePronunciation(langCode?: string): UsePronunciationReturn {
     setCurrentWordIndex(-1);
     textRef.current = '';
     cardIdRef.current = 0;
+    sectionRef.current = 'content';
   }, [cleanup]);
 
   return {

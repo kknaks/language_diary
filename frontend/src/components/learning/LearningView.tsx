@@ -23,7 +23,7 @@ export default function LearningView({ diaryId, onBack, onGoHome }: LearningView
   const [error, setError] = useState<string | null>(null);
   const [currentIndex, setCurrentIndex] = useState(0);
   const [isComplete, setIsComplete] = useState(false);
-  const [savedResults, setSavedResults] = useState<Record<number, PronunciationResult | null>>({});
+  const [savedResults, setSavedResults] = useState<Record<number, Record<string, PronunciationResult | null>>>({});
 
   const fetchDiary = useCallback(async () => {
     if (!diaryId) return;
@@ -75,8 +75,11 @@ export default function LearningView({ diaryId, onBack, onGoHome }: LearningView
     setIsComplete(false);
   }, []);
 
-  const handleResultSaved = useCallback((cardId: number, result: PronunciationResult) => {
-    setSavedResults((prev) => ({ ...prev, [cardId]: result }));
+  const handleResultSaved = useCallback((cardId: number, section: string, result: PronunciationResult) => {
+    setSavedResults((prev) => ({
+      ...prev,
+      [cardId]: { ...(prev[cardId] ?? {}), [section]: result },
+    }));
   }, []);
 
   if (isLoading) return <Loading message="학습 카드를 준비하고 있어요..." />;
