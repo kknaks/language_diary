@@ -74,6 +74,7 @@ export default function CardSwiper({ cards, currentIndex, onIndexChange, onSwipe
         offset: SCREEN_WIDTH * index,
         index,
       })}
+      extraData={savedResults}
       contentContainerStyle={styles.list}
     />
   );

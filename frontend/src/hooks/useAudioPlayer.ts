@@ -1,7 +1,7 @@
 import { useState, useCallback, useRef, useEffect } from 'react';
 import { createAudioPlayer, AudioPlayer } from 'expo-audio';
 import { File, Paths } from 'expo-file-system';
-import { requestTts } from '../services/api';
+import { requestTts, API_BASE_URL } from '../services/api';
 
 type AudioState = 'idle' | 'loading' | 'playing' | 'paused';
 
@@ -42,6 +42,7 @@ export function useAudioPlayer(): UseAudioPlayerReturn {
     async (audioUrl: string) => {
       releasePlayer();
       setState('loading');
+      console.log('[AudioPlayer] playFromUrl:', audioUrl);
 
       try {
         const player = createAudioPlayer(audioUrl);
@@ -57,7 +58,8 @@ export function useAudioPlayer(): UseAudioPlayerReturn {
 
         player.play();
         setState('playing');
-      } catch {
+      } catch (err) {
+        console.error('[AudioPlayer] playFromUrl error:', err);
         setState('idle');
       }
     },
@@ -68,11 +70,16 @@ export function useAudioPlayer(): UseAudioPlayerReturn {
     async (text: string) => {
       releasePlayer();
       setState('loading');
+      console.log('[AudioPlayer] play TTS for text:', text);
 
       try {
         const ttsResponse = await requestTts(text);
+        const audioUrl = ttsResponse.audioUrl.startsWith('http')
+          ? ttsResponse.audioUrl
+          : `${API_BASE_URL}${ttsResponse.audioUrl}`;
+        console.log('[AudioPlayer] TTS response audioUrl:', ttsResponse.audioUrl, '→ resolved:', audioUrl);
 
-        const player = createAudioPlayer(ttsResponse.audioUrl);
+        const player = createAudioPlayer(audioUrl);
         playerRef.current = player;
 
         const sub = player.addListener('playbackStatusUpdate', (status) => {
@@ -85,7 +92,8 @@ export function useAudioPlayer(): UseAudioPlayerReturn {
 
         player.play();
         setState('playing');
-      } catch {
+      } catch (err) {
+        console.error('[AudioPlayer] play TTS error:', err);
         setState('idle');
       }
     },

@@ -33,6 +33,12 @@ export default function LearningCard({ card, savedResults, onResultSaved }: Lear
   const [contentResult, setContentResult] = useState<import('../../types').PronunciationResult | null>(savedResults?.content ?? null);
   const [exampleResult, setExampleResult] = useState<import('../../types').PronunciationResult | null>(savedResults?.example ?? null);
 
+  // Sync when savedResults arrives async from DB
+  useEffect(() => {
+    if (savedResults?.content) setContentResult(savedResults.content);
+    if (savedResults?.example) setExampleResult(savedResults.example);
+  }, [savedResults]);
+
   const resolveUrl = (url: string) =>
     url.startsWith('http') ? url : `${API_BASE_URL}${url}`;
 
@@ -42,8 +48,10 @@ export default function LearningCard({ card, savedResults, onResultSaved }: Lear
     } else if (contentAudio.state === 'paused') {
       contentAudio.resume();
     } else if (card.audio_url) {
+      console.log('[LearningCard] Content: playFromUrl, audio_url=', card.audio_url);
       contentAudio.playFromUrl(resolveUrl(card.audio_url));
     } else {
+      console.log('[LearningCard] Content: TTS fallback, text=', card.content_en);
       contentAudio.play(card.content_en);
     }
   };
@@ -54,8 +62,10 @@ export default function LearningCard({ card, savedResults, onResultSaved }: Lear
     } else if (exampleAudio.state === 'paused') {
       exampleAudio.resume();
     } else if (card.example_audio_url) {
+      console.log('[LearningCard] Example: playFromUrl, example_audio_url=', card.example_audio_url);
       exampleAudio.playFromUrl(resolveUrl(card.example_audio_url));
     } else if (card.example_en) {
+      console.log('[LearningCard] Example: TTS fallback, text=', card.example_en);
       exampleAudio.play(card.example_en);
     }
   };

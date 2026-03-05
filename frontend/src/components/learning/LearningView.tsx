@@ -36,7 +36,12 @@ export default function LearningView({ diaryId, onBack, onGoHome }: LearningView
       prefetchSpeechToken().catch(() => {});
       const cardIds = (data.learning_cards ?? []).map((c) => c.id);
       if (cardIds.length > 0) {
-        getPronunciationResults(cardIds).then(setSavedResults).catch(() => {});
+        getPronunciationResults(cardIds).then((results) => {
+          console.log('[LearningView] Loaded pronunciation results:', JSON.stringify(results));
+          setSavedResults(results);
+        }).catch((err) => {
+          console.error('[LearningView] Failed to load pronunciation results:', err);
+        });
       }
     } catch {
       setError('학습 데이터를 불러올 수 없습니다');

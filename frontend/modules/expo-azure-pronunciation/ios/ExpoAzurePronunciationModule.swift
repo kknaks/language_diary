@@ -58,7 +58,14 @@ public class ExpoAzurePronunciationModule: Module {
         try? recognizer.stopContinuousRecognition()
         NSLog("[Pronunciation] Continuous recognition stopped")
       }
-      try? AVAudioSession.sharedInstance().setActive(false, options: .notifyOthersOnDeactivation)
+      // Restore audio session to playback mode so expo-audio can play audio
+      // (Do NOT call setActive(false) — it kills the shared audio session for the entire app)
+      do {
+        try AVAudioSession.sharedInstance().setCategory(.playback, mode: .default)
+        NSLog("[Pronunciation] Audio session restored to playback")
+      } catch {
+        NSLog("[Pronunciation] Failed to restore audio session: \(error)")
+      }
       NSLog("[Pronunciation] Full cleanup done")
     }
   }
