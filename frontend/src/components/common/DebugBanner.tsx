@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { View, Text, StyleSheet, TouchableOpacity } from 'react-native';
+import { View, Text, StyleSheet, TouchableOpacity, ScrollView } from 'react-native';
 
 interface LogEntry {
   time: string;
@@ -71,23 +71,30 @@ export default function DebugBanner() {
 
       {visible && (
         <View style={styles.panel}>
-          {currentLogs.length === 0 ? (
-            <Text style={styles.empty}>로그 없음</Text>
-          ) : (
-            currentLogs.map((log, i) => (
-              <Text
-                key={`${tick}-${i}`}
-                style={[
-                  styles.log,
-                  log.type === 'error' && styles.logError,
-                  log.type === 'warn' && styles.logWarn,
-                ]}
-                selectable
-              >
-                {log.time} [{log.type}] {log.message}
-              </Text>
-            ))
-          )}
+          <ScrollView
+            style={styles.scroll}
+            contentContainerStyle={styles.scrollContent}
+            showsVerticalScrollIndicator={true}
+            keyboardShouldPersistTaps="handled"
+          >
+            {currentLogs.length === 0 ? (
+              <Text style={styles.empty}>로그 없음</Text>
+            ) : (
+              currentLogs.map((log, i) => (
+                <Text
+                  key={`${tick}-${i}`}
+                  style={[
+                    styles.log,
+                    log.type === 'error' && styles.logError,
+                    log.type === 'warn' && styles.logWarn,
+                  ]}
+                  selectable
+                >
+                  {log.time} [{log.type}] {log.message}
+                </Text>
+              ))
+            )}
+          </ScrollView>
         </View>
       )}
     </View>
@@ -122,6 +129,12 @@ const styles = StyleSheet.create({
     width: '95%',
     borderRadius: 10,
     marginTop: 6,
+    maxHeight: 260,
+  },
+  scroll: {
+    maxHeight: 260,
+  },
+  scrollContent: {
     padding: 12,
   },
   empty: { color: '#888', fontSize: 12, textAlign: 'center', padding: 20 },

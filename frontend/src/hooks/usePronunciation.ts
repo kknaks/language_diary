@@ -1,6 +1,7 @@
 import { useState, useCallback, useRef, useEffect } from 'react';
 import { PronunciationResult, WordHighlight } from '../types';
 import { getSpeechToken, savePronunciationResult } from '../services/api';
+import { debugLog } from '../components/common/DebugBanner';
 import {
   startAssessment,
   stopAssessment,
@@ -110,8 +111,10 @@ export function usePronunciation(langCode?: string): UsePronunciationReturn {
       cleanup();
 
       try {
+        debugLog('info', `[Pron] 시작: "${text}"`);
         console.log('[Pronunciation] 1. Requesting speech token...');
         const { token, region } = await getToken();
+        debugLog('info', `[Pron] 토큰 발급 region=${region}`);
         console.log('[Pronunciation] 2. Token received:', {
           tokenLength: token.length,
           region,
@@ -123,6 +126,7 @@ export function usePronunciation(langCode?: string): UsePronunciationReturn {
         subs.push(
           addRecognizingListener((event) => {
             if (!mountedRef.current) return;
+            debugLog('info', `[Pron] recognizing: "${event.text}" wordIdx=${event.wordIndex}`);
             console.log('[Pronunciation] Event:recognizing (full)', JSON.stringify(event, null, 2));
             const idx = event.wordIndex;
             setCurrentWordIndex(idx);
@@ -139,6 +143,7 @@ export function usePronunciation(langCode?: string): UsePronunciationReturn {
         subs.push(
           addRecognizedListener((event) => {
             if (!mountedRef.current) return;
+            debugLog('info', `[Pron] recognized: "${event.text}" pron=${event.pronScore} acc=${event.accuracyScore} flu=${event.fluencyScore} words=${event.words.length}개`);
             console.log('[Pronunciation] Event:recognized (full)', JSON.stringify(event, null, 2));
 
             const wordScores = event.words.map((w) => ({
@@ -199,6 +204,7 @@ export function usePronunciation(langCode?: string): UsePronunciationReturn {
         subs.push(
           addErrorListener((event) => {
             if (!mountedRef.current) return;
+            debugLog('error', `[Pron] 에러: ${event.code} — ${event.message}`);
             console.warn('[Pronunciation] Error:', event.code, event.message);
             const msg = event.message || '음성 인식에 실패했습니다.';
             setErrorMessage(`${msg} (${event.code})`);
@@ -209,6 +215,7 @@ export function usePronunciation(langCode?: string): UsePronunciationReturn {
 
         subscriptionsRef.current = subs;
 
+        debugLog('info', `[Pron] startAssessment lang=${language}`);
         console.log('[Pronunciation] 3. Starting assessment...', {
           referenceText: text,
           language,
